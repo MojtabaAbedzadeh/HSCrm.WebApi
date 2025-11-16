@@ -1,9 +1,5 @@
-﻿using Azure.Core;
-using HSCrm.DataModel.Services.Repository;
+﻿using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using System;
-using System.Runtime;
 
 namespace HSCrm.DataModel.Services.Interface
 {
@@ -21,7 +17,6 @@ namespace HSCrm.DataModel.Services.Interface
 
         IEntityTransaction BeginTransaction();
         Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default);
-
         int Save();
         Task<int> SaveAsync(CancellationToken ct = default);
     }

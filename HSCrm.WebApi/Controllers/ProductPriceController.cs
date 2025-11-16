@@ -2,7 +2,6 @@
 using HSCrm.Entities.Entities;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
-using SinaPharm.Common;
 using static HSCrm.Common.PublicTools.StringCleaner;
 using static HSCrm.Entities.Models.PriceModel;
 
@@ -13,28 +12,16 @@ namespace HSCrm.WebApi.Controllers
     public class ProductPriceController : ControllerBase
     {
         private readonly IUnitOfWork _context;
-        private readonly HttpClient _httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(1200)
-        };
 
-
-        public ProductPriceController(IUnitOfWork context, HttpClient httpClient)
+        public ProductPriceController(IUnitOfWork context)
         {
             _context = context;
-            _httpClient = httpClient;
         }
 
-        //[HttpGet("GetPrices")]
-        //public ApiResponse<IEnumerable<ProductPriceList>> Get(PagingModel model)
-        //{
-           
-        //}
-
         [HttpGet("GetProductPriceHistory")]
-        public ApiResponse<IEnumerable<ProductPrice>> GetProductPriceHistory(long ircCode)
+        public ApiResponse<IEnumerable<ProductPrice>> GetProductPriceHistory()
         {
-            var priceHistory = _context.priceUW.Get(p => p.ProductId == ircCode).OrderByDescending(o => o.Id);
+            var priceHistory = _context.priceUW.Get();
 
             return new ApiResponse<IEnumerable<ProductPrice>>
             {
@@ -45,85 +32,90 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-        [HttpGet("GetPriceById")]
+        [HttpGet("GetPriceByProductId")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(ProductPrice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ApiResponse GetById(long priceId)
+        public ApiResponse<IEnumerable<ProductPrice>> GetPriceByProductId(int productId)
         {
-            var price = _context.priceUW.GetById(priceId);
+            var price = _context.priceUW.Get(p => p.ProductId == productId);
 
-            if (price == null) return new ApiResponse
+            if (price == null)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.NotFound,
-                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
-            };
+                return new ApiResponse<IEnumerable<ProductPrice>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = ApiResultStatusCode.NotFound
+                        .DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
 
-            return new ApiResponse<ProductPrice>
+            return new ApiResponse<IEnumerable<ProductPrice>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Message = ApiResultStatusCode.Success
+                    .DisplayNameAttribute(DisplayProperty.Name),
                 Data = price
             };
         }
 
-        [HttpPost]
-        [Route("CreatePrice")]
+        [HttpPost("CreateProduct")]
         public ApiResponse Create([FromForm] PriceCreateModel model)
         {
-            //کنترل خالی بودن اطلاعات
-            if (!ModelState.IsValid) return new ApiResponse
+            if (!ModelState.IsValid)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
-            };
-
-            //کنترل تاریخ اعمال هم پوشانی نداشته باشد!
-            DateTime ActionDateMiladi = ConvertDate.ConvertShamsiToMiladi(model.EffectiveFrom.ToString());
-            var getPrice = _context.priceUW.Get(p => p.ProductId == model.ProductId &&
-                                                     p.EffectiveFrom >= ActionDateMiladi);
-
-            var fetchedPrices = _context.priceUW.Get(fp => fp.ProductId == model.ProductId);
-
-            if (getPrice.Count() > 0) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
-            };
-
-            if (fetchedPrices != null)
-            {
-                foreach (var price in fetchedPrices)
+                return new ApiResponse
                 {
-                    price.IsActive = false;
-                    _context.priceUW.Update(price);
-                }
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+            }
+
+            // گرفتن قیمت فعال قبلی
+            var oldPrice = _context.priceUW
+                .Get(p => p.ProductId == model.ProductId && p.EffectiveTo == null)
+                .FirstOrDefault();
+
+            // اگر قیمت فعال قبلی وجود دارد -> ببندش
+            if (oldPrice != null)
+            {
+                oldPrice.EffectiveTo = DateTime.Now;
+                oldPrice.IsActive = false;
+                oldPrice.ModifiedAt = DateTime.Now;
+                oldPrice.ModifiedById = model.UserId;
+
+                _context.priceUW.Update(oldPrice);
+                _context.Save(); // مهم
             }
 
             try
             {
-                ProductPrice price = new ProductPrice()
+                ProductPrice newPrice = new ProductPrice()
                 {
                     ProductId = model.ProductId,
                     SellPrice = model.SellPrice,
                     IsActive = true,
-                    EffectiveFrom = ActionDateMiladi,
+                    EffectiveFrom = DateTime.Now,
+                    EffectiveTo = null,
                     CreatedAt = DateTime.Now,
                     CreatedById = model.UserId,
-                    TenantId = 1
+                    IsDeleted = false,
+                    TenantId = model.TenantId
                 };
-                _context.priceUW.Create(price);
+
+                _context.priceUW.Create(newPrice);
                 _context.Save();
+
                 return new ApiResponse<ProductPrice>
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = price
+                    Data = newPrice
                 };
             }
             catch (Exception)
@@ -132,87 +124,95 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
-                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
                 };
             }
         }
 
-        [HttpDelete]
-        [Route("DeletePrice")]
-        public ApiResponse DeletePrice(long priceId)
+        [HttpPut("UpdatePrice")]
+        [ProducesResponseType(typeof(ProductPrice), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public ApiResponse Update([FromForm] PriceEditModel model)
         {
-            if (priceId == 0) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
-            };
-
-            var query = _context.priceUW.GetById(priceId);
-
-            if (DateTime.Now.Date < query.EffectiveFrom.Date)
-            {
-                _context.priceUW.DeleteById(priceId);
-                _context.Save();
-                return new ApiResponse<ProductPrice>
-                {
-                    Status = true,
-                    StatusCode = ApiResultStatusCode.Success,
-                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = query
-                };
-            }
-            else
-            {
+            // اعتبارسنجی اولیه
+            if (model.ProductId == 0)
                 return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
+                    Message = "Invalid ProductId"
+                };
+
+            // پیدا کردن قیمت فعال فعلی
+            var currentPrice = _context.priceUW
+                .Get(p => p.ProductId == model.ProductId && p.EffectiveTo == null)
+                .FirstOrDefault();
+
+            if (currentPrice == null)
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "No active price found for this product"
+                };
+
+            // اگر قیمت تغییر نکرده است، هیچ کاری انجام نده
+            if (currentPrice.SellPrice == model.SellPrice)
+            {
+                return new ApiResponse<ProductPrice>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "Price is already up to date",
+                    Data = currentPrice
+                };
+            }
+
+            try
+            {
+                // 1️⃣ بروزرسانی قیمت فعلی: پایان آن با تاریخ جاری
+                currentPrice.EffectiveTo = DateTime.UtcNow;
+                currentPrice.IsActive = false;
+                currentPrice.ModifiedAt = DateTime.UtcNow;
+                currentPrice.ModifiedById = model.UserId;
+                _context.priceUW.Update(currentPrice);
+
+                // 2️⃣ ایجاد رکورد جدید قیمت
+                var newPrice = new ProductPrice
+                {
+                    ProductId = model.ProductId,
+                    SellPrice = model.SellPrice,
+                    EffectiveFrom = DateTime.UtcNow,
+                    EffectiveTo = null,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedById = model.UserId,
+                    TenantId = model.TenantId,
+                    IsDeleted = false
+                };
+
+                _context.priceUW.Create(newPrice);
+
+                // 3️⃣ ذخیره تغییرات یکجا
+                _context.Save();
+
+                return new ApiResponse<ProductPrice>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "Price updated successfully",
+                    Data = newPrice
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = $"Server error: {ex.Message}"
                 };
             }
         }
-
-        //[HttpGet("UpdatePrices")]
-        //public async Task<ApiResponse> UpdatePrices()
-        //{
-        //    //sinapharm/v1/v1/update/20240918-v1
-        //    string apiUrl = "https://bilgisoft.ir/sinapharm/v1/update/20240918-v1.csv"; // URL API را مشخص کنید
-
-        //    var priceUpdates = await ReadPricesFromCsvAsync(apiUrl);
-
-        //    await _priceUpdateService.UpdatePricesAsync(priceUpdates);
-
-        //    return new ApiResponse
-        //    {
-        //        Status = true,
-        //        StatusCode = ApiResultStatusCode.Success,
-        //        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-        //    };
-        //}
-
-        //private async Task<List<PriceUpdateModel>> ReadPricesFromCsvAsync(string url)
-        //{
-        //    try
-        //    {
-        //        using var response = await _httpClient.GetAsync(url);
-        //        response.EnsureSuccessStatusCode();
-
-        //        using var stream = await response.Content.ReadAsStreamAsync();
-        //        using var reader = new StreamReader(stream);
-        //        using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
-        //        {
-        //            HasHeaderRecord = true,
-        //        });
-
-        //        var records = csv.GetRecords<PriceUpdateModel>().ToList();
-        //        return records;
-        //    }
-        //    catch (Exception e)
-        //    {
-
-        //        throw e;
-        //    }
-        //}
     }
 }

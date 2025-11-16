@@ -1,4 +1,5 @@
 ﻿using HSCrm.Entities.Entities;
+using System.ComponentModel.DataAnnotations;
 
 namespace HSCrm.Entities.Models
 {
@@ -6,16 +7,13 @@ namespace HSCrm.Entities.Models
     {
         public class PriceCreateModel
         {
-            public int PriceId { get; set; }
-            public long BuyPrice { get; set; }
-            public decimal SellPrice { get; set; }
             public int ProductId { get; set; }
-            public Product Product { get; set; } = default!;
+            public int TenantId { get; set; }
+            public required string UserId { get; set; }
+            public decimal SellPrice { get; set; }
+            public bool IsActive { get; set; }
             public DateTime EffectiveFrom { get; set; }
             public DateTime? EffectiveTo { get; set; }
-            public required string UserId { get; set; }
-            public ApplicationUser User { get; set; } = default!;
-            public DateTime CreatedDate { get; set; }
         }
 
         public class ProductPriceList
@@ -33,15 +31,17 @@ namespace HSCrm.Entities.Models
             public bool IsActive { get; set; }
         }
 
-        public class PriceUpdateModel
+        public class PriceEditModel
         {
             public int PriceId { get; set; }
-            public int UserId { get; set; }
+            public required string UserId { get; set; }
+            public int TenantId { get; set; }
             public long BuyPrice { get; set; }
             public decimal SellPrice { get; set; }
             public int ProductId { get; set; }
             public DateTime EffectiveFrom { get; set; }
             public DateTime? EffectiveTo { get; set; }
+            public bool IsActive { get; set; }
         }
     }
 }
