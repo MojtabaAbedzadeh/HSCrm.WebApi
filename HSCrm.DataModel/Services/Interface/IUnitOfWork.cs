@@ -16,8 +16,7 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<Supplier> supplierUW { get; }
 
         IEntityTransaction BeginTransaction();
-        Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default);
-        int Save();
-        Task<int> SaveAsync(CancellationToken ct = default);
+        void Save();
+        void SaveAsync();
     }
 }

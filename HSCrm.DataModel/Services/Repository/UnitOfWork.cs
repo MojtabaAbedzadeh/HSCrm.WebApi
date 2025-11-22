@@ -1,7 +1,6 @@
 ﻿using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System.Transactions;
 
 namespace HSCrm.DataModel.Services.Repository
@@ -38,24 +37,18 @@ namespace HSCrm.DataModel.Services.Repository
 
 
         public IEntityTransaction BeginTransaction()
-            => new EntityTransaction(_context); 
-        public async Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default)
-            => await EntityTransaction.StartAsync(_context, ct);
-
-        public int Save()
         {
-            using var scope = new TransactionScope(TransactionScopeOption.Required, TransactionScopeAsyncFlowOption.Enabled);
-            var total = _context.SaveChanges();
-            scope.Complete();
-            return total;
+            return new EntityTransaction(_context);
         }
 
-        public async Task<int> SaveAsync(CancellationToken ct = default)
+        public void Save()
         {
-            using var scope = new TransactionScope(TransactionScopeOption.Required, TransactionScopeAsyncFlowOption.Enabled);
-            var total = await _context.SaveChangesAsync(ct);
-            scope.Complete();
-            return total;
+            _context.SaveChanges();
+        }
+
+        public void SaveAsync()
+        {
+            _context.SaveChangesAsync();
         }
 
         public void Dispose()

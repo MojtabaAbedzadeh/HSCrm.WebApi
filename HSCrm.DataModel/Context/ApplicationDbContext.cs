@@ -1,7 +1,10 @@
-﻿using HSCrm.Entities.Entities;
+﻿using HSCrm.Common.PublicTools;
+using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using System.Reflection;
+
 
 namespace HSCrm.DataModel.Context
 {
@@ -350,6 +353,66 @@ namespace HSCrm.DataModel.Context
                 e.Property(x => x.StoragePath).HasMaxLength(1000);
                 e.HasIndex(x => new { x.TenantId, x.EntityName, x.EntityId });
             });
+        }
+
+        public override int SaveChanges()
+        {
+            cleanStr();
+
+            return base.SaveChanges();
+        }
+
+        public override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            cleanStr();
+
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+
+        public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            cleanStr();
+
+            return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            cleanStr();
+
+            return base.SaveChangesAsync(cancellationToken);
+        }
+
+        private void cleanStr()
+        {
+            var changedEntities = ChangeTracker.Entries()
+                //پيدا کردن رکوردهایی که عمليات افزودن و ویرایش دارند
+                .Where(x => x.State == EntityState.Added || x.State == EntityState.Modified);
+
+
+            foreach (var item in changedEntities)
+            {
+                if (item.Entity == null)
+                    continue;
+                //فيلدهايي که مقدارشون استرينگ باشه و قابليت خواندن و نوشتن داشته باشند
+                var properties = item.Entity.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(p => p.CanRead && p.CanWrite && p.PropertyType == typeof(string));
+
+                foreach (var property in properties)
+                {
+                    //اگر پراپرتي مقدار داشت
+                    var propName = property.Name;
+                    var val = (string)property.GetValue(item.Entity, null);
+
+                    if (val.HasValue())
+                    {
+                        var newVal = val.Fa2En().FixPersianChars();
+                        if (newVal == val)
+                            continue;
+                        property.SetValue(item.Entity, newVal, null);
+                    }
+                }
+            }
         }
     }
 }

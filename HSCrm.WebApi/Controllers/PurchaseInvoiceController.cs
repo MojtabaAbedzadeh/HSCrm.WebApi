@@ -1,8 +1,12 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Azure.Core;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
+using NetTopologySuite.Index.HPRtree;
+using System.Numerics;
+using System.Transactions;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -59,65 +63,84 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateFactor")]
-        public ApiResponse Create([FromForm] FactorCreateModel model)
+        public ApiResponse Create([FromBody] FactorCreateModel model)
         {
-            if (!ModelState.IsValid) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-            };
-
-            if (_context.factorUW.Get(f => f.Number == model.FactorNumber).Any()) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.Conflict,
-                Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
-            };
-
-            try
-            {
-                var sum = model.Items.Sum(i => i.UnitPrice * i.Count);
-
-                var purchaseInvoice = new PurchaseInvoice
-                {
-                    Number = model.FactorNumber,
-                    CreatedAt = DateTime.UtcNow,
-                    IsDeleted = false,
-                    CreatedById = model.PurchasingUser,
-                    TenantId = 1
-                };
-
-                // ساخت جزئیات
-                purchaseInvoice.Items = model.Items.Select(i => new PurchaseInvoiceItem
-                {
-                    ProductId = i.ProductId,
-                    CreatedAt = DateTime.Now,
-                    IsDeleted = false,
-                    CreatedById = model.PurchasingUser,
-                    TenantId = 1
-                }).ToList();
-
-                // فقط یک بار Create روی والد
-                _context.factorUW.Create(purchaseInvoice);
-                _context.Save();  // EF اول Factor را درج می‌کند، بعد Details را، FKها را خودش ست می‌کند
-
-                return new ApiResponse<PurchaseInvoice>
-                {
-                    Status = true,
-                    StatusCode = ApiResultStatusCode.Success,
-                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = purchaseInvoice
-                };
-            }
-            catch (Exception)
-            {
+            if (!ModelState.IsValid)
                 return new ApiResponse
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
-                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
                 };
+
+            if (_context.factorUW.Get(f => f.Number == model.FactorNumber).Any())
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name),
+                };
+
+            using (var transaction = _context.BeginTransaction())
+            {
+                try
+                {
+                    var subtotal = model.purchaseInvoiceItem.Sum(i => i.UnitPrice * i.Count);
+
+                    var invoice = new PurchaseInvoice
+                    {
+                        Number = model.FactorNumber,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedById = model.PurchasingUser,
+                        TenantId = model.TenantId,
+                        SupplierId = model.SupplierId,
+                        ProjectId = model.ProjectId,
+                        IssueDate = model.IssueDate,
+                        IsDeleted = false,
+                        Subtotal = subtotal,
+                        Tax = model.Tax,
+                        Discount = model.Discount,
+                        Total = (subtotal + model.Tax) - model.Discount
+                    };
+
+                    // افزودن جزئیات به صورت collection
+                    foreach (var item in model.purchaseInvoiceItem)
+                    {
+                        invoice.Items.Add(new PurchaseInvoiceItem
+                        {
+                            ProductId = item.ProductId,
+                            Quantity = item.Count,
+                            UnitPricePurchase = item.UnitPrice,
+                            LineTotal = item.UnitPrice * item.Count,
+                            TenantId = invoice.TenantId,
+                            CreatedById = model.PurchasingUser,
+                            CreatedAt = DateTime.UtcNow,
+                            IsDeleted = false
+                        });
+                    }
+
+                    // ذخیره فقط یکبار
+                    _context.factorUW.Create(invoice);
+                    _context.Save();
+
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.Success,
+                        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                    };
+                }
+                catch (Exception)
+                {
+                    transaction.Rollback();
+
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.ServerError,
+                        Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                    };
+                }
             }
         }
 
@@ -134,11 +157,10 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
-            using var tx = _context.BeginTransaction();
-
             try
             {
                 var factor = _context.factorUW.GetById(model.FactorId);
+
                 if (factor == null)
                     return new ApiResponse
                     {
@@ -176,8 +198,6 @@ namespace HSCrm.WebApi.Controllers
                 _context.factorUW.Update(factor);
                 _context.Save();
 
-                tx.Commit();
-
                 return new ApiResponse<PurchaseInvoice>
                 {
                     Status = true,
@@ -188,7 +208,6 @@ namespace HSCrm.WebApi.Controllers
             }
             catch
             {
-                tx.Rollback();
                 return new ApiResponse
                 {
                     Status = false,
