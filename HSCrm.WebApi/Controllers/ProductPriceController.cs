@@ -2,6 +2,7 @@
 using HSCrm.Entities.Entities;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
+using SinaPharm.Common;
 using static HSCrm.Common.PublicTools.StringCleaner;
 using static HSCrm.Entities.Models.PriceModel;
 
@@ -19,9 +20,9 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetProductPriceHistory")]
-        public ApiResponse<IEnumerable<ProductPrice>> GetProductPriceHistory()
+        public ApiResponse<IEnumerable<ProductPrice>> GetProductPriceHistory(long productId)
         {
-            var priceHistory = _context.priceUW.Get();
+            var priceHistory = _context.priceUW.Get(p => p.ProductId == productId).OrderByDescending(o => o.Id);
 
             return new ApiResponse<IEnumerable<ProductPrice>>
             {
@@ -62,7 +63,7 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-        [HttpPost("CreateProduct")]
+        [HttpPost("CreatePrice")]
         public ApiResponse Create([FromForm] PriceCreateModel model)
         {
             if (!ModelState.IsValid)
@@ -77,7 +78,7 @@ namespace HSCrm.WebApi.Controllers
 
             // گرفتن قیمت فعال قبلی
             var oldPrice = _context.priceUW
-                .Get(p => p.ProductId == model.ProductId && p.EffectiveTo == null)
+                .Get(p => p.ProductId == model.ProId && p.EffectiveTo == null)
                 .FirstOrDefault();
 
             // اگر قیمت فعال قبلی وجود دارد -> ببندش
@@ -96,10 +97,11 @@ namespace HSCrm.WebApi.Controllers
             {
                 ProductPrice newPrice = new ProductPrice()
                 {
-                    ProductId = model.ProductId,
+                    ProductId = model.ProId,
                     SellPrice = model.SellPrice,
+                    BuyPrice = model.BuyPrice,
                     IsActive = true,
-                    EffectiveFrom = DateTime.Now,
+                    EffectiveFrom = ConvertDate.ConvertShamsiToMiladi(model.EffectiveFrom),
                     EffectiveTo = null,
                     CreatedAt = DateTime.Now,
                     CreatedById = model.UserId,

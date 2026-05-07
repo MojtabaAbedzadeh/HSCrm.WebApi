@@ -7,10 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Tools\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\HSCrm.DataModel\HSCrm.DataModel.csproj" />
   </ItemGroup>
 

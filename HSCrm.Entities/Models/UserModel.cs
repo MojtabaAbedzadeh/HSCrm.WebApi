@@ -4,15 +4,14 @@ namespace HSCrm.Entities.Models
 {
     public class UserCreateModel
     {
-        public int Id { get; set; }
-        public required string UserFirstName { get; set; }
-        public required string UserLastName { get; set; }
-        public required string UserName { get; set; }
-        public required string PhoneNumber { get; set; }
-        public string? UserImageUrl { get; set; }
-        public bool UserStatus { get; set; }
-        public byte UserType { get; set; }
-        public bool UserGender { get; set; }
+        public required string UserFirstNameC { get; set; }
+        public required string UserLastNameC { get; set; }
+        public required string UserNameC { get; set; }
+        public required string PhoneNumberC { get; set; }
+        public string? EmailC { get; set; }
+        public string? UserImageUrlC { get; set; }       
+        public bool UserGenderC { get; set; }
+        public int TenantId { get; set; }
     }
 
     public class UserEditModel
@@ -20,11 +19,9 @@ namespace HSCrm.Entities.Models
         public required string UserId { get; set; }
         public required string UserFirstName { get; set; }
         public required string UserLastName { get; set; }
-        public required string UserName { get; set; }
         public required string PhoneNumber { get; set; }
+        public string? Email { get; set; }
         public string? UserImageUrl { get; set; }
-        public bool UserStatus { get; set; }
-        public byte UserType { get; set; }
         public bool UserGender { get; set; }
     }
 }

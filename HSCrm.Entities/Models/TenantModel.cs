@@ -1,17 +1,22 @@
 ﻿namespace HSCrm.Entities.Models
 {
-    public class BusinessCreateModel
+    public class TenantCreateModel
     {
-        public required string BusinessTitle { get; set; }
-        public required string BusinessOwner { get; set; }
-        public required string BusinessOwnerMobile { get; set; }
+        public required string TenantTitle { get; set; }
+        public required string TenantOwner { get; set; }
+        public required string TenantOwnerMobile { get; set; }
+        public string? Currency { get; set; }
+        public DateTime CreateAt { get; set; }
+        public required string CreatedBy { get; set; }
+        public required string TenantUserName { get; set; }
+        public required string TenantPassword { get; set; }
     }
 
-    public class BusinessEditModel
+    public class TenantEditModel
     {
-        public int BusinessId { get; set; }
-        public required string BusinessTitle { get; set; }
-        public required string BusinessOwner { get; set; }
-        public required string BusinessOwnerMobile { get; set; }
+        public int TenantId { get; set; }
+        public required string TenantTitle { get; set; }
+        public required string TenantOwner { get; set; }
+        public required string TenantOwnerMobile { get; set; }
     }
 }

@@ -4,6 +4,7 @@ namespace HSCrm.Entities.Entities
 {
     public class Expense : TenantScopedEntity
     {
+        public required string ExpenseTitle { get; set; }
         public int ProjectId { get; set; }
         public Project Project { get; set; } = default!;
         public ExpenseType Type { get; set; }

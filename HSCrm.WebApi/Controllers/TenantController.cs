@@ -20,17 +20,17 @@ namespace HSCrm.WebApi.Controllers
             _context = context;
         }
 
-        [HttpGet("GetBusiness")]
+        [HttpGet("GetTenant")]
         public ApiResponse<IEnumerable<Tenant>> Get()
         {
-            var branches = _context.businessUW.Get();
+            var tenants = _context.tenantUW.Get();
 
             return new ApiResponse<IEnumerable<Tenant>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = branches
+                Data = tenants
             };
         }
 
@@ -38,16 +38,15 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Tenant), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ApiResponse GetById(int businessId)
+        public ApiResponse GetById(int tenantId)
         {
-            var business = _context.businessUW.GetById(businessId);
+            var tenants = _context.tenantUW.GetById(tenantId);
 
-            if (business == null) return new ApiResponse<Tenant>
+            if (tenants == null) return new ApiResponse
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.NotFound,
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
-                Data = business
             };
 
             return new ApiResponse<Tenant>
@@ -56,12 +55,12 @@ namespace HSCrm.WebApi.Controllers
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = business
+                Data = tenants
             };
         }
 
-        [HttpPost("CreateBusiness")]
-        public ApiResponse Create([FromForm] BusinessCreateModel model)
+        [HttpPost("CreateTenant")]
+        public ApiResponse Create([FromForm] TenantCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse
             {
@@ -70,7 +69,7 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            var getBusiness = _context.businessUW.Get(b => b.TenantTitle == model.BusinessTitle);
+            var getBusiness = _context.tenantUW.Get(b => b.TenantTitle == model.TenantTitle);
 
             if (getBusiness.Count() > 0) return new ApiResponse
             {
@@ -81,17 +80,16 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                Tenant business = new Tenant()
+                Tenant tenant = new Tenant()
                 {
-                    TenantTitle = model.BusinessTitle,
-                    TenantOwner = model.BusinessOwner,
-                    TenantOwnerMobile = model.BusinessOwnerMobile,
+                    TenantTitle = model.TenantTitle,
+                    TenantOwner = model.TenantOwner,
+                    TenantOwnerMobile = model.TenantOwnerMobile,
                     CreatedAt = DateTime.Now,
-                    CreatedById = model.BusinessOwner,
+                    CreatedById = model.TenantOwner,
+                    Currency = model.Currency                };
 
-                };
-
-                _context.businessUW.Create(business);
+                _context.tenantUW.Create(tenant);
                 _context.Save();
 
                 return new ApiResponse<Tenant>
@@ -99,7 +97,7 @@ namespace HSCrm.WebApi.Controllers
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = business
+                    Data = tenant
                 };
             }
             catch (Exception)
@@ -114,28 +112,30 @@ namespace HSCrm.WebApi.Controllers
 
         }
 
-        [HttpPut("UpdateBussiness")]
+        [HttpPut("UpdateTenant")]
         [ProducesResponseType(typeof(Tenant), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ApiResponse Update([FromForm] BusinessEditModel model)
+        public ApiResponse Update([FromForm] TenantEditModel model)
         {
-            if (model.BusinessId == 0) return new ApiResponse
+            if (model.TenantId == 0) return new ApiResponse
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.BadRequest,
                 Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            var getBusiness = _context.businessUW.GetById(model.BusinessId);
+            var getTenant = _context.tenantUW.GetById(model.TenantId);
 
-            if (getBusiness != null)
+            if (getTenant != null)
             {
-                getBusiness.TenantTitle = model.BusinessTitle;
-                getBusiness.TenantOwner = model.BusinessOwner;
-                getBusiness.TenantOwnerMobile = model.BusinessOwnerMobile;
+                getTenant.TenantTitle = model.TenantTitle;
+                getTenant.TenantOwner = model.TenantOwner;
+                getTenant.TenantOwnerMobile = model.TenantOwnerMobile;
+                getTenant.ModifiedAt = DateTime.Now;
+                getTenant.ModifiedById = model.TenantOwner;
             }
 
-            _context.businessUW.Update(getBusiness);
+            _context.tenantUW.Update(getTenant);
             _context.Save();
 
             return new ApiResponse<Tenant>
@@ -143,14 +143,14 @@ namespace HSCrm.WebApi.Controllers
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = getBusiness
+                Data = getTenant
             };
         }
 
-        [HttpGet("BusinessDropdownList")]
-        public ApiResponse BusinessDropdownList()
+        [HttpGet("TenantDropdownList")]
+        public ApiResponse TenantDropdownList()
         {
-            IEnumerable<DropdownDto> businessList = _context.businessUW.Get().Select(w => new DropdownDto
+            IEnumerable<DropdownDto> tenantList = _context.tenantUW.Get().Select(w => new DropdownDto
             {
                 DrId = w.Id,
                 DrName = w.TenantTitle,
@@ -161,7 +161,7 @@ namespace HSCrm.WebApi.Controllers
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = businessList
+                Data = tenantList
             };
         }
     }

@@ -1,12 +1,10 @@
-﻿using Azure.Core;
-using HSCrm.DataModel.Services.Interface;
+﻿using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
-using NetTopologySuite.Index.HPRtree;
-using System.Numerics;
-using System.Transactions;
+using SinaPharm.Common;
+using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -16,23 +14,25 @@ namespace HSCrm.WebApi.Controllers
     public class PurchaseInvoiceController : ControllerBase
     {
         private readonly IUnitOfWork _context;
+        private readonly IInventoryService _inventory;
 
-        public PurchaseInvoiceController(IUnitOfWork context)
+        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory)
         {
             _context = context;
+            _inventory = inventory;
         }
 
-        [HttpGet("GetFactors")]
+        [HttpGet("GetPurchaseInvoices")]
         public ApiResponse<IEnumerable<PurchaseInvoice>> Get()
         {
-            var factors = _context.factorUW.Get();
+            var invoices = _context.purchaseInvoiceUW.Get(null, true, x => x.Supplier, x => x.Tenant).ToList();
 
             return new ApiResponse<IEnumerable<PurchaseInvoice>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = factors
+                Data = invoices
             };
         }
 
@@ -40,9 +40,9 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(PurchaseInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ApiResponse GetById(int factorId)
+        public ApiResponse GetById(int InvoiceId)
         {
-            var factor = _context.factorUW.GetById(factorId);
+            var factor = _context.purchaseInvoiceUW.GetById(InvoiceId);
 
             if (factor == null) return new ApiResponse<PurchaseInvoice>
             {
@@ -53,7 +53,6 @@ namespace HSCrm.WebApi.Controllers
             };
 
             return new ApiResponse<PurchaseInvoice>
-
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
@@ -62,94 +61,139 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-        [HttpPost("CreateFactor")]
-        public ApiResponse Create([FromBody] FactorCreateModel model)
+        [HttpGet("GetByProjectId")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(PurchaseInvoice), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public ApiResponse<IEnumerable<PurchaseInvoice>> GetByProjectId(int projectId)
         {
-            if (!ModelState.IsValid)
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
-                };
+            var factor = _context.purchaseInvoiceUW.Get();
 
-            if (_context.factorUW.Get(f => f.Number == model.FactorNumber).Any())
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.Conflict,
-                    Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name),
-                };
-
-            using (var transaction = _context.BeginTransaction())
+            if (factor == null) return new ApiResponse<IEnumerable<PurchaseInvoice>>
             {
-                try
-                {
-                    var subtotal = model.purchaseInvoiceItem.Sum(i => i.UnitPrice * i.Count);
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                Data = factor
+            };
 
-                    var invoice = new PurchaseInvoice
-                    {
-                        Number = model.FactorNumber,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedById = model.PurchasingUser,
-                        TenantId = model.TenantId,
-                        SupplierId = model.SupplierId,
-                        ProjectId = model.ProjectId,
-                        IssueDate = model.IssueDate,
-                        IsDeleted = false,
-                        Subtotal = subtotal,
-                        Tax = model.Tax,
-                        Discount = model.Discount,
-                        Total = (subtotal + model.Tax) - model.Discount
-                    };
+            return new ApiResponse<IEnumerable<PurchaseInvoice>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = factor
+            };
+        }
 
-                    // افزودن جزئیات به صورت collection
-                    foreach (var item in model.purchaseInvoiceItem)
-                    {
-                        invoice.Items.Add(new PurchaseInvoiceItem
-                        {
-                            ProductId = item.ProductId,
-                            Quantity = item.Count,
-                            UnitPricePurchase = item.UnitPrice,
-                            LineTotal = item.UnitPrice * item.Count,
-                            TenantId = invoice.TenantId,
-                            CreatedById = model.PurchasingUser,
-                            CreatedAt = DateTime.UtcNow,
-                            IsDeleted = false
-                        });
-                    }
+        [HttpPost("CreateInvoice")]
+        public ApiResponse Create([FromBody] InvoiceCreateModel model)
+        {
+            if (model.Items == null || model.Items.Count == 0) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NoContent,
+                Message = ApiResultStatusCode.NoContent.DisplayNameAttribute(DisplayProperty.Name)
+            };
 
-                    // ذخیره فقط یکبار
-                    _context.factorUW.Create(invoice);
-                    _context.Save();
+            using var transaction = _context.BeginTransaction();
 
-                    return new ApiResponse
-                    {
-                        Status = false,
-                        StatusCode = ApiResultStatusCode.Success,
-                        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    };
-                }
-                catch (Exception)
+            try
+            {
+                // ✅ 1. بررسی تکراری بودن شماره فاکتور (در همان Tenant)
+                bool invoiceNumberExists = _context.purchaseInvoiceUW.Get().Any(i => i.Number == model.InvoiceNumber && i.TenantId == model.TenantId);
+
+                if (invoiceNumberExists)
                 {
                     transaction.Rollback();
 
                     return new ApiResponse
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.ServerError,
-                        Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                        StatusCode = ApiResultStatusCode.Conflict, // 409
+                        Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
                     };
                 }
+
+                // ✅ 2. محاسبه مجموع آیتم‌ها
+                decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
+
+                decimal finalTotal = itemsTotal - model.InvoiceDiscount + model.InvoiceTax;
+                if (finalTotal < 0) finalTotal = 0;
+
+                // ✅ 3. ساخت فاکتور
+                var invoice = new PurchaseInvoice
+                {
+                    TenantId = model.TenantId,
+                    SupplierId = model.SupplierId,
+                    WarehouseId = model.WarehouseId,
+                    Number = model.InvoiceNumber,
+                    IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
+                    Status = model.Status,
+                    Discount = model.InvoiceDiscount,
+                    Tax = model.InvoiceTax,
+                    Total = finalTotal,
+                    PurchaserUserId = model.PurchaserId,
+                    CreatedById = model.PurchaserId,
+                    CreatedAt = DateTime.Now
+                };
+
+                foreach (var item in model.Items)
+                {
+                    invoice.Items.Add(new PurchaseInvoiceItem
+                    {
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity,
+                        UnitPricePurchase = item.UnitPrice,
+                        Discount = item.Discount,
+                        Tax = item.Tax,
+                        CreatedAt = DateTime.Now,
+                        CreatedById = model.PurchaserId,
+                        TenantId = model.TenantId,
+                        LineTotal = (item.Quantity * item.UnitPrice) - item.Discount + item.Tax
+                    });
+                }
+
+                // ✅ 4. ثبت فاکتور
+                _context.purchaseInvoiceUW.Create(invoice);
+                _context.Save();
+
+                // ✅ 5. اعمال موجودی فقط اگر نهایی بود
+                if (invoice.Status == SalesInvoiceStatus.Final)
+                {
+                    _inventory.ApplyInventoryForPurchaseInvoice(invoice);
+                    _context.Save();
+                }
+
+                // ✅ 6. Commit نهایی
+                transaction.Commit();
+
+                return new ApiResponse
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name)
+                };
+            }
+            catch (Exception)
+            {
+                transaction.Rollback();
+
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
+                };
             }
         }
 
-        [HttpPut("UpdateFactor")]
+        [HttpPut("UpdateInvoice")]
         [ProducesResponseType(typeof(PurchaseInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ApiResponse Update([FromBody] FactorEditModel model)
+        public ApiResponse Update([FromBody] SalesInvoiceEditModel model)
         {
-            if (model.FactorId == 0 || model.Items == null)
+            if (model.InvoiceId == 0 || model.Items == null)
                 return new ApiResponse
                 {
                     Status = false,
@@ -159,9 +203,9 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                var factor = _context.factorUW.GetById(model.FactorId);
+                var invoice = _context.purchaseInvoiceUW.GetById(model.InvoiceId);
 
-                if (factor == null)
+                if (invoice == null)
                     return new ApiResponse
                     {
                         Status = false,
@@ -170,32 +214,32 @@ namespace HSCrm.WebApi.Controllers
                     };
 
                 // به‌روزرسانی اطلاعات فاکتور
-                factor.Number = model.FactorNumber;
-                factor.PayStatus = model.FactorPayStatus;
-                factor.IssueDate = model.FactorDate;
+                //invoice.Number = model.InvoiceNumber;
+                //invoice.PayStatus = model.Status;
+                //invoice.IssueDate = model.InvoiceDate;
 
 
                 // حذف جزئیات قبلی با DeleteByRange (بدون لود شدن داده‌ها)
-                _context.factorDetailUW.DeleteByRange(d => d.Id == model.FactorId);
+                _context.purchaseInvoiceDetailUW.DeleteByRange(d => d.Id == model.InvoiceId);
 
                 // ساخت جزئیات جدید - ProductRowPrice = Count × UnitPrice
                 var newDetails = model.Items.Select(i => new PurchaseInvoiceItem
                 {
-                    Id = model.FactorId,
+                    Id = model.InvoiceId,
                     ProductId = i.ProductId,
-                    Quantity = i.Count,
+                    Quantity = i.Quantity,
                     CreatedAt = DateTime.UtcNow,
-                    CreatedById = model.PurchasingUser,
+                    CreatedById = model.SellerUserId,
                     TenantId = 1,
-                    UnitPricePurchase = i.UnitPrice * i.Count
+                    UnitPricePurchase = i.UnitPrice * i.Quantity
                 }).ToList();
 
-                _context.factorDetailUW.CreateRange(newDetails);
+                _context.purchaseInvoiceDetailUW.CreateRange(newDetails);
 
                 // محاسبه جمع کل جدید
-                factor.Total = newDetails.Sum(x => x.UnitPricePurchase);
+                invoice.Total = newDetails.Sum(x => x.UnitPricePurchase);
 
-                _context.factorUW.Update(factor);
+                _context.purchaseInvoiceUW.Update(invoice);
                 _context.Save();
 
                 return new ApiResponse<PurchaseInvoice>
@@ -203,7 +247,7 @@ namespace HSCrm.WebApi.Controllers
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = factor
+                    Data = invoice
                 };
             }
             catch

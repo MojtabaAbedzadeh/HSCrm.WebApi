@@ -22,7 +22,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("GetProjects")]
         public ApiResponse<IEnumerable<Project>> Get()
         {
-            var projects = _context.projectUW.Get();
+            var projects = _context.projectUW.Get(includes: p => p.Customer).ToList();
 
             return new ApiResponse<IEnumerable<Project>>
             {
@@ -32,6 +32,7 @@ namespace HSCrm.WebApi.Controllers
                 Data = projects
             };
         }
+
 
         [HttpGet("GetById")]
         [Produces("application/json")]
@@ -83,11 +84,12 @@ namespace HSCrm.WebApi.Controllers
                 Project project = new Project()
                 {
                     ProjectTitle = model.ProjectTitle,
+                    CustomerId = model.CustomerId,
                     ProjectLocation = model.ProjectLocation,
-                    CustomerPhone = model.ProjectOwnerPhone,
                     CreatedAt = DateTime.Now,
-                    CreatedById= model.UserId,
-                    TenantId = 1
+                    CreatedById= model.CreateById,
+                    Status = "Active",
+                    TenantId = model.TenantId
                 };
 
                 _context.projectUW.Create(project);
@@ -116,7 +118,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateProject")]
         [ProducesResponseType(typeof(Project), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ApiResponse Update([FromForm] ProjectEditModel model)
+        public ApiResponse Update([FromBody] ProjectEditModel model)
         {
             if (model.ProjectId == 0) return new ApiResponse
             {
@@ -131,7 +133,9 @@ namespace HSCrm.WebApi.Controllers
             {
                 getProject.ProjectTitle = model.ProjectTitle;
                 getProject.ProjectLocation = model.ProjectLocation;
-                getProject.CustomerPhone = model.ProjectOwnerPhone;
+                getProject.CustomerId = model.CustomerId;
+                getProject.ModifiedAt = DateTime.Now;
+                getProject.ModifiedById = model.ModifiedById;
             }
 
             _context.projectUW.Update(getProject);
@@ -147,9 +151,9 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("ProjectDropdownList")]
-        public ApiResponse ProjectDropdownList()
+        public ApiResponse ProjectDropdownList(int tenantId)
         {
-            IEnumerable<DropdownDto> projectList = _context.projectUW.Get().Select(p => new DropdownDto
+            IEnumerable<DropdownDto> projectList = _context.projectUW.Get(p => p.TenantId == tenantId).Select(p => new DropdownDto
             {
                 DrId = p.Id,
                 DrName = p.ProjectTitle,

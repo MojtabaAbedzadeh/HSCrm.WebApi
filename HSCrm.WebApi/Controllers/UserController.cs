@@ -29,13 +29,19 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpGet("GetUsers")]
-        public async Task<IActionResult> GetUsers(CancellationToken ct)
+        public async Task<ApiResponse<List<ApplicationUser>>> Get(CancellationToken ct)
         {
-            var persons = await _context.userManagerUW.GetAsync(asNoTracking: true, ct: ct);
+            var persons = (await _context.userManagerUW
+                .GetAsync(u => u.UserType == 0, asNoTracking: true, ct: ct))
+                .ToList();
 
-
-            //var persons = await _hr.Persons.AsNoTracking().Take(1000).ToListAsync(ct);
-            return Ok(persons);
+            return new ApiResponse<List<ApplicationUser>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = persons
+            };
         }
 
         [HttpGet("GetUserById")]
@@ -63,24 +69,32 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateUser")]
-        public async Task<IActionResult> Create([FromForm] UserCreateModel model)
+        public async Task<ApiResponse<ApplicationUser>> Create([FromForm] UserCreateModel model)
         {
-            if (!ModelState.IsValid) return BadRequest(model);
+            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+            };
 
             try
             {
                 ApplicationUser user = new ApplicationUser()
                 {
-                    UserFirstName = model.UserFirstName,
-                    UserLastName = model.UserLastName,
-                    PhoneNumber = model.PhoneNumber,
-                    UserGender = model.UserGender,
-                    UserName = model.UserName,
-                    UserImageUrl = model.UserImageUrl,
-                    UserStatus = false,
-                    UserType = model.UserType,
-
+                    UserFirstName = model.UserFirstNameC,
+                    UserLastName = model.UserLastNameC,                    
+                    UserImageUrl = model.UserImageUrlC,
+                    UserStatus = true,
+                    UserType = 0,
+                    UserGender = model.UserGenderC,
+                    PhoneNumber = model.PhoneNumberC,
+                    Email = model.EmailC,
+                    TenantId = model.TenantId,
+                    IsTenantOwner = false,
+                    UserName = model.UserNameC,
                 };
+
                 IdentityResult result = await _userManager.CreateAsync(user, "123456");
 
                 if (result.Succeeded)
@@ -95,41 +109,76 @@ namespace HSCrm.WebApi.Controllers
                     }
                 }
 
-                return StatusCode(200);
+                return new ApiResponse<ApplicationUser>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = user
+                };
             }
             catch (Exception)
             {
-                return BadRequest(500);
+                return new ApiResponse<ApplicationUser>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                };
             }
         }
 
         [HttpPut("UpdateUser")]
         [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> Update([FromForm] UserEditModel model)
+        public async Task<ApiResponse<ApplicationUser>> Update([FromBody] UserEditModel model)
         {
-            if (string.IsNullOrEmpty(model.UserId)) return BadRequest();
+            if (string.IsNullOrEmpty(model.UserId)) return new ApiResponse<ApplicationUser>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+            };
 
-            if (!ModelState.IsValid) return BadRequest(model);
+            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.BadRequest,
+                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
+            };
 
             try
             {
                 var getUser = await _userManager.FindByIdAsync(model.UserId);
+
                 if (getUser != null)
                 {
                     var mapModel = _map.Map(model, getUser);
                     IdentityResult result = await _userManager.UpdateAsync(mapModel);
-                    if (result.Succeeded)
+                    if (result.Succeeded) return new ApiResponse<ApplicationUser>
                     {
-                        return Ok("200");
-                    }
+                        Status = true,
+                        StatusCode = ApiResultStatusCode.Success,
+                        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                        Data = getUser
+                    };
                 }
             }
             catch (Exception)
             {
-                return StatusCode(500);
+                return new ApiResponse<ApplicationUser>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                };
             }
-            return StatusCode(500);
+            return new ApiResponse<ApplicationUser>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.ServerError,
+                Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+            };
         }
     }
 }

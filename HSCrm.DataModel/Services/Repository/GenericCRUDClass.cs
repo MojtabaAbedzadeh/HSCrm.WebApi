@@ -1,9 +1,5 @@
-﻿using HSCrm.DataModel.Context;
-using HSCrm.Entities.Entities;
-using Microsoft.EntityFrameworkCore;
-using System.Linq;
+﻿using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
-using System.Runtime.InteropServices.Marshalling;
 
 namespace HSCrm.DataModel.Services.Repository
 {

@@ -7,16 +7,25 @@ namespace HSCrm.DataModel.Services.Interface
     {
         GenericCRUDClass<ApplicationUser> userManagerUW { get; }
         GenericCRUDClass<ApplicationRole> roleManagerUW { get; }
-        GenericCRUDClass<Tenant> businessUW { get; }
-        GenericCRUDClass<PurchaseInvoice> factorUW { get; }
-        GenericCRUDClass<PurchaseInvoiceItem> factorDetailUW { get; }
+        GenericCRUDClass<Tenant> tenantUW { get; }
+        GenericCRUDClass<PurchaseInvoice> purchaseInvoiceUW { get; }
+        GenericCRUDClass<PurchaseInvoiceItem> purchaseInvoiceDetailUW { get; }
         GenericCRUDClass<ProductPrice> priceUW { get; }
         GenericCRUDClass<Product> productUW { get; }
         GenericCRUDClass<Project> projectUW { get; }
         GenericCRUDClass<Supplier> supplierUW { get; }
+        GenericCRUDClass<Customer> customerUW { get; }
+        GenericCRUDClass<Expense> expenseUW { get; }
+        GenericCRUDClass<Payment> paymentUW { get; }
+        GenericCRUDClass<SalesInvoice> salesInvoiceUW { get; }
+        GenericCRUDClass<SalesInvoiceItem> salesInvoiceItemUW { get; }
+        GenericCRUDClass<Inventory> inventoryUW { get; }
+        GenericCRUDClass<InventoryTransaction> inventoryTransactionUW { get; }
+        GenericCRUDClass<Warehouse> warehouseUW { get; }
+        GenericCRUDClass<FiscalYear> fiscalYearUW { get; }
 
         IEntityTransaction BeginTransaction();
         void Save();
-        void SaveAsync();
+        Task SaveAsync();
     }
 }

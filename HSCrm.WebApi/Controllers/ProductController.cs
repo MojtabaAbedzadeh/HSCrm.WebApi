@@ -3,6 +3,7 @@ using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
+using System.Linq.Expressions;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -19,18 +20,43 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetProducts")]
-        public ApiResponse<IEnumerable<Product>> Get()
+        public ApiResponse<IEnumerable<ProductWithPriceDto>> Get() // خروجی را به DTO تغییر می دهیم
         {
-            var products = _context.productUW.Get();
+            // 1. Include کردن رابطه
+            var productsWithAllPrices = _context.productUW.Get(
+                includes: new Expression<Func<Product, object>>[] { p => p.ProductPrices }
+            );
 
-            return new ApiResponse<IEnumerable<Product>>
+            // 2. تبدیل و انتخاب قیمت فعال (اگر بیش از یک قیمت فعال مجاز باشد، اولین مورد انتخاب می شود)
+            var resultDto = productsWithAllPrices.Select(p => new ProductWithPriceDto
+            {
+                
+                ProductId = p.Id, 
+                ProductTitle = p.ProductTitle,
+                IsActive = p.IsActive,
+                ProductUnit = p.ProductUnit,
+                TenantId = p.TenantId,
+                SellPrice = p.ProductPrices
+                                   .Where(pp => pp.IsActive && pp.EffectiveTo == null) // یا هر شرط دیگری برای قیمت فعال
+                                   .OrderByDescending(pp => pp.EffectiveFrom) // جدیدترین قیمت فعال اول باشد
+                                   .Select(pp => pp.SellPrice)
+                                   .FirstOrDefault(),
+                BuyPrice = p.ProductPrices
+                                   .Where(pp => pp.IsActive && pp.EffectiveTo == null) 
+                                   .OrderByDescending(pp => pp.EffectiveFrom)
+                                   .Select(pp => pp.BuyPrice)
+                                   .FirstOrDefault()
+            }).ToList();
+
+            return new ApiResponse<IEnumerable<ProductWithPriceDto>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = products
+                Data = resultDto
             };
         }
+
 
         [HttpGet("GetById")]
         [Produces("application/json")]
@@ -83,9 +109,10 @@ namespace HSCrm.WebApi.Controllers
                 {
                     ProductTitle = model.ProductTitle,
                     ProductUnit = model.ProductUnit,
-                    CreatedAt = DateTime.Now,
+                    TenantId = model.TenantId,
                     CreatedById = model.UserId,
-                    TenantId = model.TenantId
+                    IsActive = model.IsActive,
+                    CreatedAt = DateTime.Now
                 };
 
                 _context.productUW.Create(product);
@@ -114,7 +141,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateProduct")]
         [ProducesResponseType(typeof(Product), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ApiResponse Update([FromForm] ProductEditModel model)
+        public ApiResponse Update([FromBody] ProductEditModel model)
         {
             if (model.ProductId == 0) return new ApiResponse
             {
@@ -129,8 +156,9 @@ namespace HSCrm.WebApi.Controllers
             {
                 getProduct.ProductTitle = model.ProductTitle;
                 getProduct.ProductUnit = model.ProductUnit;
+                getProduct.IsActive = model.IsActive;
                 getProduct.ModifiedAt = DateTime.UtcNow;
-                getProduct.ModifiedById = model.UserId;
+                getProduct.ModifiedById = model.ModifiedById;
             }
 
             _context.productUW.Update(getProduct);
@@ -143,6 +171,42 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                 Data = getProduct
             };
+        }
+
+        [HttpGet("Search")]
+        public IActionResult Search([FromQuery] string term)
+        {
+            term = term?.Trim();
+
+            var products = _context.productUW
+                .Get(p =>
+                    p.ProductTitle != null &&
+                    p.ProductTitle.Trim().Contains(term))
+                .Select(p => new
+                {
+                    p.Id,
+                    ProductTitle = p.ProductTitle.Trim(),
+
+                    SellPrice = _context.priceUW
+                        .Get(pp =>
+                            pp.ProductId == p.Id &&
+                            pp.IsActive)
+                        .OrderByDescending(pp => pp.EffectiveFrom)
+                        .Select(pp => pp.SellPrice)
+                        .FirstOrDefault(),
+
+                    BuyPrice = _context.priceUW
+                        .Get(pp =>
+                            pp.ProductId == p.Id &&
+                            pp.IsActive)
+                        .OrderByDescending(pp => pp.EffectiveFrom)
+                        .Select(pp => pp.BuyPrice)
+                        .FirstOrDefault()
+                })
+                .Take(10)
+                .ToList();
+
+            return Ok(products);
         }
     }
 }

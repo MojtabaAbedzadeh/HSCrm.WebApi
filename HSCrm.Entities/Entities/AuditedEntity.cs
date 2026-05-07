@@ -5,9 +5,11 @@ namespace HSCrm.Entities.Entities
     public abstract class AuditedEntity : EntityBase
     {
         public required DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public required string CreatedById { get; set; }
+        public string? CreatedById { get; set; }
+        public ApplicationUser CreatedBy { get; set; } = default!;
         public DateTime? ModifiedAt { get; set; }
         public string? ModifiedById { get; set; }
+        public ApplicationUser? ModifiedBy { get; set; }
         public bool IsDeleted { get; set; } = false;
         [Timestamp] public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     }

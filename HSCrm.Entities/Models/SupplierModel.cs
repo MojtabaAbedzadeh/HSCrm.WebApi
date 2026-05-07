@@ -7,9 +7,8 @@ namespace HSCrm.Entities.Models
         public required string SupplierFullName { get; set; }
         public string? SupplierAddress { get; set; }
         public string? SupplierPhone { get; set; }
-        public required string UserId { get; set; }
-        public ApplicationUser User { get; set; } = default!;
-        public DateTime CreatedDate { get; set; }
+        public required string CreateById { get; set; }
+        public int TenantId { get; set; }
     }
 
     public class SupplierEditModel
@@ -18,8 +17,6 @@ namespace HSCrm.Entities.Models
         public required string SupplierFullName { get; set; }
         public string? SupplierAddress { get; set; }
         public string? SupplierPhone { get; set; }
-        public required string UserId { get; set; }
-        public ApplicationUser User { get; set; } = default!;
-        public DateTime CreatedDate { get; set; }
+        public required string ModifiedById { get; set; }
     }
 }
