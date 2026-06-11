@@ -1,4 +1,5 @@
 ﻿using HSCrm.DataModel.Context;
+using HSCrm.DataModel.Exceptions;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using static HSCrm.Common.PublicTools.Enums;
@@ -22,7 +23,7 @@ namespace HSCrm.DataModel.Services.Repository
                     .SingleOrDefault();
 
                 if (stock == null || stock.Quantity < item.Quantity)
-                    throw new Exception("موجودی کالا کافی نیست");
+                    throw new NotEnoughInventoryException("موجودی کالا کافی نیست");
 
                 // ثبت گردش
                 this.inventoryTransactionUW.Create(new InventoryTransaction
@@ -31,7 +32,7 @@ namespace HSCrm.DataModel.Services.Repository
                     ProductId = item.ProductId,
                     FiscalYearId = 1,
                     WarehouseId = invoice.WarehouseId,
-                    QuantityChange = -item.Quantity, // منفی
+                    QuantityChange = -item.Quantity,
                     TransactionType = InventoryTransactionType.Sale,
                     ReferenceId = item.Id,
                     ReferenceType = InventoryReferenceType.SalesInvoiceItem,
@@ -44,6 +45,7 @@ namespace HSCrm.DataModel.Services.Repository
                 this.inventoryUW.Update(stock);
             }
         }
+
         public void RollbackInventory(SalesInvoice invoice)
         {
             foreach (var item in invoice.Items)

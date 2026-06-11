@@ -23,6 +23,9 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<InventoryTransaction> inventoryTransactionUW { get; }
         GenericCRUDClass<Warehouse> warehouseUW { get; }
         GenericCRUDClass<FiscalYear> fiscalYearUW { get; }
+        GenericCRUDClass<UserRole> userRoleUW{ get; }
+        GenericCRUDClass<Permission> permissionUW{ get; }
+        GenericCRUDClass<RolePermission> rolePermissionUW{ get; }
 
         IEntityTransaction BeginTransaction();
         void Save();

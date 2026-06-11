@@ -1,4 +1,5 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using HSCrm.DataModel.Exceptions;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
@@ -154,6 +155,18 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                 };
             }
+            catch (NotEnoughInventoryException ex)
+            {
+                transaction.Rollback();
+
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotEnoughInventory,
+                    Message = ApiResultStatusCode.NotEnoughInventory.DisplayNameAttribute(DisplayProperty.Name)
+                };
+            }
+
             catch (Exception)
             {
                 transaction.Rollback();

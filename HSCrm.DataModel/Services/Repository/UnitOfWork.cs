@@ -32,6 +32,9 @@ namespace HSCrm.DataModel.Services.Repository
         private GenericCRUDClass<InventoryTransaction>? _inventoryTransaction;
         private GenericCRUDClass<FiscalYear>? _fiscalYear;
         private GenericCRUDClass<Warehouse>? _warehouse;
+        private GenericCRUDClass<UserRole>? _userRole;
+        private GenericCRUDClass<Permission>? _permission;
+        private GenericCRUDClass<RolePermission>? _rolePermission;
 
         public GenericCRUDClass<ApplicationUser> userManagerUW => _userManager ??= new GenericCRUDClass<ApplicationUser>(_context);
         public GenericCRUDClass<ApplicationRole> roleManagerUW => _roleManager ??= new GenericCRUDClass<ApplicationRole>(_context);
@@ -51,6 +54,9 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<InventoryTransaction> inventoryTransactionUW => _inventoryTransaction ??= new GenericCRUDClass<InventoryTransaction>(_context);
         public GenericCRUDClass<FiscalYear> fiscalYearUW => _fiscalYear ??= new GenericCRUDClass<FiscalYear>(_context);
         public GenericCRUDClass<Warehouse> warehouseUW => _warehouse ??= new GenericCRUDClass<Warehouse>(_context);
+        public GenericCRUDClass<UserRole> userRoleUW => _userRole??= new GenericCRUDClass<UserRole>(_context);
+        public GenericCRUDClass<Permission> permissionUW => _permission ??= new GenericCRUDClass<Permission>(_context);
+        public GenericCRUDClass<RolePermission> rolePermissionUW => _rolePermission ??= new GenericCRUDClass<RolePermission>(_context);
 
 
         public IEntityTransaction BeginTransaction()

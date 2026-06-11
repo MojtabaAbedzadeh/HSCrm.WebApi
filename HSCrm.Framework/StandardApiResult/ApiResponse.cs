@@ -32,14 +32,16 @@ namespace HSCrm.Framework.StandardApiResult
         [Display(Name = "یافت نشد!")]
         NotFound = 404,
 
+        [Display(Name = "موجودی کافی نیست!")]
+        NotEnoughInventory = 406,
+
         [Display(Name = "اطلاعات تکراری می‌باشد!")]
         Conflict = 409,
 
         [Display(Name = "خطای تاریخ یا داده نامعتبر!")]
-        UnprocessableEntity = 422,        
+        UnprocessableEntity = 422,
 
         [Display(Name = "خطا در سرور")]
         ServerError = 500,
     }
-
 }

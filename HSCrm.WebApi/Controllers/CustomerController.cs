@@ -161,8 +161,7 @@ namespace HSCrm.WebApi.Controllers
                     IsTenantOwner = false
                 };
 
-                var createUserResult =
-                    await _userManager.CreateAsync(user, model.Password);
+                var createUserResult = await _userManager.CreateAsync(user, model.Password);
 
                 if (!createUserResult.Succeeded) return new ApiResponse<Customer>
                 {

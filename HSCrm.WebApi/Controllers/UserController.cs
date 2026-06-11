@@ -1,4 +1,6 @@
 ﻿using AutoMapper;
+using Common.Permissions;
+using Framework.Authorization;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -16,18 +18,18 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly ApplicationDbContext _cpntext;
+        private readonly ApplicationDbContext _dbContext;
         private readonly IMapper _map;
 
-        public UserController(IUnitOfWork context, UserManager<ApplicationUser> userManager, IMapper map, ApplicationDbContext context1)
+        public UserController(IUnitOfWork context, UserManager<ApplicationUser> userManager, IMapper map, ApplicationDbContext dbContext)
         {
             _context = context;
             _userManager = userManager;
             _map = map;
-            _context = context;
+            _dbContext = dbContext;
         }
 
-
+        [Permission(Permissions.Users.View)]
         [HttpGet("GetUsers")]
         public async Task<ApiResponse<List<ApplicationUser>>> Get(CancellationToken ct)
         {
@@ -83,7 +85,7 @@ namespace HSCrm.WebApi.Controllers
                 ApplicationUser user = new ApplicationUser()
                 {
                     UserFirstName = model.UserFirstNameC,
-                    UserLastName = model.UserLastNameC,                    
+                    UserLastName = model.UserLastNameC,
                     UserImageUrl = model.UserImageUrlC,
                     UserStatus = true,
                     UserType = 0,
@@ -165,6 +167,58 @@ namespace HSCrm.WebApi.Controllers
                 }
             }
             catch (Exception)
+            {
+                return new ApiResponse<ApplicationUser>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                };
+            }
+            return new ApiResponse<ApplicationUser>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.ServerError,
+                Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+            };
+        }
+
+        [HttpDelete("DeleteUser")]
+        [Permission(Permissions.Users.Delete)]
+        public async Task<ApiResponse<ApplicationUser>> Delete(string userId)
+        {
+            if (string.IsNullOrEmpty(userId)) return new ApiResponse<ApplicationUser>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+            };
+
+            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.BadRequest,
+                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
+            };
+
+            try
+            {
+
+                var getUser = await _userManager.FindByIdAsync(userId);
+
+                if (getUser != null)
+                {
+                    _context.userManagerUW.Delete(getUser);
+                    return new ApiResponse<ApplicationUser>
+                    {
+                        Status = true,
+                        StatusCode = ApiResultStatusCode.Success,
+                        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                        Data = getUser
+                    };
+                }
+            }
+            catch
             {
                 return new ApiResponse<ApplicationUser>
                 {

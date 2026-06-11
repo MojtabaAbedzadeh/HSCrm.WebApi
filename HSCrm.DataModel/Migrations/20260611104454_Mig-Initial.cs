@@ -14,20 +14,6 @@ namespace HSCrm.DataModel.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "Roles",
-                columns: table => new
-                {
-                    Id = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
-                    NormalizedName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
-                    ConcurrencyStamp = table.Column<string>(type: "nvarchar(max)", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Roles", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "AspNetRoleClaims",
                 columns: table => new
                 {
@@ -40,12 +26,6 @@ namespace HSCrm.DataModel.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AspNetRoleClaims", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_AspNetRoleClaims_Roles_RoleId",
-                        column: x => x.RoleId,
-                        principalTable: "Roles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -75,24 +55,6 @@ namespace HSCrm.DataModel.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AspNetUserLogins", x => new { x.LoginProvider, x.ProviderKey });
-                });
-
-            migrationBuilder.CreateTable(
-                name: "AspNetUserRoles",
-                columns: table => new
-                {
-                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    RoleId = table.Column<string>(type: "nvarchar(450)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AspNetUserRoles", x => new { x.UserId, x.RoleId });
-                    table.ForeignKey(
-                        name: "FK_AspNetUserRoles_Roles_RoleId",
-                        column: x => x.RoleId,
-                        principalTable: "Roles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -215,8 +177,8 @@ namespace HSCrm.DataModel.Migrations
                     TenantId = table.Column<int>(type: "int", nullable: false),
                     WarehouseId = table.Column<int>(type: "int", nullable: false),
                     ProductId = table.Column<int>(type: "int", nullable: false),
-                    Quantity = table.Column<decimal>(type: "decimal(18,3)", precision: 18, scale: 3, nullable: false),
-                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false),
+                    Quantity = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "varbinary(max)", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -238,7 +200,7 @@ namespace HSCrm.DataModel.Migrations
                     WarehouseId = table.Column<int>(type: "int", nullable: false),
                     TenantId = table.Column<int>(type: "int", nullable: false),
                     ProductId = table.Column<int>(type: "int", nullable: false),
-                    QuantityChange = table.Column<decimal>(type: "decimal(18,3)", precision: 18, scale: 3, nullable: false),
+                    QuantityChange = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     TransactionType = table.Column<byte>(type: "tinyint", nullable: false),
                     ReferenceId = table.Column<long>(type: "bigint", nullable: false),
                     ReferenceType = table.Column<byte>(type: "tinyint", nullable: false),
@@ -257,7 +219,7 @@ namespace HSCrm.DataModel.Migrations
                         column: x => x.FiscalYearId,
                         principalTable: "FiscalYears",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -296,6 +258,27 @@ namespace HSCrm.DataModel.Migrations
                         principalTable: "FiscalYears",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Permissions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Category = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ModifiedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Permissions", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -439,6 +422,39 @@ namespace HSCrm.DataModel.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "RolePermissions",
+                columns: table => new
+                {
+                    RoleId = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    PermissionId = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RolePermissions", x => new { x.RoleId, x.PermissionId });
+                    table.ForeignKey(
+                        name: "FK_RolePermissions_Permissions_PermissionId",
+                        column: x => x.PermissionId,
+                        principalTable: "Permissions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Roles",
+                columns: table => new
+                {
+                    Id = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    TenantId = table.Column<int>(type: "int", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
+                    NormalizedName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
+                    ConcurrencyStamp = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Roles", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "SalesInvoiceItems",
                 columns: table => new
                 {
@@ -557,14 +573,14 @@ namespace HSCrm.DataModel.Migrations
                 columns: table => new
                 {
                     UserId = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    UserFirstName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    UserLastName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    UserImageUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    UserFirstName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    UserLastName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    UserImageUrl = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    TenantId = table.Column<int>(type: "int", nullable: false),
+                    IsTenantOwner = table.Column<bool>(type: "bit", nullable: false),
                     UserStatus = table.Column<bool>(type: "bit", nullable: false),
                     UserType = table.Column<byte>(type: "tinyint", nullable: false),
                     UserGender = table.Column<bool>(type: "bit", nullable: false),
-                    TenantId = table.Column<int>(type: "int", nullable: false),
-                    IsTenantOwner = table.Column<bool>(type: "bit", nullable: false),
                     UserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     NormalizedUserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     Email = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
@@ -588,6 +604,30 @@ namespace HSCrm.DataModel.Migrations
                         column: x => x.TenantId,
                         principalTable: "Tenants",
                         principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "UserRoles",
+                columns: table => new
+                {
+                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    RoleId = table.Column<string>(type: "nvarchar(450)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserRoles", x => new { x.UserId, x.RoleId });
+                    table.ForeignKey(
+                        name: "FK_UserRoles_Roles_RoleId",
+                        column: x => x.RoleId,
+                        principalTable: "Roles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_UserRoles_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "UserId",
                         onDelete: ReferentialAction.Cascade);
                 });
 
@@ -630,31 +670,31 @@ namespace HSCrm.DataModel.Migrations
                 });
 
             migrationBuilder.InsertData(
-                table: "Roles",
-                columns: new[] { "Id", "ConcurrencyStamp", "Name", "NormalizedName" },
-                values: new object[,]
-                {
-                    { "AdminId", "AdminId", "Admin", "ADMIN" },
-                    { "UserId", "UserId", "User", "USER" }
-                });
-
-            migrationBuilder.InsertData(
                 table: "Tenants",
                 columns: new[] { "Id", "CreatedAt", "CreatedById", "Currency", "IsDeleted", "ModifiedAt", "ModifiedById", "TaxId", "TenantOwner", "TenantOwnerMobile", "TenantTitle" },
-                values: new object[] { 1, new DateTime(2026, 2, 23, 12, 45, 32, 436, DateTimeKind.Utc).AddTicks(309), null, "IRR", false, null, null, null, "مدیر سیستم", "09120000000", "سیستم مرکزی" });
+                values: new object[] { 1, new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), null, "IRR", false, null, null, null, "مدیر سیستم", "09120000000", "سیستم مرکزی" });
 
             migrationBuilder.InsertData(
                 table: "FiscalYears",
                 columns: new[] { "Id", "CreatedAt", "CreatedById", "EndDate", "IsClosed", "IsCurrent", "IsDeleted", "ModifiedAt", "ModifiedById", "StartDate", "TenantId", "Title" },
-                values: new object[] { 1, new DateTime(2026, 2, 23, 12, 45, 32, 436, DateTimeKind.Utc).AddTicks(1346), null, new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified), false, true, false, null, null, new DateTime(2025, 3, 20, 0, 0, 0, 0, DateTimeKind.Unspecified), 1, "1404" });
+                values: new object[] { 1, new DateTime(2026, 6, 11, 10, 44, 52, 911, DateTimeKind.Utc).AddTicks(4526), null, new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified), false, true, false, null, null, new DateTime(2025, 3, 20, 0, 0, 0, 0, DateTimeKind.Unspecified), 1, "1404" });
+
+            migrationBuilder.InsertData(
+                table: "Roles",
+                columns: new[] { "Id", "ConcurrencyStamp", "Name", "NormalizedName", "TenantId" },
+                values: new object[,]
+                {
+                    { "AdminId", "AdminId", "Admin", "ADMIN", 1 },
+                    { "UserId", "UserId", "User", "USER", 1 }
+                });
 
             migrationBuilder.InsertData(
                 table: "Users",
                 columns: new[] { "UserId", "AccessFailedCount", "ConcurrencyStamp", "Email", "EmailConfirmed", "IsTenantOwner", "LockoutEnabled", "LockoutEnd", "NormalizedEmail", "NormalizedUserName", "PasswordHash", "PhoneNumber", "PhoneNumberConfirmed", "SecurityStamp", "TenantId", "TwoFactorEnabled", "UserFirstName", "UserGender", "UserImageUrl", "UserLastName", "UserName", "UserStatus", "UserType" },
-                values: new object[] { "28dfc395-0464-4b47-8aae-c73953a9d153", 0, "f00efd08-31b9-4e5f-a209-fecabd24545a", "admin@example.com", true, true, false, null, "ADMIN@EXAMPLE.COM", "ADMIN", "AQAAAAIAAYagAAAAEAsJ0rn1us3z/MyoCt4F9J63B6xi75XqeTzR+3b+aZPoajU3nTUfPjVQYV+ELmpG5g==", "09120000000", false, "141ebdae-05f0-4a02-8bb6-53b92d1bfda7", 1, false, "admin", false, "https://localhost:7096/Upload/UserImage/defaultAvatar.png", "admin", "Admin", true, (byte)1 });
+                values: new object[] { "28dfc395-0464-4b47-8aae-c73953a9d153", 0, "B1B2B3B4-B5B6-B7B8-B9B0-B1B2B3B4B5B6", "admin@example.com", true, true, false, null, "ADMIN@EXAMPLE.COM", "ADMIN", "AQAAAAIAAYagAAAAEAsJ0rn1us3z/MyoCt4F9J63B6xi75XqeTzR+3b+aZPoajU3nTUfPjVQYV+ELmpG5g==", "09120000000", false, "C674E456-6515-4D19-9B9D-9988D41C488F", 1, false, "admin", false, "https://localhost:7096/Upload/UserImage/defaultAvatar.png", "admin", "Admin", true, (byte)1 });
 
             migrationBuilder.InsertData(
-                table: "AspNetUserRoles",
+                table: "UserRoles",
                 columns: new[] { "RoleId", "UserId" },
                 values: new object[] { "AdminId", "28dfc395-0464-4b47-8aae-c73953a9d153" });
 
@@ -672,11 +712,6 @@ namespace HSCrm.DataModel.Migrations
                 name: "IX_AspNetUserLogins_UserId",
                 table: "AspNetUserLogins",
                 column: "UserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AspNetUserRoles_RoleId",
-                table: "AspNetUserRoles",
-                column: "RoleId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Attachments_CreatedById",
@@ -766,10 +801,9 @@ namespace HSCrm.DataModel.Migrations
                 column: "ProductId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Inventories_TenantId_ProductId",
+                name: "IX_Inventories_TenantId",
                 table: "Inventories",
-                columns: new[] { "TenantId", "ProductId" },
-                unique: true);
+                column: "TenantId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Inventories_WarehouseId",
@@ -797,9 +831,9 @@ namespace HSCrm.DataModel.Migrations
                 column: "ProductId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_InventoryTransactions_TenantId_ProductId_CreatedAt",
+                name: "IX_InventoryTransactions_TenantId",
                 table: "InventoryTransactions",
-                columns: new[] { "TenantId", "ProductId", "CreatedAt" });
+                column: "TenantId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InventoryTransactions_WarehouseId",
@@ -840,6 +874,22 @@ namespace HSCrm.DataModel.Migrations
                 name: "IX_Payments_TenantId",
                 table: "Payments",
                 column: "TenantId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Permissions_CreatedById",
+                table: "Permissions",
+                column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Permissions_ModifiedById",
+                table: "Permissions",
+                column: "ModifiedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Permissions_Name",
+                table: "Permissions",
+                column: "Name",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProductPrices_CreatedById",
@@ -965,6 +1015,16 @@ namespace HSCrm.DataModel.Migrations
                 column: "WarehouseId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_RolePermissions_PermissionId",
+                table: "RolePermissions",
+                column: "PermissionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Roles_TenantId",
+                table: "Roles",
+                column: "TenantId");
+
+            migrationBuilder.CreateIndex(
                 name: "RoleNameIndex",
                 table: "Roles",
                 column: "NormalizedName",
@@ -1058,6 +1118,11 @@ namespace HSCrm.DataModel.Migrations
                 column: "TenantTitle");
 
             migrationBuilder.CreateIndex(
+                name: "IX_UserRoles_RoleId",
+                table: "UserRoles",
+                column: "RoleId");
+
+            migrationBuilder.CreateIndex(
                 name: "EmailIndex",
                 table: "Users",
                 column: "NormalizedEmail");
@@ -1090,6 +1155,14 @@ namespace HSCrm.DataModel.Migrations
                 column: "TenantId");
 
             migrationBuilder.AddForeignKey(
+                name: "FK_AspNetRoleClaims_Roles_RoleId",
+                table: "AspNetRoleClaims",
+                column: "RoleId",
+                principalTable: "Roles",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
                 name: "FK_AspNetUserClaims_Users_UserId",
                 table: "AspNetUserClaims",
                 column: "UserId",
@@ -1100,14 +1173,6 @@ namespace HSCrm.DataModel.Migrations
             migrationBuilder.AddForeignKey(
                 name: "FK_AspNetUserLogins_Users_UserId",
                 table: "AspNetUserLogins",
-                column: "UserId",
-                principalTable: "Users",
-                principalColumn: "UserId",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_AspNetUserRoles_Users_UserId",
-                table: "AspNetUserRoles",
                 column: "UserId",
                 principalTable: "Users",
                 principalColumn: "UserId",
@@ -1236,7 +1301,7 @@ namespace HSCrm.DataModel.Migrations
                 column: "ProductId",
                 principalTable: "Products",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_Inventories_Tenants_TenantId",
@@ -1244,7 +1309,7 @@ namespace HSCrm.DataModel.Migrations
                 column: "TenantId",
                 principalTable: "Tenants",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_Inventories_Users_CreatedById",
@@ -1268,7 +1333,7 @@ namespace HSCrm.DataModel.Migrations
                 column: "WarehouseId",
                 principalTable: "Warehouse",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.Cascade);
+                onDelete: ReferentialAction.Restrict);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_InventoryTransactions_Products_ProductId",
@@ -1276,7 +1341,7 @@ namespace HSCrm.DataModel.Migrations
                 column: "ProductId",
                 principalTable: "Products",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_InventoryTransactions_Tenants_TenantId",
@@ -1284,7 +1349,7 @@ namespace HSCrm.DataModel.Migrations
                 column: "TenantId",
                 principalTable: "Tenants",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_InventoryTransactions_Users_CreatedById",
@@ -1308,7 +1373,7 @@ namespace HSCrm.DataModel.Migrations
                 column: "WarehouseId",
                 principalTable: "Warehouse",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.Cascade);
+                onDelete: ReferentialAction.Restrict);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_Payments_PurchaseInvoices_PurchaseInvoiceId",
@@ -1345,6 +1410,22 @@ namespace HSCrm.DataModel.Migrations
             migrationBuilder.AddForeignKey(
                 name: "FK_Payments_Users_ModifiedById",
                 table: "Payments",
+                column: "ModifiedById",
+                principalTable: "Users",
+                principalColumn: "UserId",
+                onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Permissions_Users_CreatedById",
+                table: "Permissions",
+                column: "CreatedById",
+                principalTable: "Users",
+                principalColumn: "UserId",
+                onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Permissions_Users_ModifiedById",
+                table: "Permissions",
                 column: "ModifiedById",
                 principalTable: "Users",
                 principalColumn: "UserId",
@@ -1510,6 +1591,22 @@ namespace HSCrm.DataModel.Migrations
                 onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
+                name: "FK_RolePermissions_Roles_RoleId",
+                table: "RolePermissions",
+                column: "RoleId",
+                principalTable: "Roles",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Roles_Tenants_TenantId",
+                table: "Roles",
+                column: "TenantId",
+                principalTable: "Tenants",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
                 name: "FK_SalesInvoiceItems_SalesInvoices_SalesInvoiceId",
                 table: "SalesInvoiceItems",
                 column: "SalesInvoiceId",
@@ -1642,9 +1739,6 @@ namespace HSCrm.DataModel.Migrations
                 name: "AspNetUserLogins");
 
             migrationBuilder.DropTable(
-                name: "AspNetUserRoles");
-
-            migrationBuilder.DropTable(
                 name: "AspNetUserTokens");
 
             migrationBuilder.DropTable(
@@ -1666,10 +1760,13 @@ namespace HSCrm.DataModel.Migrations
                 name: "PurchaseInvoiceItems");
 
             migrationBuilder.DropTable(
+                name: "RolePermissions");
+
+            migrationBuilder.DropTable(
                 name: "SalesInvoiceItems");
 
             migrationBuilder.DropTable(
-                name: "Roles");
+                name: "UserRoles");
 
             migrationBuilder.DropTable(
                 name: "Expenses");
@@ -1681,10 +1778,16 @@ namespace HSCrm.DataModel.Migrations
                 name: "PurchaseInvoices");
 
             migrationBuilder.DropTable(
+                name: "Permissions");
+
+            migrationBuilder.DropTable(
                 name: "Products");
 
             migrationBuilder.DropTable(
                 name: "SalesInvoices");
+
+            migrationBuilder.DropTable(
+                name: "Roles");
 
             migrationBuilder.DropTable(
                 name: "Suppliers");

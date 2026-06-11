@@ -3,13 +3,13 @@ using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using System.Reflection;
 using static HSCrm.Common.PublicTools.Enums;
 
-
 namespace HSCrm.DataModel.Context
 {
-    public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string>
+    public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string, IdentityUserClaim<string>, UserRole, IdentityUserLogin<string>, IdentityRoleClaim<string>, IdentityUserToken<string>>
     {
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
         public DbSet<Tenant> Tenants { get; set; }
@@ -28,6 +28,9 @@ namespace HSCrm.DataModel.Context
         public DbSet<Inventory> Inventories { get; set; }
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
         public DbSet<FiscalYear> FiscalYears { get; set; }
+        public DbSet<Permission> Permissions { get; set; }
+        public DbSet<RolePermission> RolePermissions { get; set; }
+        public DbSet<UserRole> UserRoles { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -36,17 +39,18 @@ namespace HSCrm.DataModel.Context
             var adminUserId = "28dfc395-0464-4b47-8aae-c73953a9d153";
             var adminRoleId = "AdminId";
             var userRoleId = "UserId";
+            var defaultTenantId = 1;
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>().HasData(
                 new Tenant
                 {
-                    Id = 1,
+                    Id = defaultTenantId,
                     TenantTitle = "سیستم مرکزی",
                     TenantOwner = "مدیر سیستم",
                     TenantOwnerMobile = "09120000000",
                     Currency = "IRR",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = new DateTime(2024, 1, 1), 
                     IsDeleted = false
                 }
             );
@@ -58,18 +62,75 @@ namespace HSCrm.DataModel.Context
                     Id = adminRoleId,
                     Name = "Admin",
                     NormalizedName = "ADMIN",
-                    ConcurrencyStamp = adminRoleId
+                    ConcurrencyStamp = adminRoleId,
+                    TenantId = defaultTenantId // اضافه شد برای رفع خطای Foreign Key
                 },
                 new ApplicationRole
                 {
                     Id = userRoleId,
                     Name = "User",
                     NormalizedName = "USER",
-                    ConcurrencyStamp = userRoleId
+                    ConcurrencyStamp = userRoleId,
+                    TenantId = defaultTenantId // اضافه شد برای رفع خطای Foreign Key
                 }
             );
 
-            // ======================= Admin User =======================
+            // ======================= UserRole (Custom mapping) =======================
+            builder.Entity<UserRole>(e =>
+            {
+                e.ToTable("UserRoles");
+                e.HasKey(ur => new { ur.UserId, ur.RoleId });
+
+                e.HasOne(ur => ur.User)
+                    .WithMany(u => u.UserRoles)
+                    .HasForeignKey(ur => ur.UserId);
+
+                e.HasOne(ur => ur.Role)
+                    .WithMany(r => r.UserRoles)
+                    .HasForeignKey(ur => ur.RoleId);
+            });
+
+            // Seed Admin User to Admin Role
+            builder.Entity<UserRole>().HasData(
+                new UserRole { UserId = adminUserId, RoleId = adminRoleId }
+            );
+
+            // ======================= Permission =======================
+            builder.Entity<Permission>(e =>
+            {
+                e.ToTable("Permissions");
+                e.HasIndex(p => p.Name).IsUnique();
+                e.Property(p => p.Name).HasMaxLength(200).IsRequired();
+                e.Property(p => p.Title).HasMaxLength(200).IsRequired();
+                e.Property(p => p.Category).HasMaxLength(100).IsRequired();
+            });
+
+            // ======================= RolePermission =======================
+            builder.Entity<RolePermission>(e =>
+            {
+                e.ToTable("RolePermissions");
+                e.HasKey(rp => new { rp.RoleId, rp.PermissionId });
+                e.HasOne(rp => rp.Role).WithMany(r => r.RolePermissions).HasForeignKey(rp => rp.RoleId);
+                e.HasOne(rp => rp.Permission).WithMany(p => p.RolePermissions).HasForeignKey(rp => rp.PermissionId);
+            });            
+
+            // ======================= ApplicationUser Configuration =======================
+            builder.Entity<ApplicationUser>(e =>
+            {
+                e.ToTable("Users");
+                e.Property(x => x.Id).HasColumnName("UserId");
+
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.Property(x => x.UserFirstName).IsRequired().HasMaxLength(100);
+                e.Property(x => x.UserLastName).IsRequired().HasMaxLength(100);
+                e.Property(x => x.UserImageUrl).HasMaxLength(500);
+            });
+
+            // Seed Admin User
             builder.Entity<ApplicationUser>().HasData(
                 new ApplicationUser
                 {
@@ -83,31 +144,21 @@ namespace HSCrm.DataModel.Context
                     EmailConfirmed = true,
                     PhoneNumber = "09120000000",
                     UserImageUrl = "https://localhost:7096/Upload/UserImage/defaultAvatar.png",
-                    TenantId = 1,
+                    TenantId = defaultTenantId,
                     IsTenantOwner = true,
                     UserStatus = true,
                     UserType = 1,
                     PasswordHash = "AQAAAAIAAYagAAAAEAsJ0rn1us3z/MyoCt4F9J63B6xi75XqeTzR+3b+aZPoajU3nTUfPjVQYV+ELmpG5g==",
-                    SecurityStamp = Guid.NewGuid().ToString(),
-                    ConcurrencyStamp = Guid.NewGuid().ToString()
+                    SecurityStamp = "C674E456-6515-4D19-9B9D-9988D41C488F",
+                    ConcurrencyStamp = "B1B2B3B4-B5B6-B7B8-B9B0-B1B2B3B4B5B6"
                 }
             );
 
-            builder.Entity<IdentityUserRole<string>>().HasData(
-                new IdentityUserRole<string>
-                {
-                    UserId = adminUserId,
-                    RoleId = adminRoleId
-                }
-            );
-
-            builder.Entity<ApplicationUser>(e =>
+            builder.Entity<ApplicationRole>(e =>
             {
-                e.ToTable("Users");
-                e.Property(x => x.Id).HasColumnName("UserId");
+                e.ToTable("Roles");
+                e.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             });
-
-            builder.Entity<ApplicationRole>(e => e.ToTable("Roles"));
 
             // ======================= FiscalYear =======================
             builder.Entity<FiscalYear>().HasData(
@@ -124,7 +175,7 @@ namespace HSCrm.DataModel.Context
                 }
             );
 
-            // ======================= Decimal Precision =======================
+            // ======================= Decimal Precision & Audited Entities =======================
             foreach (var entityType in builder.Model.GetEntityTypes())
             {
                 foreach (var property in entityType.GetProperties())
@@ -153,6 +204,7 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<FiscalYear>(builder);
             ConfigureAuditedEntity<Inventory>(builder);
             ConfigureAuditedEntity<InventoryTransaction>(builder);
+            ConfigureAuditedEntity<Permission>(builder);
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>(e =>
@@ -432,57 +484,24 @@ namespace HSCrm.DataModel.Context
             // ========= Inventory =========
             builder.Entity<Inventory>(entity =>
             {
-                entity.HasKey(x => x.Id);
-
-                entity.Property(x => x.Quantity)
-                        .HasPrecision(18, 3)
-                      .IsRequired();
-
-                entity.Property(x => x.RowVersion)
-                      .IsRowVersion();
-
-                entity.Property(x => x.RowVersion)
-                      .IsRowVersion();
-
-                entity.HasIndex(x => new { x.TenantId, x.ProductId })
-                      .IsUnique();
-
-                entity.HasOne(x => x.Product)
+                entity.HasOne(x => x.Warehouse)
                       .WithMany()
-                      .HasForeignKey(x => x.ProductId)
-                      .OnDelete(DeleteBehavior.Restrict);
-
-                entity.HasOne(x => x.Tenant)
-                      .WithMany()
-                      .HasForeignKey(x => x.TenantId)
-                      .OnDelete(DeleteBehavior.Restrict);
+                      .HasForeignKey(x => x.WarehouseId)
+                      .OnDelete(DeleteBehavior.Restrict); // تغییر از Cascade به Restrict
             });
 
             // ========= InventoryTransaction =========
             builder.Entity<InventoryTransaction>(entity =>
             {
-                entity.HasKey(x => x.Id);
-
-                entity.Property(x => x.QuantityChange)
-                      .HasPrecision(18, 3)
-                      .IsRequired();
-
-                entity.Property(x => x.TransactionType)
-                      .IsRequired();
-
-                entity.Property(x => x.ReferenceType)
-                      .IsRequired();
-
-                entity.HasIndex(x => new { x.TenantId, x.ProductId, x.CreatedAt });
-
-                entity.HasOne(x => x.Product)
+                entity.HasOne(x => x.Warehouse)
                       .WithMany()
-                      .HasForeignKey(x => x.ProductId)
-                      .OnDelete(DeleteBehavior.Restrict);
+                      .HasForeignKey(x => x.WarehouseId)
+                      .OnDelete(DeleteBehavior.Restrict); // تغییر از Cascade به Restrict
 
-                entity.HasOne(x => x.Tenant)
+                // اگر رابطه‌ای به سال مالی دارد، آن را هم Restrict کن
+                entity.HasOne(x => x.FiscalYear)
                       .WithMany()
-                      .HasForeignKey(x => x.TenantId)
+                      .HasForeignKey(x => x.FiscalYearId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
         }
@@ -511,7 +530,6 @@ namespace HSCrm.DataModel.Context
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
             cleanStr();
-
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
         public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HSCrm.DataModel.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260223124533_Mig-Initial")]
+    [Migration("20260611104454_Mig-Initial")]
     partial class MigInitial
     {
         /// <inheritdoc />
@@ -25,7 +25,7 @@ namespace HSCrm.DataModel.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("HSCrm.Entities.Entities.ApplicationRole", b =>
+            modelBuilder.Entity("ApplicationRole", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("nvarchar(450)");
@@ -42,12 +42,17 @@ namespace HSCrm.DataModel.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<int>("TenantId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedName")
                         .IsUnique()
                         .HasDatabaseName("RoleNameIndex")
                         .HasFilter("[NormalizedName] IS NOT NULL");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("Roles", (string)null);
 
@@ -57,14 +62,16 @@ namespace HSCrm.DataModel.Migrations
                             Id = "AdminId",
                             ConcurrencyStamp = "AdminId",
                             Name = "Admin",
-                            NormalizedName = "ADMIN"
+                            NormalizedName = "ADMIN",
+                            TenantId = 1
                         },
                         new
                         {
                             Id = "UserId",
                             ConcurrencyStamp = "UserId",
                             Name = "User",
-                            NormalizedName = "USER"
+                            NormalizedName = "USER",
+                            TenantId = 1
                         });
                 });
 
@@ -125,17 +132,20 @@ namespace HSCrm.DataModel.Migrations
 
                     b.Property<string>("UserFirstName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<bool>("UserGender")
                         .HasColumnType("bit");
 
                     b.Property<string>("UserImageUrl")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("UserLastName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
@@ -166,7 +176,7 @@ namespace HSCrm.DataModel.Migrations
                         {
                             Id = "28dfc395-0464-4b47-8aae-c73953a9d153",
                             AccessFailedCount = 0,
-                            ConcurrencyStamp = "f00efd08-31b9-4e5f-a209-fecabd24545a",
+                            ConcurrencyStamp = "B1B2B3B4-B5B6-B7B8-B9B0-B1B2B3B4B5B6",
                             Email = "admin@example.com",
                             EmailConfirmed = true,
                             IsTenantOwner = true,
@@ -176,7 +186,7 @@ namespace HSCrm.DataModel.Migrations
                             PasswordHash = "AQAAAAIAAYagAAAAEAsJ0rn1us3z/MyoCt4F9J63B6xi75XqeTzR+3b+aZPoajU3nTUfPjVQYV+ELmpG5g==",
                             PhoneNumber = "09120000000",
                             PhoneNumberConfirmed = false,
-                            SecurityStamp = "141ebdae-05f0-4a02-8bb6-53b92d1bfda7",
+                            SecurityStamp = "C674E456-6515-4D19-9B9D-9988D41C488F",
                             TenantId = 1,
                             TwoFactorEnabled = false,
                             UserFirstName = "admin",
@@ -445,7 +455,7 @@ namespace HSCrm.DataModel.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2026, 2, 23, 12, 45, 32, 436, DateTimeKind.Utc).AddTicks(1346),
+                            CreatedAt = new DateTime(2026, 6, 11, 10, 44, 52, 911, DateTimeKind.Utc).AddTicks(4526),
                             EndDate = new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsClosed = false,
                             IsCurrent = true,
@@ -484,14 +494,12 @@ namespace HSCrm.DataModel.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("Quantity")
-                        .HasPrecision(18, 3)
-                        .HasColumnType("decimal(18,3)");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
                         .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("varbinary(max)");
 
                     b.Property<int>("TenantId")
                         .HasColumnType("int");
@@ -507,10 +515,9 @@ namespace HSCrm.DataModel.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.HasIndex("WarehouseId");
+                    b.HasIndex("TenantId");
 
-                    b.HasIndex("TenantId", "ProductId")
-                        .IsUnique();
+                    b.HasIndex("WarehouseId");
 
                     b.ToTable("Inventories");
                 });
@@ -545,8 +552,8 @@ namespace HSCrm.DataModel.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("QuantityChange")
-                        .HasPrecision(18, 3)
-                        .HasColumnType("decimal(18,3)");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<long>("ReferenceId")
                         .HasColumnType("bigint");
@@ -579,9 +586,9 @@ namespace HSCrm.DataModel.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.HasIndex("WarehouseId");
+                    b.HasIndex("TenantId");
 
-                    b.HasIndex("TenantId", "ProductId", "CreatedAt");
+                    b.HasIndex("WarehouseId");
 
                     b.ToTable("InventoryTransactions");
                 });
@@ -661,6 +668,62 @@ namespace HSCrm.DataModel.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("Payments", (string)null);
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.Permission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedById")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedById")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("ModifiedById");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Permissions", (string)null);
                 });
 
             modelBuilder.Entity("HSCrm.Entities.Entities.Product", b =>
@@ -1018,6 +1081,21 @@ namespace HSCrm.DataModel.Migrations
                         });
                 });
 
+            modelBuilder.Entity("HSCrm.Entities.Entities.RolePermission", b =>
+                {
+                    b.Property<string>("RoleId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("PermissionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("RoleId", "PermissionId");
+
+                    b.HasIndex("PermissionId");
+
+                    b.ToTable("RolePermissions", (string)null);
+                });
+
             modelBuilder.Entity("HSCrm.Entities.Entities.SalesInvoice", b =>
                 {
                     b.Property<int>("Id")
@@ -1301,13 +1379,35 @@ namespace HSCrm.DataModel.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2026, 2, 23, 12, 45, 32, 436, DateTimeKind.Utc).AddTicks(309),
+                            CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             Currency = "IRR",
                             IsDeleted = false,
                             RowVersion = new byte[0],
                             TenantOwner = "مدیر سیستم",
                             TenantOwnerMobile = "09120000000",
                             TenantTitle = "سیستم مرکزی"
+                        });
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.UserRole", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("RoleId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("UserId", "RoleId");
+
+                    b.HasIndex("RoleId");
+
+                    b.ToTable("UserRoles", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            UserId = "28dfc395-0464-4b47-8aae-c73953a9d153",
+                            RoleId = "AdminId"
                         });
                 });
 
@@ -1436,28 +1536,6 @@ namespace HSCrm.DataModel.Migrations
                     b.ToTable("AspNetUserLogins", (string)null);
                 });
 
-            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
-                {
-                    b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("RoleId")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("UserId", "RoleId");
-
-                    b.HasIndex("RoleId");
-
-                    b.ToTable("AspNetUserRoles", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            UserId = "28dfc395-0464-4b47-8aae-c73953a9d153",
-                            RoleId = "AdminId"
-                        });
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
                 {
                     b.Property<string>("UserId")
@@ -1477,12 +1555,23 @@ namespace HSCrm.DataModel.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("ApplicationRole", b =>
+                {
+                    b.HasOne("HSCrm.Entities.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
             modelBuilder.Entity("HSCrm.Entities.Entities.ApplicationUser", b =>
                 {
                     b.HasOne("HSCrm.Entities.Entities.Tenant", "Tenant")
                         .WithMany()
                         .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Tenant");
@@ -1615,19 +1704,19 @@ namespace HSCrm.DataModel.Migrations
                     b.HasOne("HSCrm.Entities.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("HSCrm.Entities.Entities.Tenant", "Tenant")
                         .WithMany()
                         .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("HSCrm.Entities.Entities.Warehouse", "Warehouse")
                         .WithMany()
                         .HasForeignKey("WarehouseId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("CreatedBy");
@@ -1651,7 +1740,7 @@ namespace HSCrm.DataModel.Migrations
                     b.HasOne("HSCrm.Entities.Entities.FiscalYear", "FiscalYear")
                         .WithMany()
                         .HasForeignKey("FiscalYearId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
@@ -1662,19 +1751,19 @@ namespace HSCrm.DataModel.Migrations
                     b.HasOne("HSCrm.Entities.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("HSCrm.Entities.Entities.Tenant", "Tenant")
                         .WithMany()
                         .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("HSCrm.Entities.Entities.Warehouse", "Warehouse")
                         .WithMany()
                         .HasForeignKey("WarehouseId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("CreatedBy");
@@ -1741,6 +1830,23 @@ namespace HSCrm.DataModel.Migrations
                     b.Navigation("SalesInvoice");
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.Permission", b =>
+                {
+                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
+                        .WithMany()
+                        .HasForeignKey("ModifiedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("ModifiedBy");
                 });
 
             modelBuilder.Entity("HSCrm.Entities.Entities.Product", b =>
@@ -1921,6 +2027,25 @@ namespace HSCrm.DataModel.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("HSCrm.Entities.Entities.RolePermission", b =>
+                {
+                    b.HasOne("HSCrm.Entities.Entities.Permission", "Permission")
+                        .WithMany("RolePermissions")
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ApplicationRole", "Role")
+                        .WithMany("RolePermissions")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Permission");
+
+                    b.Navigation("Role");
+                });
+
             modelBuilder.Entity("HSCrm.Entities.Entities.SalesInvoice", b =>
                 {
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "CreatedBy")
@@ -2051,6 +2176,25 @@ namespace HSCrm.DataModel.Migrations
                     b.Navigation("ModifiedBy");
                 });
 
+            modelBuilder.Entity("HSCrm.Entities.Entities.UserRole", b =>
+                {
+                    b.HasOne("ApplicationRole", "Role")
+                        .WithMany("UserRoles")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "User")
+                        .WithMany("UserRoles")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("HSCrm.Entities.Entities.Warehouse", b =>
                 {
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "CreatedBy")
@@ -2076,7 +2220,7 @@ namespace HSCrm.DataModel.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
-                    b.HasOne("HSCrm.Entities.Entities.ApplicationRole", null)
+                    b.HasOne("ApplicationRole", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -2101,21 +2245,6 @@ namespace HSCrm.DataModel.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
-                {
-                    b.HasOne("HSCrm.Entities.Entities.ApplicationRole", null)
-                        .WithMany()
-                        .HasForeignKey("RoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
                 {
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", null)
@@ -2123,6 +2252,23 @@ namespace HSCrm.DataModel.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ApplicationRole", b =>
+                {
+                    b.Navigation("RolePermissions");
+
+                    b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.ApplicationUser", b =>
+                {
+                    b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.Permission", b =>
+                {
+                    b.Navigation("RolePermissions");
                 });
 
             modelBuilder.Entity("HSCrm.Entities.Entities.Product", b =>

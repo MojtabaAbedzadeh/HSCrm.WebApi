@@ -7,6 +7,10 @@ namespace HSCrm.Entities.Entities
         public required string UserFirstName { get; set; }
         public required string UserLastName { get; set; }
         public string? UserImageUrl { get; set; }
+        public int TenantId { get; set; }
+        public Tenant Tenant { get; set; } = default!;
+
+        public bool IsTenantOwner { get; set; }
         public bool UserStatus { get; set; }
         /// <summary>
         /// 0 -> User
@@ -15,8 +19,7 @@ namespace HSCrm.Entities.Entities
         /// </summary>
         public byte UserType { get; set; }
         public bool UserGender { get; set; }
-        public int TenantId { get; set; }
-        public Tenant Tenant { get; set; } = default!;
-        public bool IsTenantOwner { get; set; }
+
+        public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
     }
 }
