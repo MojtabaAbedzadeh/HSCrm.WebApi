@@ -1,11 +1,15 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Entities.Models.Dto;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using static HSCrm.Common.PublicTools.StringCleaner;
+using CustomerCreateModel = HSCrm.Entities.Models.CustomerCreateModel;
 
 namespace HSCrm.WebApi.Controllers
 {
@@ -24,6 +28,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetCustomer")]
+        [Permission(Permissions.Customers.View)]
         public ApiResponse<IEnumerable<Customer>> Get()
         {
             var customers = _context.customerUW.Get();
@@ -41,6 +46,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Customers.View)]
         public ApiResponse<CustomerDetailViewModel> GetCustomerById(int customerId)
         {
             var customer = _context.customerUW.Get(null, false, c => c.ApplicationUser).FirstOrDefault(c => c.Id == customerId);
@@ -87,6 +93,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Customers.View)]
         public ApiResponse GetById(int customerId)
         {
             var customer = _context.customerUW.GetById(customerId);
@@ -108,15 +115,15 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateCustomer")]
-        public async Task<ApiResponse<Customer>> Create([FromForm] CustomerCreateModel model)
+        [Permission(Permissions.Customers.Create)]
+        public async Task<ApiResponse<CustomerCreateDto>> Create([FromForm] CustomerCreateModel model)
         {
             if (!ModelState.IsValid)
-                return new ApiResponse<Customer>
+                return new ApiResponse<CustomerCreateDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ApiResultStatusCode.BadRequest
-                        .DisplayNameAttribute(DisplayProperty.Name)
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
             // بررسی تکراری بودن مشتری
@@ -125,7 +132,7 @@ namespace HSCrm.WebApi.Controllers
                 .Any();
 
             if (existsCustomer)
-                return new ApiResponse<Customer>
+                return new ApiResponse<CustomerCreateDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.Conflict,
@@ -134,18 +141,20 @@ namespace HSCrm.WebApi.Controllers
 
             // بررسی تکراری بودن نام کاربری
             var existsUser = await _userManager.FindByNameAsync(model.UserName);
-            if (existsUser != null) return new ApiResponse<Customer>
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.Conflict,
-                Message = "نام کاربری تکراری است"
-            };
+
+            if (existsUser != null)
+                return new ApiResponse<CustomerCreateDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "نام کاربری تکراری است"
+                };
 
             using var transaction = _context.BeginTransaction();
 
             try
             {
-                // 1️⃣ ساخت User
+                // ساخت User
                 var user = new ApplicationUser
                 {
                     UserFirstName = model.UserFirstName,
@@ -163,18 +172,18 @@ namespace HSCrm.WebApi.Controllers
 
                 var createUserResult = await _userManager.CreateAsync(user, model.Password);
 
-                if (!createUserResult.Succeeded) return new ApiResponse<Customer>
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-                };
+                if (!createUserResult.Succeeded)
+                    return new ApiResponse<CustomerCreateDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.BadRequest,
+                        Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                    };
 
-
-                // 2️⃣ Role = Customer
+                // Role
                 await _userManager.AddToRoleAsync(user, "Customer");
 
-                // 3️⃣ ساخت Customer
+                // ساخت Customer
                 var customer = new Customer
                 {
                     Name = model.UserFirstName + " " + model.UserLastName,
@@ -192,19 +201,31 @@ namespace HSCrm.WebApi.Controllers
 
                 await transaction.CommitAsync();
 
-                return new ApiResponse<Customer>
+                // تبدیل به DTO
+                var result = new CustomerCreateDto
+                {
+                    Id = customer.Id,
+                    Name = customer.Name,
+                    Phone = customer.Phone,
+                    Email = customer.Email,
+                    Address = customer.Address,
+                    TenantId = customer.TenantId,
+                    ApplicationUserId = customer.ApplicationUserId
+                };
+
+                return new ApiResponse<CustomerCreateDto>
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = customer
+                    Data = result
                 };
             }
             catch (Exception)
             {
                 await transaction.RollbackAsync();
 
-                return new ApiResponse<Customer>
+                return new ApiResponse<CustomerCreateDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
@@ -213,9 +234,11 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
+
         [HttpPut("UpdateCustomer")]
         [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Customers.Edit)]
         public ApiResponse Update([FromBody] CustomerEditModel model)
         {
             if (model.CustomerId == 0) return new ApiResponse

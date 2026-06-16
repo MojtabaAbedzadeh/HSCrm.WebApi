@@ -1,4 +1,4 @@
-using Framework.Authorization;
+ï»¿using Framework.Authorization;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Seeders;
 using HSCrm.DataModel.Services;
@@ -33,6 +33,8 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
+builder.Services.AddScoped<IRoleService, RoleService>();
+
 builder.Services.AddAutoMapper(typeof(Program));
 
 builder.Services.AddCors(options =>
@@ -69,10 +71,11 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseCors("_myAllowSpecificationOrigins");
+app.UseRouting();
 
-//ÇÍÑÇÒ åæ?Ê
+//Ø§Ø­Ø±Ø§Ø² Ù‡ÙˆÛŒØª
 app.UseAuthentication();
-// ãÌæÒåÇ? ÏÓÊÑÓ?
+// Ù…Ø¬ÙˆØ²Ù‡Ø§ÛŒ Ø¯Ø³ØªØ±Ø³ÛŒ
 app.UseAuthorization();
 
 app.MapControllers();

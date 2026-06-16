@@ -20,9 +20,11 @@ namespace HSCrm.Entities.Models
         public string FirstName { get; set; }
         public string LastName { get; set; }
         public string UserImageUrl { get; set; }
+        public string FiscalYear { get; set; }
         public byte FiscalYearStatus { get; set; }
         public bool UserStatus { get; set; }
         public byte UserType { get; set; }
         public IList<string>? Roles { get; set; }
+        public IList<string>? Permissions { get; set; }
     }
 }

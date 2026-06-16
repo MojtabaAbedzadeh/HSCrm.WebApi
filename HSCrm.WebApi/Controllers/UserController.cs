@@ -50,6 +50,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Users.View)]
         public ApiResponse GetById(string userId)
         {
             var request = _context.userManagerUW.GetById(userId);
@@ -71,6 +72,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateUser")]
+        [Permission(Permissions.Users.Create)]
         public async Task<ApiResponse<ApplicationUser>> Create([FromForm] UserCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
@@ -131,6 +133,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("UpdateUser")]
+        [Permission(Permissions.Users.Edit)]
         [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ApiResponse<ApplicationUser>> Update([FromBody] UserEditModel model)

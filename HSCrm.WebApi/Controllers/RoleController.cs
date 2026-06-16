@@ -1,0 +1,328 @@
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Context;
+using HSCrm.Entities.Entities;
+using HSCrm.Entities.Models;
+using HSCrm.Framework.StandardApiResult;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using static HSCrm.Common.PublicTools.StringCleaner;
+
+namespace HSCrm.WebApi.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class RoleController : ControllerBase
+    {
+        private readonly RoleManager<ApplicationRole> _roleManager;
+        private readonly ApplicationDbContext _dbContext;
+
+        public RoleController(RoleManager<ApplicationRole> roleManager, ApplicationDbContext dbContext)
+        {
+            _roleManager = roleManager;
+            _dbContext = dbContext;
+        }
+
+        [HttpGet("GetRoles")]
+        [Permission(Permissions.Roles.View)]
+        public async Task<ApiResponse<List<RoleListModel>>> GetRoles(CancellationToken ct)
+        {
+            var roles = await _dbContext.Roles
+                .AsNoTracking()
+                .Select(x => new RoleListModel
+                {
+                    Id = x.Id,
+                    Name = x.Name!,
+                    TenantId = x.TenantId
+                })
+                .ToListAsync(ct);
+
+            return new ApiResponse<List<RoleListModel>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = roles
+            };
+        }
+
+        [HttpGet("GetRoleById")]
+        [Permission(Permissions.Roles.View)]
+        public async Task<ApiResponse<RoleListModel>> GetRoleById(string roleId)
+        {
+            var role = await _dbContext.Roles
+                .AsNoTracking()
+                .Where(x => x.Id == roleId)
+                .Select(x => new RoleListModel
+                {
+                    Id = x.Id,
+                    Name = x.Name!,
+                    TenantId = x.TenantId
+                })
+                .FirstOrDefaultAsync();
+
+            if (role == null)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
+
+            return new ApiResponse<RoleListModel>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = role
+            };
+        }
+
+        [HttpPost("CreateRole")]
+        [Permission(Permissions.Roles.Create)]
+        public async Task<ApiResponse<RoleListModel>> CreateRole([FromBody] RoleCreateModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
+
+            var exists = await _roleManager.RoleExistsAsync(model.Name);
+            if (exists)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "نقش تکراری است",
+                    Data = null
+                };
+            }
+
+            var role = new ApplicationRole
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = model.Name,
+                NormalizedName = model.Name.ToUpperInvariant(),
+                TenantId = model.TenantId
+            };
+
+            var result = await _roleManager.CreateAsync(role);
+
+            if (!result.Succeeded)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
+                    Data = null
+                };
+            }
+
+            return new ApiResponse<RoleListModel>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new RoleListModel
+                {
+                    Id = role.Id,
+                    Name = role.Name!,
+                    TenantId = role.TenantId
+                }
+            };
+        }
+
+        [HttpPut("UpdateRole")]
+        [Permission(Permissions.Roles.Edit)]
+        public async Task<ApiResponse<RoleListModel>> UpdateRole([FromBody] RoleEditModel model)
+        {
+            var role = await _roleManager.FindByIdAsync(model.Id);
+
+            if (role == null)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
+
+            role.Name = model.Name;
+            role.NormalizedName = model.Name.ToUpperInvariant();
+            role.TenantId = model.TenantId;
+
+            var result = await _roleManager.UpdateAsync(role);
+
+            if (!result.Succeeded)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
+                    Data = null
+                };
+            }
+
+            return new ApiResponse<RoleListModel>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new RoleListModel
+                {
+                    Id = role.Id,
+                    Name = role.Name!,
+                    TenantId = role.TenantId
+                }
+            };
+        }
+
+        [HttpDelete("DeleteRole")]
+        [Permission(Permissions.Roles.Delete)]
+        public async Task<ApiResponse<RoleListModel>> DeleteRole(string roleId)
+        {
+            var role = await _roleManager.FindByIdAsync(roleId);
+
+            if (role == null)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
+
+            var result = await _roleManager.DeleteAsync(role);
+
+            if (!result.Succeeded)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
+                    Data = null
+                };
+            }
+
+            return new ApiResponse<RoleListModel>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new RoleListModel
+                {
+                    Id = role.Id,
+                    Name = role.Name!,
+                    TenantId = role.TenantId
+                }
+            };
+        }
+
+        [HttpGet("GetPermissions")]
+        [Permission(Permissions.Roles.ManagePermissions)]
+        public async Task<ApiResponse<List<PermissionListModel>>> GetPermissions(CancellationToken ct)
+        {
+            var permissions = await _dbContext.Permissions
+                .AsNoTracking()
+                .OrderBy(x => x.Category)
+                .ThenBy(x => x.Title)
+                .Select(x => new PermissionListModel
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Title = x.Title,
+                    Category = x.Category
+                })
+                .ToListAsync(ct);
+
+            return new ApiResponse<List<PermissionListModel>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = permissions
+            };
+        }
+
+        [HttpGet("GetRolePermissions")]
+        [Permission(Permissions.Roles.ManagePermissions)]
+        public async Task<ApiResponse<List<int>>> GetRolePermissions(string roleId, CancellationToken ct)
+        {
+            var permissionIds = await _dbContext.RolePermissions
+                .AsNoTracking()
+                .Where(x => x.RoleId == roleId)
+                .Select(x => x.PermissionId)
+                .ToListAsync(ct);
+
+            return new ApiResponse<List<int>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = permissionIds
+            };
+        }
+
+        [HttpPost("UpdateRolePermissions")]
+        [Permission(Permissions.Roles.ManagePermissions)]
+        public async Task<ApiResponse<bool>> UpdateRolePermissions([FromBody] RolePermissionsModel model, CancellationToken ct)
+        {
+            var exists = await _dbContext.Roles.AnyAsync(x => x.Id == model.RoleId, ct);
+
+            if (!exists)
+            {
+                return new ApiResponse<bool>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = false
+                };
+            }
+
+            var oldPermissions = await _dbContext.RolePermissions
+                .Where(x => x.RoleId == model.RoleId)
+                .ToListAsync(ct);
+
+            _dbContext.RolePermissions.RemoveRange(oldPermissions);
+
+            var newPermissions = model.PermissionIds
+                .Distinct()
+                .Select(permissionId => new RolePermission
+                {
+                    RoleId = model.RoleId,
+                    PermissionId = permissionId
+                })
+                .ToList();
+
+            await _dbContext.RolePermissions.AddRangeAsync(newPermissions, ct);
+            await _dbContext.SaveChangesAsync(ct);
+
+            return new ApiResponse<bool>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = true
+            };
+        }
+    }
+}

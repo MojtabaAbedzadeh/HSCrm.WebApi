@@ -11,48 +11,48 @@ namespace HSCrm.WebApi.Tools
 {
     public class JwtTokenGenerator : IJwtTokenGenerator
     {
+        private readonly IConfiguration _config;
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly SymmetricSecurityKey _key;
+        private readonly SymmetricSecurityKey _signingKey;
         string _securityKey;
 
         public JwtTokenGenerator(IConfiguration config, UserManager<ApplicationUser> userManager)
         {
+            _config = config;
             _userManager = userManager;
-            _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["TokenKey"]));
-            _securityKey = config["SecurityKey"];
+            var key = _config["Jwt:Key"] ?? _config["TokenKey"];
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidOperationException("JWT Key is missing. Set 'Jwt:Key' or 'TokenKey' in appsettings.json");
+
+            _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
         }
 
-        public async Task<string> CreateTokenAsync(ApplicationUser user)
+        public async Task<string> GenerateTokenAsync(ApplicationUser user, CancellationToken ct = default)
         {
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.NameId, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.UniqueName, user.UserName)
+                new Claim(ClaimTypes.NameIdentifier, user.Id),
+                new Claim(ClaimTypes.Name, user.UserName ?? "")
             };
 
             var roles = await _userManager.GetRolesAsync(user);
-            claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+            foreach (var role in roles)
+                claims.Add(new Claim(ClaimTypes.Role, role));
 
-            //Hash Token SecurityKey Oriented
-            var encryptorKey = Encoding.UTF8.GetBytes(_securityKey);
-            var encryptorCredential = new EncryptingCredentials(new SymmetricSecurityKey(encryptorKey),
-                SecurityAlgorithms.Aes128KW, SecurityAlgorithms.Aes128CbcHmacSha256);
-            //
+            var issuer = _config["Jwt:Issuer"] ?? "Automation";
+            var audience = _config["Jwt:Audience"] ?? "Automation";
 
-            var credential = new SigningCredentials(_key, SecurityAlgorithms.HmacSha512Signature);
-            var tokenDescriber = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.Now.AddHours(6),
-                SigningCredentials = credential,
-                Issuer = "hscrm-api",
-                Audience = "hscrm-dashboard",
-                EncryptingCredentials = encryptorCredential
-            };
+            var creds = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
 
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var token = tokenHandler.CreateToken(tokenDescriber);
-            return tokenHandler.WriteToken(token);
+            var token = new JwtSecurityToken(
+                issuer: issuer,
+                audience: audience,
+                claims: claims,
+                expires: DateTime.UtcNow.AddDays(7),
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
     }
 }

@@ -90,7 +90,7 @@ namespace HSCrm.DataModel.Seeders
                 "PurchaseInvoices" => "فاکتورهای خرید",
                 "RolePermissions" => "دسترسی‌های نقش",
                 "SalesInvoices" => "فاکتورهای فروش",
-                "Tenants" => "مستأجرها",
+                "Tenants" => "شرکت ها",
                 "UserPermissions" => "دسترسی‌های کاربر",
                 "UserRoles" => "نقش‌های کاربر",
                 "Warehouses" => "انبارها",

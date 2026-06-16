@@ -14,6 +14,7 @@ public class PermissionPolicyProvider : DefaultAuthorizationPolicyProvider
             var permission = policyName.Substring("Permission:".Length);
 
             var policy = new AuthorizationPolicyBuilder();
+            policy.RequireAuthenticatedUser();
             policy.AddRequirements(new PermissionRequirement(permission));
 
             return policy.Build();

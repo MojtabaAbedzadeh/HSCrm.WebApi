@@ -16,6 +16,7 @@ public static class Permissions
         public const string Create = "roles.create";
         public const string Edit = "roles.edit";
         public const string Delete = "roles.delete";
+        public const string ManagePermissions = "Roles.ManagePermissions";
     }
 
     public static class Customers

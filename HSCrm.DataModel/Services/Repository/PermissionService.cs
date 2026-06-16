@@ -1,5 +1,6 @@
 ﻿using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
+using HSCrm.Entities.Entities;
 using Microsoft.EntityFrameworkCore;
 using System;
 
@@ -17,10 +18,14 @@ namespace HSCrm.DataModel.Services.Repository
         public async Task<bool> HasPermissionAsync(string userId, string permissionName)
         {
             return await _context.UserRoles
+                .Include(ur => ur.Role)
+                    .ThenInclude(r => r.RolePermissions)
+                        .ThenInclude(rp => rp.Permission)
                 .Where(ur => ur.UserId == userId)
                 .SelectMany(ur => ur.Role.RolePermissions)
                 .AnyAsync(rp => rp.Permission.Name == permissionName);
         }
+
 
         public async Task<List<string>> GetUserPermissionsAsync(string userId)
         {
