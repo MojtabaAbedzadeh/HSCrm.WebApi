@@ -102,7 +102,7 @@ namespace HSCrm.DataModel.Context
                 e.HasIndex(p => p.Name).IsUnique();
                 e.Property(p => p.Name).HasMaxLength(200).IsRequired();
                 e.Property(p => p.Title).HasMaxLength(200).IsRequired();
-                e.Property(p => p.Category).HasMaxLength(100).IsRequired();
+                e.Property(p => p.CategoryTitleEn).HasMaxLength(100).IsRequired();
             });
 
             // ======================= RolePermission =======================

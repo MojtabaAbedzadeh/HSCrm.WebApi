@@ -19,7 +19,6 @@ public class PermissionPolicyProvider : DefaultAuthorizationPolicyProvider
 
             return policy.Build();
         }
-
         return await base.GetPolicyAsync(policyName);
     }
 }

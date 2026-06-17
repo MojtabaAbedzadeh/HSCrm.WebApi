@@ -1,8 +1,8 @@
 ﻿using Common.Permissions;
+using HSCrm.Common.Permissions;
 using HSCrm.DataModel.Context;
 using HSCrm.Entities.Entities;
 using Microsoft.EntityFrameworkCore;
-using System;
 using System.Reflection;
 
 namespace HSCrm.DataModel.Seeders
@@ -32,7 +32,8 @@ namespace HSCrm.DataModel.Seeders
         {
             var result = new List<Permission>();
 
-            var nestedTypes = typeof(Permissions).GetNestedTypes(BindingFlags.Public);
+            var nestedTypes = typeof(Permissions)
+                .GetNestedTypes(BindingFlags.Public);
 
             foreach (var nestedType in nestedTypes)
             {
@@ -49,11 +50,14 @@ namespace HSCrm.DataModel.Seeders
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
+                    var categoryInfo = PermissionCategories.Get(category);
+
                     result.Add(new Permission
                     {
                         Name = name,
-                        Title = BuildTitle(category, field.Name),
-                        Category = category,
+                        Title = BuildTitle(categoryInfo.TitleFa, field.Name),
+                        CategoryTitleEn = category,
+                        CategoryTitleFa = categoryInfo.TitleFa,
                         CreatedAt = DateTime.UtcNow,
                         IsDeleted = false
                     });
@@ -63,7 +67,7 @@ namespace HSCrm.DataModel.Seeders
             return result;
         }
 
-        private static string BuildTitle(string category, string action)
+        private static string BuildTitle(string categoryFa, string action)
         {
             var actionTitle = action switch
             {
@@ -74,30 +78,7 @@ namespace HSCrm.DataModel.Seeders
                 _ => action
             };
 
-            var categoryTitle = category switch
-            {
-                "Users" => "کاربران",
-                "Roles" => "نقش‌ها",
-                "Customers" => "مشتریان",
-                "Suppliers" => "تأمین‌کنندگان",
-                "Expenses" => "هزینه‌ها",
-                "FiscalYears" => "سال‌های مالی",
-                "Inventories" => "انبارها",
-                "Payments" => "پرداخت‌ها",
-                "Products" => "محصولات",
-                "ProductPrices" => "قیمت محصولات",
-                "Projects" => "پروژه‌ها",
-                "PurchaseInvoices" => "فاکتورهای خرید",
-                "RolePermissions" => "دسترسی‌های نقش",
-                "SalesInvoices" => "فاکتورهای فروش",
-                "Tenants" => "شرکت ها",
-                "UserPermissions" => "دسترسی‌های کاربر",
-                "UserRoles" => "نقش‌های کاربر",
-                "Warehouses" => "انبارها",
-                _ => category
-            };
-
-            return $"{actionTitle} {categoryTitle}";
+            return $"{actionTitle} {categoryFa}";
         }
     }
 }

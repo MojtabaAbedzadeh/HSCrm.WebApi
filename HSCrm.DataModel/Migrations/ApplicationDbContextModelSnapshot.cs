@@ -452,7 +452,7 @@ namespace HSCrm.DataModel.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2026, 6, 11, 10, 44, 52, 911, DateTimeKind.Utc).AddTicks(4526),
+                            CreatedAt = new DateTime(2026, 6, 17, 12, 31, 33, 261, DateTimeKind.Utc).AddTicks(9649),
                             EndDate = new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsClosed = false,
                             IsCurrent = true,
@@ -675,10 +675,14 @@ namespace HSCrm.DataModel.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Category")
+                    b.Property<string>("CategoryTitleEn")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CategoryTitleFa")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");

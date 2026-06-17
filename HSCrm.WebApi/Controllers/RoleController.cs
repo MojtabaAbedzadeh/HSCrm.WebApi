@@ -242,14 +242,14 @@ namespace HSCrm.WebApi.Controllers
         {
             var permissions = await _dbContext.Permissions
                 .AsNoTracking()
-                .OrderBy(x => x.Category)
+                .OrderBy(x => x.CategoryTitleEn)
                 .ThenBy(x => x.Title)
                 .Select(x => new PermissionListModel
                 {
                     Id = x.Id,
                     Name = x.Name,
                     Title = x.Title,
-                    Category = x.Category
+                    Category = x.CategoryTitleEn
                 })
                 .ToListAsync(ct);
 
