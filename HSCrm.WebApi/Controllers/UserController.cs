@@ -18,15 +18,17 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IRoleService _roleService;
         private readonly ApplicationDbContext _dbContext;
         private readonly IMapper _map;
 
-        public UserController(IUnitOfWork context, UserManager<ApplicationUser> userManager, IMapper map, ApplicationDbContext dbContext)
+        public UserController(IUnitOfWork context, UserManager<ApplicationUser> userManager, IMapper map, ApplicationDbContext dbContext, IRoleService roleService)
         {
             _context = context;
             _userManager = userManager;
             _map = map;
             _dbContext = dbContext;
+            _roleService = roleService;
         }
 
         [Permission(Permissions.Users.View)]
@@ -236,6 +238,14 @@ namespace HSCrm.WebApi.Controllers
                 StatusCode = ApiResultStatusCode.ServerError,
                 Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
             };
+        }
+
+        [HttpGet("AssignRole")]
+        [Permission(Permissions.Users.Create)]
+        public async Task<IActionResult> AssignRole(string userId, string roleId)
+        {
+            await _roleService.AssignRoleToUserAsync(userId, roleId);
+            return Ok();
         }
     }
 }
