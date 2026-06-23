@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HSCrm.DataModel.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260611104454_Mig-Initial")]
+    [Migration("20260620092509_Mig-Initial")]
     partial class MigInitial
     {
         /// <inheritdoc />
@@ -455,7 +455,7 @@ namespace HSCrm.DataModel.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2026, 6, 11, 10, 44, 52, 911, DateTimeKind.Utc).AddTicks(4526),
+                            CreatedAt = new DateTime(2026, 6, 20, 9, 25, 8, 541, DateTimeKind.Utc).AddTicks(5312),
                             EndDate = new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsClosed = false,
                             IsCurrent = true,
@@ -498,8 +498,9 @@ namespace HSCrm.DataModel.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<byte[]>("RowVersion")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)");
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<int>("TenantId")
                         .HasColumnType("int");
@@ -678,10 +679,14 @@ namespace HSCrm.DataModel.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Category")
+                    b.Property<string>("CategoryTitleEn")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CategoryTitleFa")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");

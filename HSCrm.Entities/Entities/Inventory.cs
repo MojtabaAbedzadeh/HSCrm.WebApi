@@ -1,4 +1,6 @@
-﻿namespace HSCrm.Entities.Entities
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace HSCrm.Entities.Entities
 {
     public class Inventory : AuditedEntity
     {
@@ -7,7 +9,8 @@
         public int WarehouseId { get; set; }
         public int ProductId { get; set; }
         public decimal Quantity { get; set; }
-        public byte[] RowVersion { get; set; }
+        [Timestamp]        
+        public byte[]? RowVersion { get; set; }
         // Navigation
         public Warehouse Warehouse { get; set; }
         public Product Product { get; set; }

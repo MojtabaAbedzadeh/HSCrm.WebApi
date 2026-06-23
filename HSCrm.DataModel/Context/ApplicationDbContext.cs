@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using System.Reflection;
+using System.Reflection.Emit;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.DataModel.Context
@@ -480,7 +481,10 @@ namespace HSCrm.DataModel.Context
                       .HasForeignKey(a => a.TenantId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
-
+            builder.Entity<Inventory>()
+                .Property(x => x.RowVersion)
+                .IsRowVersion()
+                .IsConcurrencyToken();
             // ========= Inventory =========
             builder.Entity<Inventory>(entity =>
             {

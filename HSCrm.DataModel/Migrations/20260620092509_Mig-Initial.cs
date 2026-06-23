@@ -178,7 +178,7 @@ namespace HSCrm.DataModel.Migrations
                     WarehouseId = table.Column<int>(type: "int", nullable: false),
                     ProductId = table.Column<int>(type: "int", nullable: false),
                     Quantity = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    RowVersion = table.Column<byte[]>(type: "varbinary(max)", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -268,7 +268,8 @@ namespace HSCrm.DataModel.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Category = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    CategoryTitleEn = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    CategoryTitleFa = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -677,7 +678,7 @@ namespace HSCrm.DataModel.Migrations
             migrationBuilder.InsertData(
                 table: "FiscalYears",
                 columns: new[] { "Id", "CreatedAt", "CreatedById", "EndDate", "IsClosed", "IsCurrent", "IsDeleted", "ModifiedAt", "ModifiedById", "StartDate", "TenantId", "Title" },
-                values: new object[] { 1, new DateTime(2026, 6, 11, 10, 44, 52, 911, DateTimeKind.Utc).AddTicks(4526), null, new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified), false, true, false, null, null, new DateTime(2025, 3, 20, 0, 0, 0, 0, DateTimeKind.Unspecified), 1, "1404" });
+                values: new object[] { 1, new DateTime(2026, 6, 20, 9, 25, 8, 541, DateTimeKind.Utc).AddTicks(5312), null, new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified), false, true, false, null, null, new DateTime(2025, 3, 20, 0, 0, 0, 0, DateTimeKind.Unspecified), 1, "1404" });
 
             migrationBuilder.InsertData(
                 table: "Roles",

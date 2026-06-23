@@ -14,6 +14,19 @@ namespace HSCrm.Entities.Models
         public int TenantId { get; set; }
     }
 
+    public class UserModelDto
+    {
+        public string Id { get; set; }
+        public string UserFirstName { get; set; }
+        public string UserLastName { get; set; }
+        public string UserName { get; set; }
+        public string Email { get; set; }
+        public string PhoneNumber { get; set; }
+        public string UserImageUrl { get; set; }
+        public bool UserStatus { get; set; }
+        public string RoleName { get; set; }
+    }
+
     public class UserEditModel
     {
         public required string UserId { get; set; }

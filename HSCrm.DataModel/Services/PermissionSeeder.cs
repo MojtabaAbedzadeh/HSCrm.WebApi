@@ -2,6 +2,7 @@
 using HSCrm.Common.Permissions;
 using HSCrm.DataModel.Context;
 using HSCrm.Entities.Entities;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Reflection;
 
@@ -27,7 +28,6 @@ namespace HSCrm.DataModel.Seeders
                 await context.SaveChangesAsync();
             }
         }
-
         private static List<Permission> GetPermissionsFromCode()
         {
             var result = new List<Permission>();
@@ -66,7 +66,6 @@ namespace HSCrm.DataModel.Seeders
 
             return result;
         }
-
         private static string BuildTitle(string categoryFa, string action)
         {
             var actionTitle = action switch
@@ -79,6 +78,32 @@ namespace HSCrm.DataModel.Seeders
             };
 
             return $"{actionTitle} {categoryFa}";
+        }
+        public static async Task SeedRolePermissionsAsync(ApplicationDbContext context, RoleManager<ApplicationRole> roleManager)
+        {
+            var adminRole = await roleManager.FindByNameAsync("Admin");
+
+            if (adminRole == null)
+                return;
+
+            var permissions = context.Permissions.ToList();
+
+            foreach (var permission in permissions)
+            {
+                bool exists = context.RolePermissions
+                    .Any(rp => rp.RoleId == adminRole.Id && rp.PermissionId == permission.Id);
+
+                if (!exists)
+                {
+                    context.RolePermissions.Add(new RolePermission
+                    {
+                        RoleId = adminRole.Id,
+                        PermissionId = permission.Id
+                    });
+                }
+            }
+
+            await context.SaveChangesAsync();
         }
     }
 }

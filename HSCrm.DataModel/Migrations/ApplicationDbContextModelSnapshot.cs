@@ -452,7 +452,7 @@ namespace HSCrm.DataModel.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2026, 6, 17, 12, 31, 33, 261, DateTimeKind.Utc).AddTicks(9649),
+                            CreatedAt = new DateTime(2026, 6, 20, 9, 25, 8, 541, DateTimeKind.Utc).AddTicks(5312),
                             EndDate = new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsClosed = false,
                             IsCurrent = true,
@@ -495,8 +495,9 @@ namespace HSCrm.DataModel.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<byte[]>("RowVersion")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)");
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<int>("TenantId")
                         .HasColumnType("int");

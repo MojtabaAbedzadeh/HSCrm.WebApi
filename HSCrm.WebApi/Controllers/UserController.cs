@@ -75,17 +75,36 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("CreateUser")]
         [Permission(Permissions.Users.Create)]
-        public async Task<ApiResponse<ApplicationUser>> Create([FromForm] UserCreateModel model)
+        public async Task<ApiResponse<UserModelDto>> Create([FromForm] UserCreateModel model)
         {
-            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            if (!ModelState.IsValid)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.NotFound,
-                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
-            };
+                return new ApiResponse<UserModelDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+            }
 
             try
             {
+                // بررسی تکراری بودن
+                var userNameExist = await _userManager.FindByNameAsync(model.UserNameC);
+                var emailExist = await _userManager.FindByEmailAsync(model.EmailC);
+                var phoneExist = _userManager.Users
+                    .FirstOrDefault(x => x.PhoneNumber == model.PhoneNumberC);
+
+                if (userNameExist != null || emailExist != null || phoneExist != null)
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.Conflict,
+                        Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
+                    };
+                }
+
                 ApplicationUser user = new ApplicationUser()
                 {
                     UserFirstName = model.UserFirstNameC,
@@ -98,34 +117,50 @@ namespace HSCrm.WebApi.Controllers
                     Email = model.EmailC,
                     TenantId = model.TenantId,
                     IsTenantOwner = false,
-                    UserName = model.UserNameC,
+                    UserName = model.UserNameC
                 };
 
                 IdentityResult result = await _userManager.CreateAsync(user, "123456");
 
-                if (result.Succeeded)
+                if (!result.Succeeded)
                 {
-                    if (user.UserType == 1)
+                    return new ApiResponse<UserModelDto>
                     {
-                        await _userManager.AddToRoleAsync(user, "Admin");
-                    }
-                    else
-                    {
-                        await _userManager.AddToRoleAsync(user, "user");
-                    }
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.ServerError,
+                        Message = string.Join(" | ", result.Errors.Select(x => x.Description))
+                    };
                 }
 
-                return new ApiResponse<ApplicationUser>
+                // افزودن نقش
+                string roleName = user.UserType == 1 ? "Admin" : "user";
+                await _userManager.AddToRoleAsync(user, roleName);
+
+                // ✅ ساخت DTO (دیگه Entity برنمی‌گردونیم)
+                var dto = new UserModelDto
                 {
-                    Status = false,
+                    Id = user.Id,
+                    UserFirstName = user.UserFirstName,
+                    UserLastName = user.UserLastName,
+                    UserName = user.UserName,
+                    Email = user.Email,
+                    PhoneNumber = user.PhoneNumber,
+                    UserImageUrl = user.UserImageUrl,
+                    UserStatus = user.UserStatus,
+                    RoleName = roleName
+                };
+
+                return new ApiResponse<UserModelDto>
+                {
+                    Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = user
+                    Data = dto
                 };
             }
             catch (Exception)
             {
-                return new ApiResponse<ApplicationUser>
+                return new ApiResponse<UserModelDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
@@ -133,6 +168,8 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
         }
+
+
 
         [HttpPut("UpdateUser")]
         [Permission(Permissions.Users.Edit)]
