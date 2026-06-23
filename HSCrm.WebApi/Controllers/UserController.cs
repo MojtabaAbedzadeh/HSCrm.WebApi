@@ -169,8 +169,6 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
-
-
         [HttpPut("UpdateUser")]
         [Permission(Permissions.Users.Edit)]
         [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]

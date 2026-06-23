@@ -4,5 +4,6 @@
     {
         Task<bool> HasPermissionAsync(string userId, string permissionName);
         Task<List<string>> GetUserPermissionsAsync(string userId);
+        Task AssignAllPermissionsToRoleAsync(string roleName, int tenantId);
     }
 }

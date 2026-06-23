@@ -2,7 +2,6 @@
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using Microsoft.EntityFrameworkCore;
-using System;
 
 namespace HSCrm.DataModel.Services.Repository
 {
@@ -19,13 +18,12 @@ namespace HSCrm.DataModel.Services.Repository
         {
             return await _context.UserRoles
                 .Include(ur => ur.Role)
-                    .ThenInclude(r => r.RolePermissions)
-                        .ThenInclude(rp => rp.Permission)
+                .ThenInclude(r => r.RolePermissions)
+                .ThenInclude(rp => rp.Permission)
                 .Where(ur => ur.UserId == userId)
                 .SelectMany(ur => ur.Role.RolePermissions)
                 .AnyAsync(rp => rp.Permission.Name == permissionName);
         }
-
 
         public async Task<List<string>> GetUserPermissionsAsync(string userId)
         {
@@ -37,5 +35,44 @@ namespace HSCrm.DataModel.Services.Repository
                 .Distinct()
                 .ToListAsync();
         }
+
+        public async Task AssignAllPermissionsToRoleAsync(string roleName, int tenantId)
+        {
+            // نقش مخصوص tenant را پیدا کن
+            var role = await _context.Roles
+                .FirstOrDefaultAsync(r => r.Name == roleName && r.TenantId == tenantId);
+
+            if (role == null)
+                throw new Exception("Role not found for this tenant.");
+
+            // تمام permissionهای موجود (permission چند-tenant نیست)
+            var permissions = await _context.Permissions.ToListAsync();
+
+            if (!permissions.Any())
+                return;
+
+            // تمام دسترسی‌های فعلی این role
+            var existingPermissionIds = await _context.RolePermissions
+                .Where(rp => rp.RoleId == role.Id)
+                .Select(rp => rp.PermissionId)
+                .ToListAsync();
+
+            // فقط permissionهای جدید
+            var newRolePermissions = permissions
+                .Where(p => !existingPermissionIds.Contains(p.Id))
+                .Select(p => new RolePermission
+                {
+                    RoleId = role.Id,
+                    PermissionId = p.Id
+                })
+                .ToList();
+
+            if (newRolePermissions.Any())
+            {
+                await _context.RolePermissions.AddRangeAsync(newRolePermissions);
+                await _context.SaveChangesAsync();
+            }
+        }
+
     }
 }

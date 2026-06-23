@@ -445,6 +445,7 @@ namespace HSCrm.DataModel.Migrations
                 columns: table => new
                 {
                     Id = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    RoleFaName = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     TenantId = table.Column<int>(type: "int", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     NormalizedName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
@@ -553,10 +554,14 @@ namespace HSCrm.DataModel.Migrations
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     TenantTitle = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    TenantOwner = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    TenantOwnerMobile = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    TenantCode = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     Currency = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: true),
                     TaxId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CompanyPhone = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CompanyEmail = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Address = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    LogoUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -672,21 +677,16 @@ namespace HSCrm.DataModel.Migrations
 
             migrationBuilder.InsertData(
                 table: "Tenants",
-                columns: new[] { "Id", "CreatedAt", "CreatedById", "Currency", "IsDeleted", "ModifiedAt", "ModifiedById", "TaxId", "TenantOwner", "TenantOwnerMobile", "TenantTitle" },
-                values: new object[] { 1, new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), null, "IRR", false, null, null, null, "مدیر سیستم", "09120000000", "سیستم مرکزی" });
-
-            migrationBuilder.InsertData(
-                table: "FiscalYears",
-                columns: new[] { "Id", "CreatedAt", "CreatedById", "EndDate", "IsClosed", "IsCurrent", "IsDeleted", "ModifiedAt", "ModifiedById", "StartDate", "TenantId", "Title" },
-                values: new object[] { 1, new DateTime(2026, 6, 20, 9, 25, 8, 541, DateTimeKind.Utc).AddTicks(5312), null, new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified), false, true, false, null, null, new DateTime(2025, 3, 20, 0, 0, 0, 0, DateTimeKind.Unspecified), 1, "1404" });
+                columns: new[] { "Id", "Address", "CompanyEmail", "CompanyPhone", "CreatedAt", "CreatedById", "Currency", "IsActive", "IsDeleted", "LogoUrl", "ModifiedAt", "ModifiedById", "TaxId", "TenantCode", "TenantTitle" },
+                values: new object[] { 1, null, null, null, new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), null, "IRR", false, false, null, null, null, null, "Central", "سیستم مرکزی" });
 
             migrationBuilder.InsertData(
                 table: "Roles",
-                columns: new[] { "Id", "ConcurrencyStamp", "Name", "NormalizedName", "TenantId" },
+                columns: new[] { "Id", "ConcurrencyStamp", "Name", "NormalizedName", "RoleFaName", "TenantId" },
                 values: new object[,]
                 {
-                    { "AdminId", "AdminId", "Admin", "ADMIN", 1 },
-                    { "UserId", "UserId", "User", "USER", 1 }
+                    { "AdminId", "AdminId", "Admin", "ADMIN", "ادمین", 1 },
+                    { "UserId", "UserId", "User", "USER", "کاربر", 1 }
                 });
 
             migrationBuilder.InsertData(
@@ -1112,6 +1112,12 @@ namespace HSCrm.DataModel.Migrations
                 name: "IX_Tenants_ModifiedById",
                 table: "Tenants",
                 column: "ModifiedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Tenants_TenantCode",
+                table: "Tenants",
+                column: "TenantCode",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Tenants_TenantTitle",

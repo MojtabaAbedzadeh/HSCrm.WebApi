@@ -5,6 +5,7 @@ using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -14,10 +15,13 @@ namespace HSCrm.WebApi.Controllers
     public class TenantController : ControllerBase
     {
         private readonly IUnitOfWork _context;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public TenantController(IUnitOfWork context)
+
+        public TenantController(IUnitOfWork context, IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         [HttpGet("GetTenant")]
@@ -80,14 +84,23 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
+                var userId = _httpContextAccessor.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
                 Tenant tenant = new Tenant()
                 {
                     TenantTitle = model.TenantTitle,
-                    TenantOwner = model.TenantOwner,
-                    TenantOwnerMobile = model.TenantOwnerMobile,
+                    CompanyPhone = model.CompanyPhone,
+                    Address = model.Address,
+                    CompanyEmail = model.CompanyEmail,
+                    IsActive = model.IsActive,
+                    IsDeleted = false,
+                    LogoUrl = model.LogoUrl,
+                    TenantCode = TenantCodeGenerator.Generate(model.TenantTitle),
                     CreatedAt = DateTime.Now,
-                    CreatedById = model.TenantOwner,
-                    Currency = model.Currency                };
+                    CreatedById = userId,
+                    Currency = model.Currency
+                };
+
 
                 _context.tenantUW.Create(tenant);
                 _context.Save();
@@ -117,6 +130,8 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public ApiResponse Update([FromForm] TenantEditModel model)
         {
+            var userId = _httpContextAccessor.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
             if (model.TenantId == 0) return new ApiResponse
             {
                 Status = false,
@@ -129,10 +144,9 @@ namespace HSCrm.WebApi.Controllers
             if (getTenant != null)
             {
                 getTenant.TenantTitle = model.TenantTitle;
-                getTenant.TenantOwner = model.TenantOwner;
-                getTenant.TenantOwnerMobile = model.TenantOwnerMobile;
+                getTenant.Address = model.Address;
                 getTenant.ModifiedAt = DateTime.Now;
-                getTenant.ModifiedById = model.TenantOwner;
+                getTenant.ModifiedById = userId;
             }
 
             _context.tenantUW.Update(getTenant);

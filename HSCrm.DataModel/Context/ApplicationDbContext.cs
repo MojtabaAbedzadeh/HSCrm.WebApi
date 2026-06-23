@@ -12,6 +12,11 @@ namespace HSCrm.DataModel.Context
 {
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string, IdentityUserClaim<string>, UserRole, IdentityUserLogin<string>, IdentityRoleClaim<string>, IdentityUserToken<string>>
     {
+        private readonly ICurrentUserService _currentUserService;
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUserService currentUserService) : base(options)
+        {
+            _currentUserService = currentUserService;
+        }
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
         public DbSet<Tenant> Tenants { get; set; }
         public DbSet<Customer> Customers { get; set; }
@@ -32,7 +37,6 @@ namespace HSCrm.DataModel.Context
         public DbSet<Permission> Permissions { get; set; }
         public DbSet<RolePermission> RolePermissions { get; set; }
         public DbSet<UserRole> UserRoles { get; set; }
-
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -40,6 +44,7 @@ namespace HSCrm.DataModel.Context
             var adminUserId = "28dfc395-0464-4b47-8aae-c73953a9d153";
             var adminRoleId = "AdminId";
             var userRoleId = "UserId";
+            var ownerRoleId = "OwnerId";
             var defaultTenantId = 1;
 
             // ======================= Tenant =======================
@@ -47,14 +52,17 @@ namespace HSCrm.DataModel.Context
                 new Tenant
                 {
                     Id = defaultTenantId,
+                    TenantCode = "Central",
                     TenantTitle = "سیستم مرکزی",
-                    TenantOwner = "مدیر سیستم",
-                    TenantOwnerMobile = "09120000000",
                     Currency = "IRR",
                     CreatedAt = new DateTime(2024, 1, 1), 
                     IsDeleted = false
                 }
             );
+
+            builder.Entity<Tenant>()
+                .HasIndex(t => t.TenantCode)
+                .IsUnique();
 
             // ======================= Roles =======================
             builder.Entity<ApplicationRole>().HasData(
@@ -62,17 +70,27 @@ namespace HSCrm.DataModel.Context
                 {
                     Id = adminRoleId,
                     Name = "Admin",
+                    RoleFaName = "ادمین",
                     NormalizedName = "ADMIN",
                     ConcurrencyStamp = adminRoleId,
-                    TenantId = defaultTenantId // اضافه شد برای رفع خطای Foreign Key
+                    TenantId = defaultTenantId
+                },
+                new ApplicationRole
+                {
+                    Id = ownerRoleId,
+                    Name = "Owner",
+                    NormalizedName = "OWNER",
+                    ConcurrencyStamp = ownerRoleId,
+                    TenantId = defaultTenantId
                 },
                 new ApplicationRole
                 {
                     Id = userRoleId,
                     Name = "User",
+                    RoleFaName = "کاربر",
                     NormalizedName = "USER",
                     ConcurrencyStamp = userRoleId,
-                    TenantId = defaultTenantId // اضافه شد برای رفع خطای Foreign Key
+                    TenantId = defaultTenantId
                 }
             );
 
@@ -93,7 +111,8 @@ namespace HSCrm.DataModel.Context
 
             // Seed Admin User to Admin Role
             builder.Entity<UserRole>().HasData(
-                new UserRole { UserId = adminUserId, RoleId = adminRoleId }
+                new UserRole { UserId = adminUserId, RoleId = adminRoleId },
+                new UserRole { UserId = adminUserId, RoleId = ownerRoleId }
             );
 
             // ======================= Permission =======================
@@ -162,19 +181,19 @@ namespace HSCrm.DataModel.Context
             });
 
             // ======================= FiscalYear =======================
-            builder.Entity<FiscalYear>().HasData(
-                new FiscalYear
-                {
-                    Id = 1,
-                    TenantId = 1,
-                    Title = "1404",
-                    StartDate = new DateTime(2025, 3, 20),
-                    EndDate = new DateTime(2026, 3, 19),
-                    IsCurrent = true,
-                    IsClosed = false,
-                    CreatedAt = DateTime.UtcNow
-                }
-            );
+            //builder.Entity<FiscalYear>().HasData(
+            //    new FiscalYear
+            //    {
+            //        Id = 1,
+            //        TenantId = 1,
+            //        Title = "1404",
+            //        StartDate = new DateTime(2025, 3, 20),
+            //        EndDate = new DateTime(2026, 3, 19),
+            //        IsCurrent = true,
+            //        IsClosed = false,
+            //        CreatedAt = DateTime.UtcNow
+            //    }
+            //);
 
             // ======================= Decimal Precision & Audited Entities =======================
             foreach (var entityType in builder.Model.GetEntityTypes())
@@ -525,26 +544,71 @@ namespace HSCrm.DataModel.Context
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
         }
+        private void ApplyAuditAndTenantInfo()
+        {
+            var userId = _currentUserService.UserId;
+            var tenantId = _currentUserService.TenantId;
+            var now = DateTime.UtcNow;
+
+            foreach (var entry in ChangeTracker.Entries())
+            {
+                if (entry.Entity is AuditedEntity auditedEntity)
+                {
+                    if (entry.State == EntityState.Added)
+                    {
+                        auditedEntity.CreatedAt = now;
+                        auditedEntity.CreatedById = userId;
+                        auditedEntity.IsDeleted = false;
+                    }
+
+                    if (entry.State == EntityState.Modified)
+                    {
+                        auditedEntity.ModifiedAt = now;
+                        auditedEntity.ModifiedById = userId;
+                    }
+                }
+
+                if (entry.Entity is TenantScopedEntity tenantEntity)
+                {
+                    if (entry.State == EntityState.Added)
+                    {
+                        if (tenantId.HasValue)
+                            tenantEntity.TenantId = tenantId.Value;
+                    }
+
+                    if (entry.State == EntityState.Modified)
+                    {
+                        if (tenantId.HasValue)
+                            tenantEntity.TenantId = tenantId.Value;
+                    }
+                }
+            }
+        }
         public override int SaveChanges()
         {
             cleanStr();
 
+            ApplyAuditAndTenantInfo();
             return base.SaveChanges();
         }
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
             cleanStr();
+            ApplyAuditAndTenantInfo();
+
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
         public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
             cleanStr();
+            ApplyAuditAndTenantInfo();
 
             return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             cleanStr();
+            ApplyAuditAndTenantInfo();
 
             return base.SaveChangesAsync(cancellationToken);
         }

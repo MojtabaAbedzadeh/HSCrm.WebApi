@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 
 public class ApplicationRole : IdentityRole<string>
 {
+    public string RoleFaName { get; set; }
     public int TenantId { get; set; }
     public Tenant Tenant { get; set; } = default!;
 

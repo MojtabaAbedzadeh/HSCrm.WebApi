@@ -9,9 +9,9 @@ using HSCrm.Services.Tools.Interface;
 using HSCrm.WebApi.Tools;
 using Microsoft.AspNetCore.Authorization;
 
-
-
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHttpContextAccessor();
 
 // Config
 var configuration = builder.Configuration
@@ -34,56 +34,44 @@ builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 builder.Services.AddScoped<IRoleService, RoleService>();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
 builder.Services.AddAutoMapper(typeof(Program));
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(name: "_myAllowSpecificationOrigins",
-        builder =>
-        {
-            //builder.WithOrigins("https://localhost:7079");
-            builder.AllowAnyHeader().AllowAnyMethod().AllowCredentials().SetIsOriginAllowed((host) => true);
-        });
+    options.AddPolicy("_myAllowSpecificationOrigins", policy =>
+    {
+        policy.AllowAnyHeader().AllowAnyMethod().AllowCredentials().SetIsOriginAllowed(host => true);
+    });
 });
 
-// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// seed فقط یکبار
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    await DbInitializer.InitializeAsync(services);
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    await DbInitializer.InitializeAsync(services);
-    var context = services.GetRequiredService<ApplicationDbContext>();
-    await PermissionSeeder.SeedAsync(context);
-}
-
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-
 app.UseCors("_myAllowSpecificationOrigins");
-app.UseRouting();
 
-//احراز هویت
+app.UseRouting();
 app.UseAuthentication();
-// مجوزهای دسترسی
 app.UseAuthorization();
 
 app.MapControllers();
-
-using (var scope = app.Services.CreateScope())
-{
-    await DbInitializer.InitializeAsync(scope.ServiceProvider);
-}
 
 app.Run();

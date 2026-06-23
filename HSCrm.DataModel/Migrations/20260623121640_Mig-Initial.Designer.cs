@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HSCrm.DataModel.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260620092509_Mig-Initial")]
+    [Migration("20260623121640_Mig-Initial")]
     partial class MigInitial
     {
         /// <inheritdoc />
@@ -42,6 +42,10 @@ namespace HSCrm.DataModel.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("RoleFaName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("TenantId")
                         .HasColumnType("int");
 
@@ -63,6 +67,7 @@ namespace HSCrm.DataModel.Migrations
                             ConcurrencyStamp = "AdminId",
                             Name = "Admin",
                             NormalizedName = "ADMIN",
+                            RoleFaName = "ادمین",
                             TenantId = 1
                         },
                         new
@@ -71,6 +76,7 @@ namespace HSCrm.DataModel.Migrations
                             ConcurrencyStamp = "UserId",
                             Name = "User",
                             NormalizedName = "USER",
+                            RoleFaName = "کاربر",
                             TenantId = 1
                         });
                 });
@@ -450,21 +456,6 @@ namespace HSCrm.DataModel.Migrations
                         .HasFilter("[IsCurrent] = 1");
 
                     b.ToTable("FiscalYears", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            CreatedAt = new DateTime(2026, 6, 20, 9, 25, 8, 541, DateTimeKind.Utc).AddTicks(5312),
-                            EndDate = new DateTime(2026, 3, 19, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            IsClosed = false,
-                            IsCurrent = true,
-                            IsDeleted = false,
-                            RowVersion = new byte[0],
-                            StartDate = new DateTime(2025, 3, 20, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            TenantId = 1,
-                            Title = "1404"
-                        });
                 });
 
             modelBuilder.Entity("HSCrm.Entities.Entities.Inventory", b =>
@@ -1330,6 +1321,15 @@ namespace HSCrm.DataModel.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Address")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CompanyEmail")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CompanyPhone")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1340,8 +1340,14 @@ namespace HSCrm.DataModel.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<string>("LogoUrl")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("datetime2");
@@ -1358,13 +1364,9 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("TaxId")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("TenantOwner")
+                    b.Property<string>("TenantCode")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("TenantOwnerMobile")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("TenantTitle")
                         .IsRequired()
@@ -1376,6 +1378,9 @@ namespace HSCrm.DataModel.Migrations
 
                     b.HasIndex("ModifiedById");
 
+                    b.HasIndex("TenantCode")
+                        .IsUnique();
+
                     b.HasIndex("TenantTitle");
 
                     b.ToTable("Tenants", (string)null);
@@ -1386,10 +1391,10 @@ namespace HSCrm.DataModel.Migrations
                             Id = 1,
                             CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             Currency = "IRR",
+                            IsActive = false,
                             IsDeleted = false,
                             RowVersion = new byte[0],
-                            TenantOwner = "مدیر سیستم",
-                            TenantOwnerMobile = "09120000000",
+                            TenantCode = "Central",
                             TenantTitle = "سیستم مرکزی"
                         });
                 });
