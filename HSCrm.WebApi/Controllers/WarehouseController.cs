@@ -1,7 +1,10 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using static HSCrm.Common.PublicTools.StringCleaner;
@@ -20,6 +23,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetWarehouses")]
+        [Permission(Permissions.Warehouses.View)]
         public ApiResponse<IEnumerable<Warehouse>> Get()
         {
             var warehouses = _context.warehouseUW.Get();
@@ -37,6 +41,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Warehouse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Warehouses.View)]
         public ApiResponse GetById(int warehouseId)
         {
             var warehouse = _context.warehouseUW.GetById(warehouseId);
@@ -58,6 +63,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateWarehouse")]
+        [Permission(Permissions.Warehouses.Create)]
         public ApiResponse Create([FromForm] WarehouseCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse
@@ -84,8 +90,8 @@ namespace HSCrm.WebApi.Controllers
                     IsActive = model.IsActive,
                     Address = model.Address,
                     CreatedAt = DateTime.Now,
-                    CreatedById = model.CreateById,
-                    TenantId = model.TenantId
+                    CreatedById = User.GetUserId(),
+                    TenantId = User.GetTenantId().Value
                 };
 
                 _context.warehouseUW.Create(warehouse);
@@ -114,6 +120,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateWarehouse")]
         [ProducesResponseType(typeof(Warehouse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Warehouses.Edit)]
         public ApiResponse Update([FromBody] WarehouseEditModel model)
         {
             if (model.WarehouseId == 0) return new ApiResponse
@@ -140,7 +147,7 @@ namespace HSCrm.WebApi.Controllers
                 getWarehouse.IsActive = model.IsActive;
                 getWarehouse.Address = model.Address;
                 getWarehouse.ModifiedAt = DateTime.Now;
-                getWarehouse.ModifiedById = model.ModifiedById;
+                getWarehouse.ModifiedById = User.GetUserId();
             }
 
             _context.warehouseUW.Update(getWarehouse);
@@ -158,7 +165,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("WarehouseDropdownList")]
         public ApiResponse WarehouseDropdownList(int tenantId)
         {
-            IEnumerable<DropdownDto> warehouseList = _context.warehouseUW.Get(p => p.TenantId == tenantId).Select(p => new DropdownDto
+            IEnumerable<DropdownDto> warehouseList = _context.warehouseUW.Get(p => p.TenantId == User.GetTenantId().Value).Select(p => new DropdownDto
             {
                 DrId = p.Id,
                 DrName = p.Title,

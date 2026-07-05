@@ -31,9 +31,14 @@ namespace HSCrm.WebApi.Tools
         {
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Id),
+                new Claim(ClaimTypes.NameIdentifier, user.Id),                
                 new Claim(ClaimTypes.Name, user.UserName ?? "")
             };
+
+            if (user.TenantId > 0)
+            {
+                claims.Add(new Claim("TenantId", user.TenantId.ToString()));
+            }
 
             var roles = await _userManager.GetRolesAsync(user);
             foreach (var role in roles)

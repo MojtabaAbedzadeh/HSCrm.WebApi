@@ -1,7 +1,10 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using static HSCrm.Common.PublicTools.StringCleaner;
@@ -20,6 +23,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetProjects")]
+        [Permission(Permissions.Projects.View)]
         public ApiResponse<IEnumerable<Project>> Get()
         {
             var projects = _context.projectUW.Get(includes: p => p.Customer).ToList();
@@ -33,11 +37,11 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-
         [HttpGet("GetById")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(Project), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Projects.View)]
         public ApiResponse GetById(int projectId)
         {
             var projects = _context.projectUW.GetById(projectId);
@@ -61,6 +65,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateProject")]
+        [Permission(Permissions.Projects.Create)]
         public ApiResponse Create([FromForm] ProjectCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse
@@ -87,9 +92,9 @@ namespace HSCrm.WebApi.Controllers
                     CustomerId = model.CustomerId,
                     ProjectLocation = model.ProjectLocation,
                     CreatedAt = DateTime.Now,
-                    CreatedById= model.CreateById,
+                    CreatedById= User.GetUserId(),
                     Status = "Active",
-                    TenantId = model.TenantId
+                    TenantId = User.GetTenantId().Value
                 };
 
                 _context.projectUW.Create(project);
@@ -118,6 +123,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateProject")]
         [ProducesResponseType(typeof(Project), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Projects.Edit)]
         public ApiResponse Update([FromBody] ProjectEditModel model)
         {
             if (model.ProjectId == 0) return new ApiResponse
@@ -135,7 +141,7 @@ namespace HSCrm.WebApi.Controllers
                 getProject.ProjectLocation = model.ProjectLocation;
                 getProject.CustomerId = model.CustomerId;
                 getProject.ModifiedAt = DateTime.Now;
-                getProject.ModifiedById = model.ModifiedById;
+                getProject.ModifiedById = User.GetUserId();
             }
 
             _context.projectUW.Update(getProject);
@@ -153,7 +159,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("ProjectDropdownList")]
         public ApiResponse ProjectDropdownList(int tenantId)
         {
-            IEnumerable<DropdownDto> projectList = _context.projectUW.Get(p => p.TenantId == tenantId).Select(p => new DropdownDto
+            IEnumerable<DropdownDto> projectList = _context.projectUW.Get(p => p.TenantId == User.GetTenantId().Value).Select(p => new DropdownDto
             {
                 DrId = p.Id,
                 DrName = p.ProjectTitle,

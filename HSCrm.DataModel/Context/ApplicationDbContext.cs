@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using System.Linq.Expressions;
 using System.Reflection;
-using System.Reflection.Emit;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.DataModel.Context
@@ -13,11 +13,12 @@ namespace HSCrm.DataModel.Context
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string, IdentityUserClaim<string>, UserRole, IdentityUserLogin<string>, IdentityRoleClaim<string>, IdentityUserToken<string>>
     {
         private readonly ICurrentUserService _currentUserService;
+        private int CurrentTenantId => _currentUserService?.TenantId ?? 0;
+
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUserService currentUserService) : base(options)
         {
             _currentUserService = currentUserService;
         }
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
         public DbSet<Tenant> Tenants { get; set; }
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Supplier> Suppliers { get; set; }
@@ -41,10 +42,20 @@ namespace HSCrm.DataModel.Context
         {
             base.OnModelCreating(builder);
 
+            foreach (var entityType in builder.Model.GetEntityTypes())
+            {
+                if (typeof(TenantScopedEntity).IsAssignableFrom(entityType.ClrType))
+                {
+                    builder.Entity(entityType.ClrType)
+                        .HasQueryFilter(GetTenantFilterExpression(entityType.ClrType));
+                }
+            }
+
             var adminUserId = "28dfc395-0464-4b47-8aae-c73953a9d153";
             var adminRoleId = "AdminId";
             var userRoleId = "UserId";
             var ownerRoleId = "OwnerId";
+            var customerId = "CustomerId";
             var defaultTenantId = 1;
 
             // ======================= Tenant =======================
@@ -60,9 +71,7 @@ namespace HSCrm.DataModel.Context
                 }
             );
 
-            builder.Entity<Tenant>()
-                .HasIndex(t => t.TenantCode)
-                .IsUnique();
+            builder.Entity<Tenant>().HasIndex(t => t.TenantCode).IsUnique();
 
             // ======================= Roles =======================
             builder.Entity<ApplicationRole>().HasData(
@@ -79,8 +88,18 @@ namespace HSCrm.DataModel.Context
                 {
                     Id = ownerRoleId,
                     Name = "Owner",
+                    RoleFaName = "مدیر",
                     NormalizedName = "OWNER",
                     ConcurrencyStamp = ownerRoleId,
+                    TenantId = defaultTenantId
+                },
+                new ApplicationRole
+                {
+                    Id = customerId,
+                    Name = "Customer",
+                    RoleFaName = "مشتتری",
+                    NormalizedName = "CUSTOMER",
+                    ConcurrencyStamp = customerId,
                     TenantId = defaultTenantId
                 },
                 new ApplicationRole
@@ -179,21 +198,6 @@ namespace HSCrm.DataModel.Context
                 e.ToTable("Roles");
                 e.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             });
-
-            // ======================= FiscalYear =======================
-            //builder.Entity<FiscalYear>().HasData(
-            //    new FiscalYear
-            //    {
-            //        Id = 1,
-            //        TenantId = 1,
-            //        Title = "1404",
-            //        StartDate = new DateTime(2025, 3, 20),
-            //        EndDate = new DateTime(2026, 3, 19),
-            //        IsCurrent = true,
-            //        IsClosed = false,
-            //        CreatedAt = DateTime.UtcNow
-            //    }
-            //);
 
             // ======================= Decimal Precision & Audited Entities =======================
             foreach (var entityType in builder.Model.GetEntityTypes())
@@ -546,12 +550,15 @@ namespace HSCrm.DataModel.Context
         }
         private void ApplyAuditAndTenantInfo()
         {
-            var userId = _currentUserService.UserId;
-            var tenantId = _currentUserService.TenantId;
+            var userId = _currentUserService?.UserId;
+            var tenantId = _currentUserService?.TenantId;
             var now = DateTime.UtcNow;
 
             foreach (var entry in ChangeTracker.Entries())
             {
+                // -------------------------
+                // Audit Handling
+                // -------------------------
                 if (entry.Entity is AuditedEntity auditedEntity)
                 {
                     if (entry.State == EntityState.Added)
@@ -560,26 +567,35 @@ namespace HSCrm.DataModel.Context
                         auditedEntity.CreatedById = userId;
                         auditedEntity.IsDeleted = false;
                     }
-
-                    if (entry.State == EntityState.Modified)
+                    else if (entry.State == EntityState.Modified)
                     {
                         auditedEntity.ModifiedAt = now;
                         auditedEntity.ModifiedById = userId;
                     }
                 }
 
+                // -------------------------
+                // Tenant Handling
+                // -------------------------
                 if (entry.Entity is TenantScopedEntity tenantEntity)
                 {
                     if (entry.State == EntityState.Added)
                     {
+                        // اگر کاربر tenant داشت
                         if (tenantId.HasValue)
+                        {
                             tenantEntity.TenantId = tenantId.Value;
+                        }
+                        // اگر سیستم در حال seed یا migration بود
+                        else if (tenantEntity.TenantId == 0)
+                        {
+                            tenantEntity.TenantId = 1;
+                        }
                     }
-
-                    if (entry.State == EntityState.Modified)
+                    else if (entry.State == EntityState.Modified)
                     {
-                        if (tenantId.HasValue)
-                            tenantEntity.TenantId = tenantId.Value;
+                        // جلوگیری از تغییر TenantId
+                        entry.Property(nameof(TenantScopedEntity.TenantId)).IsModified = false;
                     }
                 }
             }
@@ -643,5 +659,22 @@ namespace HSCrm.DataModel.Context
                 }
             }
         }
+
+        private LambdaExpression GetTenantFilterExpression(Type entityType)
+        {
+            var parameter = Expression.Parameter(entityType, "e");
+
+            var tenantProperty = Expression.Property(parameter, nameof(TenantScopedEntity.TenantId));
+
+            var currentTenant = Expression.Property(
+                Expression.Constant(this),
+                nameof(CurrentTenantId)
+            );
+
+            var body = Expression.Equal(tenantProperty, currentTenant);
+
+            return Expression.Lambda(body, parameter);
+        }
+
     }
 }

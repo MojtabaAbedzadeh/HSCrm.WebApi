@@ -1,6 +1,4 @@
 ﻿using Framework.Authorization;
-using HSCrm.DataModel.Context;
-using HSCrm.DataModel.Seeders;
 using HSCrm.DataModel.Services;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;

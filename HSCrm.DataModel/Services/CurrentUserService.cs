@@ -10,21 +10,21 @@ public class CurrentUserService : ICurrentUserService
         _httpContextAccessor = httpContextAccessor;
     }
 
-    public string? UserId =>
-        _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+    public string? UserId => _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
 
     public int? TenantId
     {
         get
         {
-            var value = _httpContextAccessor.HttpContext?.User?.FindFirst("TenantId")?.Value;
-            if (int.TryParse(value, out var tenantId))
+            var tenantClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("TenantId")?.Value;
+            Console.WriteLine("Tenant from CurrentUserService: " + tenantClaim);
+            if (int.TryParse(tenantClaim, out var tenantId))
                 return tenantId;
 
             return null;
         }
     }
 
-    public bool IsAuthenticated =>
-        _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
+    public bool IsAuthenticated
+        => _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
 }

@@ -1,6 +1,9 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using static HSCrm.Common.PublicTools.StringCleaner;
@@ -19,6 +22,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetPayments")]
+        [Permission(Permissions.Payments.View)]
         public ApiResponse<IEnumerable<Payment>> Get()
         {
             var payments = _context.paymentUW.Get();
@@ -36,6 +40,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Payment), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Payments.View)]
         public ApiResponse GetById(int paymentId)
         {
             var payment = _context.paymentUW.GetById(paymentId);
@@ -57,6 +62,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreatePayment")]
+        [Permission(Permissions.Payments.Create)]
         public ApiResponse Create([FromForm] PaymentCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse
@@ -78,8 +84,8 @@ namespace HSCrm.WebApi.Controllers
                     SalesInvoiceId = model.SalesInvoiceId,
                     ExpenseId = model.ExpenseId,
                     CreatedAt = DateTime.Now,
-                    CreatedById = model.UserId,
-                    TenantId = model.TenantId,
+                    CreatedById = User.GetUserId(),
+                    TenantId = User.GetTenantId().Value,
                 };
 
                 _context.paymentUW.Create(payment);
@@ -107,6 +113,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdatePayment")]
         [ProducesResponseType(typeof(Payment), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Payments.Edit)]
         public ApiResponse Update([FromForm] PaymentEditModel model)
         {
             if (model.PaymentId == 0) return new ApiResponse
@@ -128,7 +135,7 @@ namespace HSCrm.WebApi.Controllers
                 getPayment.Method = model.Method;
                 getPayment.ReferenceNo = model.ReferenceNo;
                 getPayment.ModifiedAt = DateTime.Now;
-                getPayment.ModifiedById = model.UserId;
+                getPayment.ModifiedById = User.GetUserId();
             }
 
             _context.paymentUW.Update(getPayment);

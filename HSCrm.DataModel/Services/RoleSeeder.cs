@@ -29,6 +29,14 @@ namespace HSCrm.DataModel.Services
                 new ApplicationRole
                 {
                     Id = Guid.NewGuid().ToString(),
+                    Name = "Customer",
+                    NormalizedName = "CUSTOMER",
+                    RoleFaName = "مشتری",
+                    TenantId = 1
+                },
+                new ApplicationRole
+                {
+                    Id = Guid.NewGuid().ToString(),
                     Name = "User",
                     NormalizedName = "USER",
                     RoleFaName = "کاربر",

@@ -5,6 +5,7 @@ using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Entities.Models.Dto;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -56,7 +57,7 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse<CustomerDetailViewModel>
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.NotFound, 
+                    StatusCode = ApiResultStatusCode.NotFound,
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
                     Data = null
                 };
@@ -126,9 +127,27 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
-            // بررسی تکراری بودن مشتری
+            var currentUserId = User.GetUserId();
+            var tenantId = User.GetTenantId();
+
+            if (string.IsNullOrEmpty(currentUserId))
+                return new ApiResponse<CustomerCreateDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+            if (tenantId == null)
+                return new ApiResponse<CustomerCreateDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "شناسه شرکت وارد شده، معتبر نیست"
+                };
+
             var existsCustomer = _context.customerUW
-                .Get(c => c.Name == model.UserFirstName + " " + model.UserLastName && c.TenantId == model.TenantId)
+                .Get(c => c.Name == model.UserFirstName + " " + model.UserLastName && c.TenantId == tenantId.Value)
                 .Any();
 
             if (existsCustomer)
@@ -136,10 +155,9 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.Conflict,
-                    Message = "این مشتری قبلاً ثبت شده است"
+                    Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
-            // بررسی تکراری بودن نام کاربری
             var existsUser = await _userManager.FindByNameAsync(model.UserName);
 
             if (existsUser != null)
@@ -147,14 +165,13 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.Conflict,
-                    Message = "نام کاربری تکراری است"
+                    Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
             using var transaction = _context.BeginTransaction();
 
             try
             {
-                // ساخت User
                 var user = new ApplicationUser
                 {
                     UserFirstName = model.UserFirstName,
@@ -164,7 +181,7 @@ namespace HSCrm.WebApi.Controllers
                     UserStatus = true,
                     Email = model.Email,
                     PhoneNumber = model.Phone,
-                    TenantId = model.TenantId,
+                    TenantId = tenantId.Value,
                     UserType = 3,
                     UserGender = true,
                     IsTenantOwner = false
@@ -177,13 +194,11 @@ namespace HSCrm.WebApi.Controllers
                     {
                         Status = false,
                         StatusCode = ApiResultStatusCode.BadRequest,
-                        Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                        Message = string.Join(" | ", createUserResult.Errors.Select(e => e.Description))
                     };
 
-                // Role
                 await _userManager.AddToRoleAsync(user, "Customer");
 
-                // ساخت Customer
                 var customer = new Customer
                 {
                     Name = model.UserFirstName + " " + model.UserLastName,
@@ -191,8 +206,8 @@ namespace HSCrm.WebApi.Controllers
                     Email = model.Email,
                     Address = model.Address,
                     CreatedAt = DateTime.Now,
-                    CreatedById = model.CreateById,
-                    TenantId = model.TenantId,
+                    CreatedById = currentUserId,
+                    TenantId = tenantId.Value,
                     ApplicationUserId = user.Id
                 };
 
@@ -201,7 +216,6 @@ namespace HSCrm.WebApi.Controllers
 
                 await transaction.CommitAsync();
 
-                // تبدیل به DTO
                 var result = new CustomerCreateDto
                 {
                     Id = customer.Id,
@@ -233,7 +247,6 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
         }
-
 
         [HttpPut("UpdateCustomer")]
         [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
@@ -284,7 +297,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("CustomerDropdownList")]
         public ApiResponse CustomerDropdownList(int tenantId)
         {
-            IEnumerable<DropdownDto> customerList = _context.customerUW.Get(c => c.TenantId == tenantId).Select(p => new DropdownDto
+            IEnumerable<DropdownDto> customerList = _context.customerUW.Get(c => c.TenantId == User.GetTenantId().Value).Select(p => new DropdownDto
             {
                 DrId = p.Id,
                 DrName = p.Name,

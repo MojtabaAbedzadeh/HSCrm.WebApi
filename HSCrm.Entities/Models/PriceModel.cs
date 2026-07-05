@@ -8,8 +8,6 @@ namespace HSCrm.Entities.Models
         public class PriceCreateModel
         {
             public int ProId { get; set; }
-            public int TenantId { get; set; }
-            public required string UserId { get; set; }
             public decimal SellPrice { get; set; }
             public decimal BuyPrice { get; set; }
             public bool IsActive { get; set; }

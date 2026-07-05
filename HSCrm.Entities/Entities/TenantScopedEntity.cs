@@ -2,7 +2,7 @@
 {
     public class TenantScopedEntity : AuditedEntity
     {
-        public required int TenantId { get; set; }
+        public int TenantId { get; set; }
         public Tenant Tenant { get; set; } = default!;
     }
 }

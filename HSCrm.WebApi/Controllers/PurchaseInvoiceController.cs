@@ -1,6 +1,9 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using SinaPharm.Common;
@@ -23,6 +26,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetPurchaseInvoices")]
+        [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse<IEnumerable<PurchaseInvoice>> Get()
         {
             var invoices = _context.purchaseInvoiceUW.Get(null, true, x => x.Supplier, x => x.Tenant).ToList();
@@ -40,6 +44,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(PurchaseInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse GetById(int InvoiceId)
         {
             var factor = _context.purchaseInvoiceUW.GetById(InvoiceId);
@@ -65,6 +70,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(PurchaseInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse<IEnumerable<PurchaseInvoice>> GetByProjectId(int projectId)
         {
             var factor = _context.purchaseInvoiceUW.Get();
@@ -87,6 +93,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateInvoice")]
+        [Permission(Permissions.PurchaseInvoices.Create)]
         public ApiResponse Create([FromBody] InvoiceCreateModel model)
         {
             if (model.Items == null || model.Items.Count == 0) return new ApiResponse
@@ -124,7 +131,7 @@ namespace HSCrm.WebApi.Controllers
                 // ✅ 3. ساخت فاکتور
                 var invoice = new PurchaseInvoice
                 {
-                    TenantId = model.TenantId,
+                    TenantId = User.GetTenantId().Value,
                     SupplierId = model.SupplierId,
                     WarehouseId = model.WarehouseId,
                     Number = model.InvoiceNumber,
@@ -134,7 +141,7 @@ namespace HSCrm.WebApi.Controllers
                     Tax = model.InvoiceTax,
                     Total = finalTotal,
                     PurchaserUserId = model.PurchaserId,
-                    CreatedById = model.PurchaserId,
+                    CreatedById = User.GetUserId(),
                     CreatedAt = DateTime.Now
                 };
 
@@ -148,8 +155,8 @@ namespace HSCrm.WebApi.Controllers
                         Discount = item.Discount,
                         Tax = item.Tax,
                         CreatedAt = DateTime.Now,
-                        CreatedById = model.PurchaserId,
-                        TenantId = model.TenantId,
+                        CreatedById = User.GetUserId(),
+                        TenantId = User.GetTenantId().Value,
                         LineTotal = (item.Quantity * item.UnitPrice) - item.Discount + item.Tax
                     });
                 }
@@ -191,6 +198,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateInvoice")]
         [ProducesResponseType(typeof(PurchaseInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.PurchaseInvoices.Edit)]
         public ApiResponse Update([FromBody] SalesInvoiceEditModel model)
         {
             if (model.InvoiceId == 0 || model.Items == null)
@@ -229,8 +237,8 @@ namespace HSCrm.WebApi.Controllers
                     ProductId = i.ProductId,
                     Quantity = i.Quantity,
                     CreatedAt = DateTime.UtcNow,
-                    CreatedById = model.SellerUserId,
-                    TenantId = 1,
+                    CreatedById = User.GetUserId(),
+                    TenantId = User.GetTenantId().Value,
                     UnitPricePurchase = i.UnitPrice * i.Quantity
                 }).ToList();
 

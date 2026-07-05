@@ -34,17 +34,16 @@ namespace HSCrm.DataModel.Services.Repository
         }
 
         // READ (sync)
-        public virtual IEnumerable<TEntity> Get(
-            Expression<Func<TEntity, bool>>? predicate = null,
-            bool asNoTracking = true,
-            params Expression<Func<TEntity, object>>[] includes)
+        public virtual IQueryable<TEntity> Get(Expression<Func<TEntity, bool>>? predicate = null, bool asNoTracking = true, params Expression<Func<TEntity, object>>[] includes)
         {
             IQueryable<TEntity> q = _table;
             if (asNoTracking)
                 q = q.AsNoTracking();
-            if (predicate != null) q = q.Where(predicate);
+            if (predicate != null)
+                q = q.Where(predicate);
             if (includes != null)
-                foreach (var inc in includes) q = q.Include(inc);
+                foreach (var inc in includes)
+                    q = q.Include(inc);
             return q;
         }
 

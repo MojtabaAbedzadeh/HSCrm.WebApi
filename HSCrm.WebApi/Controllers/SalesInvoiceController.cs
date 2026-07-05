@@ -1,7 +1,10 @@
-﻿using HSCrm.DataModel.Exceptions;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Exceptions;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +28,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetSalesInvoices")]
+        [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoice>> Get()
         {
             var invoices = _context.salesInvoiceUW.Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant).ToList();
@@ -42,6 +46,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(SalesInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse GetById(int invoiceId)
         {
             var invoice = _context.salesInvoiceUW.GetById(invoiceId);
@@ -64,6 +69,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateSalesInvoice")]
+        [Permission(Permissions.SalesInvoices.Create)]
         public ApiResponse CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model)
         {
             if (model.Items == null || model.Items.Count == 0) return new ApiResponse
@@ -103,7 +109,7 @@ namespace HSCrm.WebApi.Controllers
                 // ✅ 3. ساخت Entity فاکتور فروش
                 var invoice = new SalesInvoice
                 {
-                    TenantId = model.TenantId,
+                    TenantId = User.GetTenantId().Value,
                     WarehouseId = model.WarehouseId,
                     ProjectId = model.ProjectId,
                     Number = model.InvoiceNumber,
@@ -113,7 +119,7 @@ namespace HSCrm.WebApi.Controllers
                     Tax = model.InvoiceTax,
                     Total = finalTotal,
                     SellerUserId = model.SellerUserId,
-                    CreatedById = model.SellerUserId,
+                    CreatedById = User.GetUserId(),
                     CreatedAt = DateTime.Now
                 };
 
@@ -128,8 +134,8 @@ namespace HSCrm.WebApi.Controllers
                         Discount = item.Discount,
                         Tax = item.Tax,
                         CreatedAt = DateTime.Now,
-                        CreatedById = model.SellerUserId,
-                        TenantId = model.TenantId,
+                        CreatedById = User.GetUserId(),
+                        TenantId = User.GetTenantId().Value,
                         LineTotal = (item.Quantity * item.UnitPrice) - item.Discount + item.Tax
                     });
                 }
@@ -184,6 +190,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(SalesInvoiceModel), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoiceModel>> GetByProjectId(int projectId)
         {            
             var invoiceList = _context.salesInvoiceUW
@@ -225,8 +232,8 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-
         [HttpPut("UpdateInvoice")]
+        [Permission(Permissions.SalesInvoices.Edit)]
         public ApiResponse Update([FromBody] SalesInvoiceEditModel model)
         {
             using var tr = _context.BeginTransaction();
@@ -265,9 +272,9 @@ namespace HSCrm.WebApi.Controllers
                         Quantity = item.Quantity,
                         UnitPriceSell = item.UnitPrice,
                         LineTotal = item.UnitPrice * item.Quantity,
-                        TenantId = invoice.TenantId,
+                        TenantId = User.GetTenantId().Value,
                         CreatedAt = DateTime.UtcNow,
-                        CreatedById = model.SellerUserId
+                        CreatedById = User.GetUserId()
                     });
                 }
 
@@ -304,6 +311,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("ConfirmInvoice")]
+        [Permission(Permissions.SalesInvoices.Create)]
         public async Task<IActionResult> Confirm([FromForm] int invoiceId)
         {
             using var tran = _context.BeginTransaction();
@@ -325,7 +333,7 @@ namespace HSCrm.WebApi.Controllers
                 foreach (var item in invoice.Items)
                 {
                     var inventory = (await _context.inventoryUW.GetAsync(
-                        x => x.TenantId == invoice.TenantId &&
+                        x => x.TenantId == User.GetTenantId().Value &&
                              x.ProductId == item.ProductId,
                         asNoTracking: false
                     )).FirstOrDefault();
@@ -337,7 +345,7 @@ namespace HSCrm.WebApi.Controllers
                 foreach (var item in invoice.Items)
                 {
                     var inventory = (await _context.inventoryUW.GetAsync(
-                        x => x.TenantId == invoice.TenantId &&
+                        x => x.TenantId == User.GetTenantId().Value &&
                              x.ProductId == item.ProductId,
                         asNoTracking: false
                     )).First();
@@ -346,11 +354,11 @@ namespace HSCrm.WebApi.Controllers
 
                     _context.inventoryTransactionUW.Create(new InventoryTransaction
                     {
-                        TenantId = invoice.TenantId,
+                        TenantId = User.GetTenantId().Value,
                         ProductId = item.ProductId,
                         QuantityChange = -item.Quantity,
                         CreatedAt = DateTime.UtcNow,
-                        CreatedById = invoice.SellerUserId,
+                        CreatedById = User.GetUserId(),
                         TransactionType = InventoryTransactionType.Sale,
                         ReferenceId = invoice.Id,
                         ReferenceType = InventoryReferenceType.SalesInvoice
@@ -372,6 +380,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetInvoiceDetail")]
+        [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoiceItem>> GetDetail(int invoiceId)
         {
             var invoice = _context.salesInvoiceItemUW.Get(i => i.SalesInvoiceId == invoiceId);

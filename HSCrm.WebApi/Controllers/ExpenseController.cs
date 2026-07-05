@@ -1,6 +1,9 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using SinaPharm.Common;
@@ -20,6 +23,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetExpense")]
+        [Permission(Permissions.Expenses.View)]
         public ApiResponse<IEnumerable<Expense>> Get()
         {
             var expenses = _context.expenseUW.Get(null, true, x => x.Project, x => x.Tenant, x => x.CreatedBy).ToList();
@@ -37,6 +41,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Expenses.View)]
         public ApiResponse GetById(int expenseId)
         {
             var expenses = _context.expenseUW
@@ -76,6 +81,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Expenses.View)]
         public ApiResponse<IEnumerable<ExpenseEditModel>> GetByProjectId(int projectId)
         {
             var expenses = _context.expenseUW
@@ -111,6 +117,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateExpense")]
+        [Permission(Permissions.Expenses.Create)]
         public ApiResponse Create([FromForm] ExpenseCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse
@@ -133,7 +140,7 @@ namespace HSCrm.WebApi.Controllers
             {
                 Expense expense = new Expense()
                 {
-                    TenantId = model.TenantId,
+                    TenantId = User.GetTenantId().Value,
                     ExpenseTitle = model.ExpenseTitle,
                     ProjectId = model.ProjectId,
                     Type = model.Type,
@@ -141,7 +148,7 @@ namespace HSCrm.WebApi.Controllers
                     Amount = model.Amount,
                     Description = model.Description,
                     CreatedAt = DateTime.Now,
-                    CreatedById = model.UserId
+                    CreatedById = User.GetUserId()
                 };
 
                 _context.expenseUW.Create(expense);
@@ -170,6 +177,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateExpense")]
         [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Expenses.Edit)]
         public ApiResponse Update([FromBody] ExpenseEditModel model)
         {
             if (model.ExpenseId == 0) return new ApiResponse
@@ -188,7 +196,7 @@ namespace HSCrm.WebApi.Controllers
                 getExpense.Type = model.Type;
                 getExpense.Amount = model.Amount;
                 getExpense.ModifiedAt = DateTime.UtcNow;
-                getExpense.ModifiedById = model.ModifiedById;
+                getExpense.ModifiedById = User.GetUserId();
                 getExpense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
             }
 

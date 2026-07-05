@@ -1,5 +1,8 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using SinaPharm.Common;
@@ -20,6 +23,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetProductPriceHistory")]
+        [Permission(Permissions.ProductPrices.View)]
         public ApiResponse<IEnumerable<ProductPrice>> GetProductPriceHistory(long productId)
         {
             var priceHistory = _context.priceUW.Get(p => p.ProductId == productId).OrderByDescending(o => o.Id);
@@ -37,6 +41,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(ProductPrice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.ProductPrices.View)]
         public ApiResponse<IEnumerable<ProductPrice>> GetPriceByProductId(int productId)
         {
             var price = _context.priceUW.Get(p => p.ProductId == productId);
@@ -64,6 +69,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreatePrice")]
+        [Permission(Permissions.ProductPrices.Create)]
         public ApiResponse Create([FromForm] PriceCreateModel model)
         {
             if (!ModelState.IsValid)
@@ -87,7 +93,7 @@ namespace HSCrm.WebApi.Controllers
                 oldPrice.EffectiveTo = DateTime.Now;
                 oldPrice.IsActive = false;
                 oldPrice.ModifiedAt = DateTime.Now;
-                oldPrice.ModifiedById = model.UserId;
+                oldPrice.ModifiedById = User.GetUserId();
 
                 _context.priceUW.Update(oldPrice);
                 _context.Save(); // مهم
@@ -104,9 +110,9 @@ namespace HSCrm.WebApi.Controllers
                     EffectiveFrom = ConvertDate.ConvertShamsiToMiladi(model.EffectiveFrom),
                     EffectiveTo = null,
                     CreatedAt = DateTime.Now,
-                    CreatedById = model.UserId,
+                    CreatedById =  User.GetUserId(),
                     IsDeleted = false,
-                    TenantId = model.TenantId
+                    TenantId = User.GetTenantId().Value
                 };
 
                 _context.priceUW.Create(newPrice);
@@ -134,6 +140,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdatePrice")]
         [ProducesResponseType(typeof(ProductPrice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.ProductPrices.Edit)]
         public ApiResponse Update([FromForm] PriceEditModel model)
         {
             // اعتبارسنجی اولیه
@@ -176,7 +183,7 @@ namespace HSCrm.WebApi.Controllers
                 currentPrice.EffectiveTo = DateTime.UtcNow;
                 currentPrice.IsActive = false;
                 currentPrice.ModifiedAt = DateTime.UtcNow;
-                currentPrice.ModifiedById = model.UserId;
+                currentPrice.ModifiedById = User.GetUserId();
                 _context.priceUW.Update(currentPrice);
 
                 // 2️⃣ ایجاد رکورد جدید قیمت
@@ -188,8 +195,8 @@ namespace HSCrm.WebApi.Controllers
                     EffectiveTo = null,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow,
-                    CreatedById = model.UserId,
-                    TenantId = model.TenantId,
+                    CreatedById = User.GetUserId(),
+                    TenantId = User.GetTenantId().Value,
                     IsDeleted = false
                 };
 

@@ -11,6 +11,14 @@ namespace HSCrm.Entities.Models
         public long FiscalYearId { get; set; }
     }
 
+    public class LoginModel
+    {
+        [Required(AllowEmptyStrings = false, ErrorMessage = "Username is required.")]
+        public required string UserName { get; set; }
+        [Required(AllowEmptyStrings = false, ErrorMessage = "Password is required.")]
+        public required string Password { get; set; }
+    }
+
     public class UserJwtToken
     {
         public string UserId { get; set; }

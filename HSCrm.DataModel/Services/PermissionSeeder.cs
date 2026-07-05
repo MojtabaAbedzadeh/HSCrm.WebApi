@@ -14,13 +14,9 @@ namespace HSCrm.DataModel.Seeders
         {
             var permissionsInCode = GetPermissionsFromCode();
 
-            var existingPermissionNames = await context.Permissions
-                .Select(p => p.Name)
-                .ToListAsync();
+            var existingPermissionNames = await context.Permissions.Select(p => p.Name).ToListAsync();
 
-            var newPermissions = permissionsInCode
-                .Where(p => !existingPermissionNames.Contains(p.Name))
-                .ToList();
+            var newPermissions = permissionsInCode.Where(p => !existingPermissionNames.Contains(p.Name)).ToList();
 
             if (newPermissions.Any())
             {
@@ -32,16 +28,13 @@ namespace HSCrm.DataModel.Seeders
         {
             var result = new List<Permission>();
 
-            var nestedTypes = typeof(Permissions)
-                .GetNestedTypes(BindingFlags.Public);
+            var nestedTypes = typeof(Permissions).GetNestedTypes(BindingFlags.Public);
 
             foreach (var nestedType in nestedTypes)
             {
                 var category = nestedType.Name;
 
-                var fields = nestedType
-                    .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-                    .Where(f => f.IsLiteral && !f.IsInitOnly && f.FieldType == typeof(string));
+                var fields = nestedType.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy).Where(f => f.IsLiteral && !f.IsInitOnly && f.FieldType == typeof(string));
 
                 foreach (var field in fields)
                 {
@@ -90,8 +83,7 @@ namespace HSCrm.DataModel.Seeders
 
             foreach (var permission in permissions)
             {
-                bool exists = context.RolePermissions
-                    .Any(rp => rp.RoleId == adminRole.Id && rp.PermissionId == permission.Id);
+                bool exists = context.RolePermissions.Any(rp => rp.RoleId == adminRole.Id && rp.PermissionId == permission.Id);
 
                 if (!exists)
                 {

@@ -68,10 +68,7 @@ namespace HSCrm.DataModel.Services.Repository
         {
             _context.SaveChanges();
         }
-        //public void SaveAsync()
-        //{
-        //    _context.SaveChangesAsync();
-        //}
+
         public async Task SaveAsync()
         {
             await _context.SaveChangesAsync();

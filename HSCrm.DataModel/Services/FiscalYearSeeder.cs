@@ -10,27 +10,12 @@ namespace HSCrm.DataModel.Seeders
         public static async Task SeedCurrentFiscalYearAsync(ApplicationDbContext context, int tenantId)
         {
             var persianCalendar = new PersianCalendar();
-
             var now = DateTime.Now;
 
             var persianYear = persianCalendar.GetYear(now);
-            var persianMonth = persianCalendar.GetMonth(now);
-            var persianDay = persianCalendar.GetDayOfMonth(now);
-
-            /*
-             اگر سال مالی تو از 1 فروردین شروع می‌شود:
-             Start: 01/01
-             End: 12/29 یا 12/30 بسته به کبیسه بودن
-            */
 
             var startDate = persianCalendar.ToDateTime(
-                persianYear,
-                1,
-                1,
-                0,
-                0,
-                0,
-                0
+                persianYear, 1, 1, 0, 0, 0, 0
             );
 
             var lastDayOfYear = persianCalendar.GetDaysInMonth(persianYear, 12);
@@ -47,15 +32,35 @@ namespace HSCrm.DataModel.Seeders
 
             var title = persianYear.ToString();
 
-            var exists = await context.FiscalYears.AnyAsync(x =>
-                x.TenantId == tenantId &&
-                x.Title == title
-            );
+            // ✅ مهم — بدون QueryFilter
+            var fiscalYears = await context.FiscalYears
+                .IgnoreQueryFilters()
+                .Where(x => x.TenantId == tenantId)
+                .ToListAsync();
 
-            if (exists)
+            var existingYear = fiscalYears.FirstOrDefault(x => x.Title == title);
+
+            if (existingYear != null)
+            {
+                // اگر سال وجود دارد ولی Current نیست
+                if (!existingYear.IsCurrent)
+                {
+                    foreach (var fy in fiscalYears.Where(x => x.IsCurrent))
+                        fy.IsCurrent = false;
+
+                    existingYear.IsCurrent = true;
+
+                    await context.SaveChangesAsync();
+                }
+
                 return;
+            }
 
-            var currentFiscalYear = new FiscalYear
+            // ✅ اگر سال جدید است
+            foreach (var fy in fiscalYears.Where(x => x.IsCurrent))
+                fy.IsCurrent = false;
+
+            var newFiscalYear = new FiscalYear
             {
                 TenantId = tenantId,
                 Title = title,
@@ -66,7 +71,7 @@ namespace HSCrm.DataModel.Seeders
                 CreatedAt = DateTime.UtcNow
             };
 
-            context.FiscalYears.Add(currentFiscalYear);
+            context.FiscalYears.Add(newFiscalYear);
 
             await context.SaveChangesAsync();
         }

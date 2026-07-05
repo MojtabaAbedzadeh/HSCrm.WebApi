@@ -1,7 +1,10 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -23,6 +26,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetSupplier")]
+        [Permission(Permissions.Suppliers.View)]
         public ApiResponse<IEnumerable<Supplier>> Get()
         {
             var suppliers = _context.supplierUW.Get();
@@ -40,6 +44,7 @@ namespace HSCrm.WebApi.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(Supplier), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Suppliers.View)]
         public ApiResponse GetById(int supplierId)
         {
             var supplier = _context.supplierUW.GetById(supplierId);
@@ -62,6 +67,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateSupplier")]
+        [Permission(Permissions.Suppliers.Create)]
         public ApiResponse Create([FromForm] SupplierCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse
@@ -87,8 +93,8 @@ namespace HSCrm.WebApi.Controllers
                     SupplierFullName = model.SupplierFullName,
                     SupplierAddress = model.SupplierAddress,
                     SupplierPhone = model.SupplierPhone,
-                    CreatedById = model.CreateById,
-                    TenantId = model.TenantId,
+                    CreatedById = User.GetUserId(),
+                    TenantId = User.GetTenantId().Value,
                     CreatedAt = DateTime.Now,
                 };
 
@@ -118,6 +124,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateSupplier")]
         [ProducesResponseType(typeof(Supplier), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Suppliers.Edit)]
         public ApiResponse Update([FromBody] SupplierEditModel model)
         {
             if (model.SupplierId == 0) return new ApiResponse
@@ -135,7 +142,7 @@ namespace HSCrm.WebApi.Controllers
                 getSupplier.SupplierPhone = model.SupplierPhone;
                 getSupplier.SupplierAddress = model.SupplierAddress;
                 getSupplier.ModifiedAt = DateTime.Now;
-                getSupplier.ModifiedById = model.ModifiedById;
+                getSupplier.ModifiedById = User.GetUserId();
             }
 
             _context.supplierUW.Update(getSupplier);
@@ -153,7 +160,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("SupplierDropdownList")]
         public ApiResponse SupplierDropdownList(int tenantId)
         {
-            IEnumerable<DropdownDto> supplierList = _context.supplierUW.Get(s => s.TenantId == tenantId).Select(p => new DropdownDto
+            IEnumerable<DropdownDto> supplierList = _context.supplierUW.Get(s => s.TenantId == User.GetTenantId().Value).Select(p => new DropdownDto
             {
                 DrId = p.Id,
                 DrName = p.SupplierFullName,

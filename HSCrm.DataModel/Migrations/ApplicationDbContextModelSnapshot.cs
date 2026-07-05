@@ -69,6 +69,24 @@ namespace HSCrm.DataModel.Migrations
                         },
                         new
                         {
+                            Id = "OwnerId",
+                            ConcurrencyStamp = "OwnerId",
+                            Name = "Owner",
+                            NormalizedName = "OWNER",
+                            RoleFaName = "مدیر",
+                            TenantId = 1
+                        },
+                        new
+                        {
+                            Id = "CustomerId",
+                            ConcurrencyStamp = "CustomerId",
+                            Name = "Customer",
+                            NormalizedName = "Cutomer",
+                            RoleFaName = "مشتتری",
+                            TenantId = 1
+                        },
+                        new
+                        {
                             Id = "UserId",
                             ConcurrencyStamp = "UserId",
                             Name = "User",
@@ -1415,6 +1433,11 @@ namespace HSCrm.DataModel.Migrations
                         {
                             UserId = "28dfc395-0464-4b47-8aae-c73953a9d153",
                             RoleId = "AdminId"
+                        },
+                        new
+                        {
+                            UserId = "28dfc395-0464-4b47-8aae-c73953a9d153",
+                            RoleId = "OwnerId"
                         });
                 });
 

@@ -43,5 +43,8 @@ namespace HSCrm.Framework.StandardApiResult
 
         [Display(Name = "خطا در سرور")]
         ServerError = 500,
+
+        [Display(Name = "کاربر جاری شناسایی نشد")]
+        Unauthorized = 401,
     }
 }

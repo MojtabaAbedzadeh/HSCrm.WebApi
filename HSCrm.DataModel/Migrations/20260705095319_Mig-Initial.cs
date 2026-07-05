@@ -686,6 +686,8 @@ namespace HSCrm.DataModel.Migrations
                 values: new object[,]
                 {
                     { "AdminId", "AdminId", "Admin", "ADMIN", "ادمین", 1 },
+                    { "CustomerId", "CustomerId", "Customer", "Cutomer", "مشتتری", 1 },
+                    { "OwnerId", "OwnerId", "Owner", "OWNER", "مدیر", 1 },
                     { "UserId", "UserId", "User", "USER", "کاربر", 1 }
                 });
 
@@ -697,7 +699,11 @@ namespace HSCrm.DataModel.Migrations
             migrationBuilder.InsertData(
                 table: "UserRoles",
                 columns: new[] { "RoleId", "UserId" },
-                values: new object[] { "AdminId", "28dfc395-0464-4b47-8aae-c73953a9d153" });
+                values: new object[,]
+                {
+                    { "AdminId", "28dfc395-0464-4b47-8aae-c73953a9d153" },
+                    { "OwnerId", "28dfc395-0464-4b47-8aae-c73953a9d153" }
+                });
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetRoleClaims_RoleId",

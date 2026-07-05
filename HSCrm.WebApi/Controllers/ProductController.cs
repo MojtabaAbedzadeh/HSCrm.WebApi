@@ -1,25 +1,37 @@
-﻿using HSCrm.DataModel.Services.Interface;
+﻿using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Context;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Linq.Expressions;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class ProductController : ControllerBase
     {
         private readonly IUnitOfWork _context;
+        private readonly ApplicationDbContext _dbContext;
+        private readonly ICurrentUserService _currentUserService;
 
-        public ProductController(IUnitOfWork context)
+
+        public ProductController(IUnitOfWork context, ICurrentUserService currentUserService, ApplicationDbContext dbContext)
         {
+            _dbContext = dbContext;
             _context = context;
+            _currentUserService = currentUserService;
         }
 
         [HttpGet("GetProducts")]
+        [Permission(Permissions.Products.View)]
         public ApiResponse<IEnumerable<ProductWithPriceDto>> Get() // خروجی را به DTO تغییر می دهیم
         {
             // 1. Include کردن رابطه
@@ -57,11 +69,11 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-
         [HttpGet("GetById")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(Product), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Products.View)]
         public ApiResponse GetById(int productId)
         {
             var product = _context.productUW.GetById(productId);
@@ -85,6 +97,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateProduct")]
+        [Permission(Permissions.Products.Create)]
         public ApiResponse Create([FromForm] ProductCreateModel model)
         {
             if (!ModelState.IsValid) return new ApiResponse
@@ -109,8 +122,8 @@ namespace HSCrm.WebApi.Controllers
                 {
                     ProductTitle = model.ProductTitle,
                     ProductUnit = model.ProductUnit,
-                    TenantId = model.TenantId,
-                    CreatedById = model.UserId,
+                    TenantId = User.GetTenantId().Value,
+                    CreatedById = User.GetUserId(),
                     IsActive = model.IsActive,
                     CreatedAt = DateTime.Now
                 };
@@ -141,6 +154,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpPut("UpdateProduct")]
         [ProducesResponseType(typeof(Product), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Products.Edit)]
         public ApiResponse Update([FromBody] ProductEditModel model)
         {
             if (model.ProductId == 0) return new ApiResponse
@@ -158,7 +172,7 @@ namespace HSCrm.WebApi.Controllers
                 getProduct.ProductUnit = model.ProductUnit;
                 getProduct.IsActive = model.IsActive;
                 getProduct.ModifiedAt = DateTime.UtcNow;
-                getProduct.ModifiedById = model.ModifiedById;
+                getProduct.ModifiedById = User.GetUserId();
             }
 
             _context.productUW.Update(getProduct);
@@ -176,37 +190,44 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("Search")]
         public IActionResult Search([FromQuery] string term)
         {
-            term = term?.Trim();
+            Console.WriteLine("Tenant from Controller: " + User.GetTenantId());
 
-            var products = _context.productUW
-                .Get(p =>
-                    p.ProductTitle != null &&
-                    p.ProductTitle.Trim().Contains(term))
-                .Select(p => new
-                {
-                    p.Id,
-                    ProductTitle = p.ProductTitle.Trim(),
+            if (string.IsNullOrWhiteSpace(term))
+                return Ok(new List<object>());
 
-                    SellPrice = _context.priceUW
-                        .Get(pp =>
-                            pp.ProductId == p.Id &&
-                            pp.IsActive)
-                        .OrderByDescending(pp => pp.EffectiveFrom)
-                        .Select(pp => pp.SellPrice)
-                        .FirstOrDefault(),
+            term = term.Trim();
+            var total = _context.productUW.Get(p => true).Count();
 
-                    BuyPrice = _context.priceUW
-                        .Get(pp =>
-                            pp.ProductId == p.Id &&
-                            pp.IsActive)
-                        .OrderByDescending(pp => pp.EffectiveFrom)
-                        .Select(pp => pp.BuyPrice)
-                        .FirstOrDefault()
-                })
+            // 1) دریافت 10 محصول
+            var products = _context.productUW.Get(p => p.ProductTitle != null && p.ProductTitle.Contains(term), true)
                 .Take(10)
                 .ToList();
 
-            return Ok(products);
+            // 2) دریافت همه قیمت‌های مرتبط با همین 10 محصول
+            var productIds = products.Select(p => p.Id).ToList();
+
+            var prices = _context.priceUW
+                .Get(pp => productIds.Contains(pp.ProductId) && pp.IsActive, true)
+                .OrderByDescending(pp => pp.EffectiveFrom)
+                .ToList();
+
+            // 3) ساخت خروجی بدون Query تو در تو
+            var result = products.Select(p => new
+            {
+                p.Id,
+                ProductTitle = p.ProductTitle,
+
+                SellPrice = prices
+                    .Where(pp => pp.ProductId == p.Id)
+                    .Select(pp => pp.SellPrice)
+                    .FirstOrDefault(),
+
+                BuyPrice = prices
+                    .Where(pp => pp.ProductId == p.Id)
+                    .Select(pp => pp.BuyPrice)
+                    .FirstOrDefault()
+            }).ToList();
+            return Ok(result);
         }
     }
 }

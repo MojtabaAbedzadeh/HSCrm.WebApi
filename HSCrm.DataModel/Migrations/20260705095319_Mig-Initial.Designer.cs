@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HSCrm.DataModel.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260623121640_Mig-Initial")]
+    [Migration("20260705095319_Mig-Initial")]
     partial class MigInitial
     {
         /// <inheritdoc />
@@ -68,6 +68,24 @@ namespace HSCrm.DataModel.Migrations
                             Name = "Admin",
                             NormalizedName = "ADMIN",
                             RoleFaName = "ادمین",
+                            TenantId = 1
+                        },
+                        new
+                        {
+                            Id = "OwnerId",
+                            ConcurrencyStamp = "OwnerId",
+                            Name = "Owner",
+                            NormalizedName = "OWNER",
+                            RoleFaName = "مدیر",
+                            TenantId = 1
+                        },
+                        new
+                        {
+                            Id = "CustomerId",
+                            ConcurrencyStamp = "CustomerId",
+                            Name = "Customer",
+                            NormalizedName = "Cutomer",
+                            RoleFaName = "مشتتری",
                             TenantId = 1
                         },
                         new
@@ -1418,6 +1436,11 @@ namespace HSCrm.DataModel.Migrations
                         {
                             UserId = "28dfc395-0464-4b47-8aae-c73953a9d153",
                             RoleId = "AdminId"
+                        },
+                        new
+                        {
+                            UserId = "28dfc395-0464-4b47-8aae-c73953a9d153",
+                            RoleId = "OwnerId"
                         });
                 });
 

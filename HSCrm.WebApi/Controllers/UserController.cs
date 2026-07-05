@@ -5,6 +5,7 @@ using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -31,12 +32,12 @@ namespace HSCrm.WebApi.Controllers
             _roleService = roleService;
         }
 
-        [Permission(Permissions.Users.View)]
         [HttpGet("GetUsers")]
+        [Permission(Permissions.Users.View)]
         public async Task<ApiResponse<List<ApplicationUser>>> Get(CancellationToken ct)
         {
             var persons = (await _context.userManagerUW
-                .GetAsync(u => u.UserType == 0, asNoTracking: true, ct: ct))
+                .GetAsync(u => u.UserType != 3 && u.UserType != 110, asNoTracking: true, ct: ct))
                 .ToList();
 
             return new ApiResponse<List<ApplicationUser>>
@@ -115,7 +116,7 @@ namespace HSCrm.WebApi.Controllers
                     UserGender = model.UserGenderC,
                     PhoneNumber = model.PhoneNumberC,
                     Email = model.EmailC,
-                    TenantId = model.TenantId,
+                    TenantId = User.GetTenantId().Value,                    
                     IsTenantOwner = false,
                     UserName = model.UserNameC
                 };
@@ -170,9 +171,9 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("UpdateUser")]
-        [Permission(Permissions.Users.Edit)]
         [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Users.Edit)]
         public async Task<ApiResponse<ApplicationUser>> Update([FromBody] UserEditModel model)
         {
             if (string.IsNullOrEmpty(model.UserId)) return new ApiResponse<ApplicationUser>

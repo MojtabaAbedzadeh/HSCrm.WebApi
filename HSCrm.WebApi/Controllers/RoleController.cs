@@ -3,6 +3,7 @@ using Framework.Authorization;
 using HSCrm.DataModel.Context;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -114,7 +115,7 @@ namespace HSCrm.WebApi.Controllers
                 Id = Guid.NewGuid().ToString(),
                 Name = model.Name,
                 NormalizedName = model.Name.ToUpperInvariant(),
-                TenantId = model.TenantId
+                TenantId = User.GetTenantId().Value
             };
 
             var result = await _roleManager.CreateAsync(role);
@@ -139,7 +140,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = role.Id,
                     Name = role.Name!,
-                    TenantId = role.TenantId
+                    TenantId = User.GetTenantId().Value
                 }
             };
         }
@@ -163,7 +164,7 @@ namespace HSCrm.WebApi.Controllers
 
             role.Name = model.Name;
             role.NormalizedName = model.Name.ToUpperInvariant();
-            role.TenantId = model.TenantId;
+            role.TenantId = User.GetTenantId().Value;
 
             var result = await _roleManager.UpdateAsync(role);
 
@@ -187,7 +188,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = role.Id,
                     Name = role.Name!,
-                    TenantId = role.TenantId
+                    TenantId = User.GetTenantId().Value
                 }
             };
         }
@@ -231,7 +232,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = role.Id,
                     Name = role.Name!,
-                    TenantId = role.TenantId
+                    TenantId = User.GetTenantId().Value
                 }
             };
         }
