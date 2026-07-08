@@ -2,7 +2,7 @@
 
 namespace HSCrm.Entities.Entities
 {
-    public class InventoryTransaction : AuditedEntity
+    public class InventoryTransaction : AuditedEntity, IFiscalYearScoped
     {
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;

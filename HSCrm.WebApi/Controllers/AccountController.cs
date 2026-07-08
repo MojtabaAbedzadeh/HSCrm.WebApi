@@ -8,6 +8,7 @@ using HSCrm.Services.Tools.Interface;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace HSCrm.WebApi.Controllers
 {
@@ -48,6 +49,7 @@ namespace HSCrm.WebApi.Controllers
                 return BadRequest("کاربری با این مشخصات قبلا ثبت شده است");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
+            
 
             try
             {
@@ -68,6 +70,7 @@ namespace HSCrm.WebApi.Controllers
                 // ✅ 2. ساخت خودکار سال مالی (FiscalYear) داینامیک
                 var persianCalendar = new System.Globalization.PersianCalendar();
                 int currentYear = persianCalendar.GetYear(DateTime.Now);
+                int lastDayOfEsfand = persianCalendar.GetDaysInMonth(currentYear, 12);
 
                 var defaultFiscalYear = new FiscalYear
                 {
@@ -76,7 +79,7 @@ namespace HSCrm.WebApi.Controllers
                     // آغاز سال: اول فروردین همان سال
                     StartDate = persianCalendar.ToDateTime(currentYear, 1, 1, 0, 0, 0, 0),
                     // پایان سال: آخر اسفند همان سال (با در نظر گرفتن سال کبیسه یا عادی)
-                    EndDate = persianCalendar.ToDateTime(currentYear, 12, 29, 23, 59, 59, 0),
+                    EndDate = persianCalendar.ToDateTime(currentYear, 12, lastDayOfEsfand, 23, 59, 59, 0),
                     IsCurrent = true,
                     IsClosed = false,
                     CreatedAt = DateTime.Now

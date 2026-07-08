@@ -2,7 +2,7 @@
 
 namespace HSCrm.Entities.Entities
 {
-    public class PurchaseInvoice : TenantScopedEntity
+    public class PurchaseInvoice : TenantScopedEntity, IFiscalYearScoped
     {
         public required string Number { get; set; }
 
@@ -25,6 +25,8 @@ namespace HSCrm.Entities.Entities
         public decimal Total { get; set; }
 
         public ICollection<PurchaseInvoiceItem> Items { get; set; } = new List<PurchaseInvoiceItem>();
+        public int FiscalYearId { get; set; }
+        public FiscalYear FiscalYear { get; set; } = default!;
     }
 
 }

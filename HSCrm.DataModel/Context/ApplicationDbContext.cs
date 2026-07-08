@@ -1,4 +1,5 @@
 ﻿using HSCrm.Common.PublicTools;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -13,11 +14,13 @@ namespace HSCrm.DataModel.Context
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string, IdentityUserClaim<string>, UserRole, IdentityUserLogin<string>, IdentityRoleClaim<string>, IdentityUserToken<string>>
     {
         private readonly ICurrentUserService _currentUserService;
+        private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private int CurrentTenantId => _currentUserService?.TenantId ?? 0;
 
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUserService currentUserService) : base(options)
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUserService currentUserService, ICurrentFiscalYearService currentFiscalYearService) : base(options)
         {
             _currentUserService = currentUserService;
+            _currentFiscalYearService = currentFiscalYearService;
         }
         public DbSet<Tenant> Tenants { get; set; }
         public DbSet<Customer> Customers { get; set; }
@@ -57,6 +60,8 @@ namespace HSCrm.DataModel.Context
             var ownerRoleId = "OwnerId";
             var customerId = "CustomerId";
             var defaultTenantId = 1;
+
+            ApplyFilters(builder);
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>().HasData(
@@ -532,6 +537,49 @@ namespace HSCrm.DataModel.Context
                       .OnDelete(DeleteBehavior.Restrict);
             });
         }
+        private void ApplyFilters(ModelBuilder modelBuilder)
+        {
+            var entityTypes = modelBuilder.Model.GetEntityTypes();
+
+            foreach (var entityType in entityTypes)
+            {
+                var clrType = entityType.ClrType;
+
+                // ۱. اعمال فیلتر Tenant روی تمام موجودیت‌هایی که از TenantScopedEntity ارث‌بری کرده‌اند
+                if (typeof(TenantScopedEntity).IsAssignableFrom(clrType))
+                {
+                    var method = typeof(ApplicationDbContext)
+                        .GetMethod(nameof(ConfigureTenantFilter), BindingFlags.NonPublic | BindingFlags.Instance)
+                        .MakeGenericMethod(clrType);
+
+                    method.Invoke(this, new object[] { modelBuilder });
+                }
+
+                // ۲. اعمال فیلتر FiscalYear روی تمام موجودیت‌هایی که IFiscalYearScoped را پیاده‌سازی کرده‌اند
+                if (typeof(IFiscalYearScoped).IsAssignableFrom(clrType))
+                {
+                    var method = typeof(ApplicationDbContext)
+                        .GetMethod(nameof(ConfigureFiscalYearFilter), BindingFlags.NonPublic | BindingFlags.Instance)
+                        .MakeGenericMethod(clrType);
+
+                    method.Invoke(this, new object[] { modelBuilder });
+                }
+            }
+        }
+        private void ConfigureTenantFilter<TEntity>(ModelBuilder modelBuilder)
+            where TEntity : TenantScopedEntity
+        {
+            // اگر کاربر TenantId مشخصی داشت، رکوردها فیلتر می‌شوند؛ در غیر این‌صورت فیلتر اعمال نمی‌شود (برای دسترسی‌های Admin کل سیستم)
+            modelBuilder.Entity<TEntity>().HasQueryFilter(e =>
+                !_currentUserService.TenantId.HasValue || e.TenantId == _currentUserService.TenantId.Value);
+        }
+        private void ConfigureFiscalYearFilter<TEntity>(ModelBuilder modelBuilder)
+            where TEntity : class, IFiscalYearScoped
+        {
+            // فیلتر رکوردهای مرتبط با سال مالی جاری
+            modelBuilder.Entity<TEntity>().HasQueryFilter(e =>
+                !_currentFiscalYearService.FiscalYearId.HasValue || e.FiscalYearId == _currentFiscalYearService.FiscalYearId.Value);
+        }
         private static void ConfigureAuditedEntity<TEntity>(ModelBuilder builder) where TEntity : AuditedEntity
         {
             builder.Entity<TEntity>()
@@ -553,6 +601,7 @@ namespace HSCrm.DataModel.Context
             var userId = _currentUserService?.UserId;
             var tenantId = _currentUserService?.TenantId;
             var now = DateTime.UtcNow;
+
 
             foreach (var entry in ChangeTracker.Entries())
             {
@@ -598,6 +647,45 @@ namespace HSCrm.DataModel.Context
                         entry.Property(nameof(TenantScopedEntity.TenantId)).IsModified = false;
                     }
                 }
+
+                if (entry.Entity is ApplicationUser userEntity && entry.State == EntityState.Added)
+                {
+                    if (tenantId.HasValue)
+                    {
+                        userEntity.TenantId = tenantId.Value;
+                    }
+                }
+
+            }
+        }
+        private void ApplyAuditTenantAndFiscalYearInfo()
+        {
+            var entries = ChangeTracker.Entries()
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified);
+
+            foreach (var entry in entries)
+            {
+                // ۱. مقداردهی خودکار لایه Tenant
+                if (entry.Entity is TenantScopedEntity tenantEntity && entry.State == EntityState.Added)
+                {
+                    if (tenantEntity.TenantId == 0 && _currentUserService.TenantId.HasValue)
+                    {
+                        tenantEntity.TenantId = _currentUserService.TenantId.Value;
+                    }
+                }
+
+                // ۲. مقداردهی خودکار لایه FiscalYear
+                if (entry.Entity is IFiscalYearScoped fiscalYearEntity && entry.State == EntityState.Added)
+                {
+                    // اگر دستی ست نشده بود، از سرویس سال مالی جاری مقداردهی شود
+                    if (fiscalYearEntity.FiscalYearId == 0 && _currentFiscalYearService.FiscalYearId.HasValue)
+                    {
+                        fiscalYearEntity.FiscalYearId = _currentFiscalYearService.FiscalYearId.Value;
+                    }
+                }
+
+                // ۳. لایه Auditing (مانند ایجادکننده، تاریخ ثبت و ویرایش)
+                // کدهایی که از قبل در متد ApplyAuditAndTenantInfo داشتی را اینجا بگذار...
             }
         }
         public override int SaveChanges()
@@ -605,18 +693,20 @@ namespace HSCrm.DataModel.Context
             cleanStr();
 
             ApplyAuditAndTenantInfo();
+            ApplyAuditTenantAndFiscalYearInfo();
             return base.SaveChanges();
         }
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
             cleanStr();
             ApplyAuditAndTenantInfo();
-
+            ApplyAuditTenantAndFiscalYearInfo();
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
         public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
             cleanStr();
+            ApplyAuditTenantAndFiscalYearInfo();
             ApplyAuditAndTenantInfo();
 
             return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -624,6 +714,7 @@ namespace HSCrm.DataModel.Context
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             cleanStr();
+            ApplyAuditTenantAndFiscalYearInfo();
             ApplyAuditAndTenantInfo();
 
             return base.SaveChangesAsync(cancellationToken);
@@ -659,7 +750,6 @@ namespace HSCrm.DataModel.Context
                 }
             }
         }
-
         private LambdaExpression GetTenantFilterExpression(Type entityType)
         {
             var parameter = Expression.Parameter(entityType, "e");
@@ -675,6 +765,5 @@ namespace HSCrm.DataModel.Context
 
             return Expression.Lambda(body, parameter);
         }
-
     }
 }

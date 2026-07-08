@@ -1,30 +1,30 @@
-﻿using Microsoft.AspNetCore.Http;
-using System.Security.Claims;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 
-public class CurrentUserService : ICurrentUserService
+namespace HSCrm.DataModel.Services
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public CurrentUserService(IHttpContextAccessor httpContextAccessor)
+    public class CurrentUserService : ICurrentUserService
     {
-        _httpContextAccessor = httpContextAccessor;
-    }
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public string? UserId => _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-
-    public int? TenantId
-    {
-        get
+        public CurrentUserService(IHttpContextAccessor httpContextAccessor)
         {
-            var tenantClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("TenantId")?.Value;
-            Console.WriteLine("Tenant from CurrentUserService: " + tenantClaim);
-            if (int.TryParse(tenantClaim, out var tenantId))
-                return tenantId;
-
-            return null;
+            _httpContextAccessor = httpContextAccessor;
         }
+        public string? UserId => _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        public int? FiscalYearId => int.TryParse(_httpContextAccessor.HttpContext?.User?.FindFirst("FiscalYearId")?.Value, out var id) ? id : null;
+        public int? TenantId
+        {
+            get
+            {
+                var tenantClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("TenantId")?.Value;
+                if (int.TryParse(tenantClaim, out var tenantId))
+                {
+                    return tenantId;
+                }
+                return null;
+            }
+        }
+        public bool IsAuthenticated => _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
     }
-
-    public bool IsAuthenticated
-        => _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
 }

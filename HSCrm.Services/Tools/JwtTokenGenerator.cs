@@ -14,7 +14,6 @@ namespace HSCrm.WebApi.Tools
         private readonly IConfiguration _config;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SymmetricSecurityKey _signingKey;
-        string _securityKey;
 
         public JwtTokenGenerator(IConfiguration config, UserManager<ApplicationUser> userManager)
         {

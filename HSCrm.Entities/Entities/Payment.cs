@@ -1,6 +1,6 @@
 ﻿namespace HSCrm.Entities.Entities
 {
-    public class Payment : TenantScopedEntity
+    public class Payment : TenantScopedEntity, IFiscalYearScoped
     {
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;

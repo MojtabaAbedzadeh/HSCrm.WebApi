@@ -2,7 +2,7 @@
 
 namespace HSCrm.Entities.Entities
 {
-    public class Expense : TenantScopedEntity
+    public class Expense : TenantScopedEntity, IFiscalYearScoped
     {
         public required string ExpenseTitle { get; set; }
         public int ProjectId { get; set; }
@@ -11,5 +11,7 @@ namespace HSCrm.Entities.Entities
         public DateTime ExpenseDate { get; set; }
         public decimal Amount { get; set; }
         public string? Description { get; set; }
+        public int FiscalYearId { get; set; }
+        public FiscalYear FiscalYear { get; set; } = default!;
     }
 }

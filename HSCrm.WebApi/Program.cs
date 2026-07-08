@@ -33,6 +33,7 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<ICurrentFiscalYearService, CurrentFiscalYearService>();
 
 builder.Services.AddAutoMapper(typeof(Program));
 
