@@ -54,8 +54,6 @@ namespace HSCrm.WebApi.Controllers
                     Type = e.Type,
                     Amount = e.Amount,
                     Description = e.Description,
-                    TenantId = e.TenantId,
-                    ModifiedById = e.ModifiedById,
                     ExpenseDate = ConvertDate.ConvertMiladiToShamsi(e.ExpenseDate, "yyyy/MM/dd")
                 })
                 .ToList();
@@ -94,8 +92,6 @@ namespace HSCrm.WebApi.Controllers
                     Type = e.Type,
                     Amount = e.Amount,
                     Description = e.Description,
-                    TenantId = e.TenantId,
-                    ModifiedById = e.ModifiedById,
                     ExpenseDate = ConvertDate.ConvertMiladiToShamsi(e.ExpenseDate, "yyyy/MM/dd")
                 }).ToList();
 

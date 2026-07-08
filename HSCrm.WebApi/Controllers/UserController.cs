@@ -37,7 +37,7 @@ namespace HSCrm.WebApi.Controllers
         public async Task<ApiResponse<List<ApplicationUser>>> Get(CancellationToken ct)
         {
             var persons = (await _context.userManagerUW
-                .GetAsync(u => u.UserType != 3 && u.UserType != 110, asNoTracking: true, ct: ct))
+                .GetAsync(u => u.UserType != 3 && u.UserType != 110 && u.TenantId == User.GetTenantId().Value, asNoTracking: true, ct: ct))
                 .ToList();
 
             return new ApiResponse<List<ApplicationUser>>
