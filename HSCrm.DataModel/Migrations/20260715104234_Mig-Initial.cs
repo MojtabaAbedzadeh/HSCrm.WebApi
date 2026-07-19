@@ -131,6 +131,7 @@ namespace HSCrm.DataModel.Migrations
                     ExpenseDate = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    FiscalYearId = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -409,6 +410,7 @@ namespace HSCrm.DataModel.Migrations
                     Tax = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Discount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Total = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    FiscalYearId = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -420,6 +422,12 @@ namespace HSCrm.DataModel.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_PurchaseInvoices", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_PurchaseInvoices_FiscalYears_FiscalYearId",
+                        column: x => x.FiscalYearId,
+                        principalTable: "FiscalYears",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -506,6 +514,7 @@ namespace HSCrm.DataModel.Migrations
                     Tax = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Discount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Total = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    FiscalYearId = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -517,6 +526,12 @@ namespace HSCrm.DataModel.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_SalesInvoices", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_SalesInvoices_FiscalYears_FiscalYearId",
+                        column: x => x.FiscalYearId,
+                        principalTable: "FiscalYears",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_SalesInvoices_Projects_ProjectId",
                         column: x => x.ProjectId,
@@ -686,7 +701,7 @@ namespace HSCrm.DataModel.Migrations
                 values: new object[,]
                 {
                     { "AdminId", "AdminId", "Admin", "ADMIN", "ادمین", 1 },
-                    { "CustomerId", "CustomerId", "Customer", "Cutomer", "مشتتری", 1 },
+                    { "CustomerId", "CustomerId", "Customer", "CUSTOMER", "مشتتری", 1 },
                     { "OwnerId", "OwnerId", "Owner", "OWNER", "مدیر", 1 },
                     { "UserId", "UserId", "User", "USER", "کاربر", 1 }
                 });
@@ -759,6 +774,11 @@ namespace HSCrm.DataModel.Migrations
                 name: "IX_Expenses_CreatedById",
                 table: "Expenses",
                 column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Expenses_FiscalYearId",
+                table: "Expenses",
+                column: "FiscalYearId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Expenses_ModifiedById",
@@ -996,6 +1016,11 @@ namespace HSCrm.DataModel.Migrations
                 column: "CreatedById");
 
             migrationBuilder.CreateIndex(
+                name: "IX_PurchaseInvoices_FiscalYearId",
+                table: "PurchaseInvoices",
+                column: "FiscalYearId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_PurchaseInvoices_ModifiedById",
                 table: "PurchaseInvoices",
                 column: "ModifiedById");
@@ -1067,6 +1092,11 @@ namespace HSCrm.DataModel.Migrations
                 name: "IX_SalesInvoices_CreatedById",
                 table: "SalesInvoices",
                 column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SalesInvoices_FiscalYearId",
+                table: "SalesInvoices",
+                column: "FiscalYearId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SalesInvoices_ModifiedById",
@@ -1251,6 +1281,14 @@ namespace HSCrm.DataModel.Migrations
                 principalTable: "Users",
                 principalColumn: "UserId",
                 onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Expenses_FiscalYears_FiscalYearId",
+                table: "Expenses",
+                column: "FiscalYearId",
+                principalTable: "FiscalYears",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_Expenses_Projects_ProjectId",
@@ -1785,9 +1823,6 @@ namespace HSCrm.DataModel.Migrations
                 name: "Expenses");
 
             migrationBuilder.DropTable(
-                name: "FiscalYears");
-
-            migrationBuilder.DropTable(
                 name: "PurchaseInvoices");
 
             migrationBuilder.DropTable(
@@ -1804,6 +1839,9 @@ namespace HSCrm.DataModel.Migrations
 
             migrationBuilder.DropTable(
                 name: "Suppliers");
+
+            migrationBuilder.DropTable(
+                name: "FiscalYears");
 
             migrationBuilder.DropTable(
                 name: "Projects");

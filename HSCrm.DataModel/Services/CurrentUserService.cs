@@ -1,30 +1,24 @@
-﻿using System.Security.Claims;
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 
-namespace HSCrm.DataModel.Services
+public class CurrentUserService : ICurrentUserService
 {
-    public class CurrentUserService : ICurrentUserService
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    public CurrentUserService(IHttpContextAccessor httpContextAccessor)
     {
-        private readonly IHttpContextAccessor _httpContextAccessor;
-
-        public CurrentUserService(IHttpContextAccessor httpContextAccessor)
-        {
-            _httpContextAccessor = httpContextAccessor;
-        }
-        public string? UserId => _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        public int? FiscalYearId => int.TryParse(_httpContextAccessor.HttpContext?.User?.FindFirst("FiscalYearId")?.Value, out var id) ? id : null;
-        public int? TenantId
-        {
-            get
-            {
-                var tenantClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("TenantId")?.Value;
-                if (int.TryParse(tenantClaim, out var tenantId))
-                {
-                    return tenantId;
-                }
-                return null;
-            }
-        }
-        public bool IsAuthenticated => _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
+        _httpContextAccessor = httpContextAccessor;
     }
+    public string? UserId =>
+        _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? _httpContextAccessor.HttpContext?.User?.FindFirstValue("UserId");
+    public int? TenantId
+    {
+        get
+        {
+            var tenantValue = _httpContextAccessor.HttpContext?.User?.FindFirst("TenantId")?.Value;
+
+            return int.TryParse(tenantValue, out var tenantId) ? tenantId : null;
+        }
+    }
+    public bool IsAuthenticated => _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
 }

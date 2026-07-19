@@ -4,6 +4,6 @@ namespace HSCrm.Services.Tools.Interface
 {
     public interface IJwtTokenGenerator
     {
-        Task<string> GenerateTokenAsync(ApplicationUser user, CancellationToken ct = default);
+        Task<string> GenerateTokenAsync(ApplicationUser user, long? fiscalYearId = null, CancellationToken ct = default);
     }
 }

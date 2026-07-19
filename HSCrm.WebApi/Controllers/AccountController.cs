@@ -8,7 +8,6 @@ using HSCrm.Services.Tools.Interface;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 
 namespace HSCrm.WebApi.Controllers
 {
@@ -213,20 +212,22 @@ namespace HSCrm.WebApi.Controllers
             var permissions = await _permissionService.GetUserPermissionsAsync(user.Id);
 
             // ۵. تولید توکن JWT
-            var token = await _token.GenerateTokenAsync(user, ct);
+            var token = await _token.GenerateTokenAsync(user, model.FiscalYearId, ct);
 
             return Ok(new
             {
                 Token = token,
-                FirstName = user.UserFirstName,
-                LastName = user.UserLastName,
-                user.UserImageUrl,
-                user.UserName,
+                UserFirstName = user.UserFirstName,
+                UserLastName = user.UserLastName,
+                UserImageUrl = user.UserImageUrl,
+                UserName = user.UserName,
+                Email = user.Email,
+                PhoneNumber = user.PhoneNumber,
                 Roles = roles,
                 Permissions = permissions,
                 FiscalYearStatus = fiscalYearStatus,
                 Success = true,
-                user.TenantId,
+                TenantId = user.TenantId,
                 UserId = user.Id,
                 FiscalYears = fiscalYears
             });
@@ -278,7 +279,7 @@ namespace HSCrm.WebApi.Controllers
 
                 var userToken = new UserJwtToken
                 {
-                    Token = await _token.GenerateTokenAsync(user, ct),
+                    Token = await _token.GenerateTokenAsync(user, model.FiscalYearId, ct),
                     UserId = user.Id,
                     FirstName = user.UserFirstName,
                     LastName = user.UserLastName,
@@ -286,6 +287,7 @@ namespace HSCrm.WebApi.Controllers
                     TenantId = user.TenantId.ToString(),
                     UserName = user.UserName,
                     Roles = roles,
+                    Email = user.Email,
                     Permissions = permissions,
                     FiscalYearStatus = fiscalYearStatus
                 };

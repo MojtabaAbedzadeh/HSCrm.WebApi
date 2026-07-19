@@ -6,7 +6,9 @@ using HSCrm.Entities.Models;
 using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
+using static Common.Permissions.Permissions;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -18,11 +20,13 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly IInventoryService _inventory;
+        private readonly ICurrentFiscalYearService _currentFiscalYearService;
 
-        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory)
+        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService)
         {
             _context = context;
             _inventory = inventory;
+            _currentFiscalYearService = currentFiscalYearService;
         }
 
         [HttpGet("GetPurchaseInvoices")]
@@ -91,7 +95,7 @@ namespace HSCrm.WebApi.Controllers
                 Data = factor
             };
         }
-
+        
         [HttpPost("CreateInvoice")]
         [Permission(Permissions.PurchaseInvoices.Create)]
         public ApiResponse Create([FromBody] InvoiceCreateModel model)
@@ -107,8 +111,20 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
+                var tenantId = User.GetTenantId().Value;
+                var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
                 // ✅ 1. بررسی تکراری بودن شماره فاکتور (در همان Tenant)
-                bool invoiceNumberExists = _context.purchaseInvoiceUW.Get().Any(i => i.Number == model.InvoiceNumber && i.TenantId == model.TenantId);
+                //bool invoiceNumberExists = _context.purchaseInvoiceUW.Get().Any(i => i.Number == model.InvoiceNumber && i.TenantId == model.TenantId);
+                bool invoiceNumberExists = _context.purchaseInvoiceUW
+                    .Get()
+                    .IgnoreQueryFilters()
+                    .Any(i =>
+                        i.Number == model.InvoiceNumber &&
+                        i.TenantId == tenantId &&
+                        i.FiscalYearId == fiscalYearId.Value);
+
+
 
                 if (invoiceNumberExists)
                 {
@@ -132,6 +148,7 @@ namespace HSCrm.WebApi.Controllers
                 var invoice = new PurchaseInvoice
                 {
                     TenantId = User.GetTenantId().Value,
+                    FiscalYearId = fiscalYearId.Value,
                     SupplierId = model.SupplierId,
                     WarehouseId = model.WarehouseId,
                     Number = model.InvoiceNumber,

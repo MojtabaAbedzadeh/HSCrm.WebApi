@@ -26,17 +26,25 @@ namespace HSCrm.WebApi.Tools
             _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
         }
 
-        public async Task<string> GenerateTokenAsync(ApplicationUser user, CancellationToken ct = default)
+        public async Task<string> GenerateTokenAsync(ApplicationUser user, long? fiscalYearId = null, CancellationToken ct = default)
         {
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id),                
-                new Claim(ClaimTypes.Name, user.UserName ?? "")
+                new Claim(ClaimTypes.Name, user.UserName ?? ""),
+                new Claim("UserId", user.Id)
             };
 
             if (user.TenantId > 0)
             {
                 claims.Add(new Claim("TenantId", user.TenantId.ToString()));
+            }
+
+            if (fiscalYearId.HasValue)
+            {
+                claims.Add(new Claim(
+                    "FiscalYearId",
+                    fiscalYearId.Value.ToString()));
             }
 
             var roles = await _userManager.GetRolesAsync(user);

@@ -16,7 +16,7 @@ namespace HSCrm.DataModel.Context
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private int CurrentTenantId => _currentUserService?.TenantId ?? 0;
-
+        private int? CurrentFiscalYearId => _currentFiscalYearService?.FiscalYearId;
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUserService currentUserService, ICurrentFiscalYearService currentFiscalYearService) : base(options)
         {
             _currentUserService = currentUserService;
@@ -34,8 +34,7 @@ namespace HSCrm.DataModel.Context
         public DbSet<SalesInvoiceItem> SalesInvoiceItems { get; set; }
         public DbSet<Expense> Expenses { get; set; }
         public DbSet<Payment> Payments { get; set; }
-        public DbSet<Attachment> Attachments { get; set; }
-        public DbSet<Inventory> Inventories { get; set; }
+        public DbSet<Attachment> Attachments { get; set; }        public DbSet<Inventory> Inventories { get; set; }
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
         public DbSet<FiscalYear> FiscalYears { get; set; }
         public DbSet<Permission> Permissions { get; set; }
@@ -44,15 +43,7 @@ namespace HSCrm.DataModel.Context
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
-
-            foreach (var entityType in builder.Model.GetEntityTypes())
-            {
-                if (typeof(TenantScopedEntity).IsAssignableFrom(entityType.ClrType))
-                {
-                    builder.Entity(entityType.ClrType)
-                        .HasQueryFilter(GetTenantFilterExpression(entityType.ClrType));
-                }
-            }
+            ApplyFilters(builder);
 
             var adminUserId = "28dfc395-0464-4b47-8aae-c73953a9d153";
             var adminRoleId = "AdminId";
@@ -539,46 +530,90 @@ namespace HSCrm.DataModel.Context
         }
         private void ApplyFilters(ModelBuilder modelBuilder)
         {
-            var entityTypes = modelBuilder.Model.GetEntityTypes();
-
-            foreach (var entityType in entityTypes)
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
             {
                 var clrType = entityType.ClrType;
+                var parameter = Expression.Parameter(clrType, "e");
+                Expression? combinedBody = null;
 
-                // ۱. اعمال فیلتر Tenant روی تمام موجودیت‌هایی که از TenantScopedEntity ارث‌بری کرده‌اند
+                // فیلتر Tenant
                 if (typeof(TenantScopedEntity).IsAssignableFrom(clrType))
                 {
-                    var method = typeof(ApplicationDbContext)
-                        .GetMethod(nameof(ConfigureTenantFilter), BindingFlags.NonPublic | BindingFlags.Instance)
-                        .MakeGenericMethod(clrType);
+                    var tenantProp = Expression.Property(parameter, nameof(TenantScopedEntity.TenantId));
+                    // استفاده از پراپرتی تعریف شده خودمون
+                    var currentTenant = Expression.Property(Expression.Constant(this), nameof(CurrentTenantId));
 
-                    method.Invoke(this, new object[] { modelBuilder });
+                    combinedBody = Expression.Equal(tenantProp, currentTenant);
                 }
 
-                // ۲. اعمال فیلتر FiscalYear روی تمام موجودیت‌هایی که IFiscalYearScoped را پیاده‌سازی کرده‌اند
+                // فیلتر FiscalYear
                 if (typeof(IFiscalYearScoped).IsAssignableFrom(clrType))
                 {
-                    var method = typeof(ApplicationDbContext)
-                        .GetMethod(nameof(ConfigureFiscalYearFilter), BindingFlags.NonPublic | BindingFlags.Instance)
-                        .MakeGenericMethod(clrType);
+                    var fiscalProp = Expression.Property(parameter, nameof(IFiscalYearScoped.FiscalYearId));
+                    var currentFiscal = Expression.Property(Expression.Constant(this), nameof(CurrentFiscalYearId));
 
-                    method.Invoke(this, new object[] { modelBuilder });
+                    // مدیریت null بودن FiscalYear
+                    var hasValue = Expression.Property(currentFiscal, nameof(Nullable<int>.HasValue));
+                    var value = Expression.Property(currentFiscal, nameof(Nullable<int>.Value));
+
+                    var fiscalFilter = Expression.OrElse(
+                        Expression.Not(hasValue),
+                        Expression.Equal(fiscalProp, value)
+                    );
+
+                    combinedBody = combinedBody == null
+                        ? fiscalFilter
+                        : Expression.AndAlso(combinedBody, fiscalFilter);
+                }
+
+                if (combinedBody != null)
+                {
+                    modelBuilder.Entity(clrType).HasQueryFilter(Expression.Lambda(combinedBody, parameter));
                 }
             }
         }
-        private void ConfigureTenantFilter<TEntity>(ModelBuilder modelBuilder)
-            where TEntity : TenantScopedEntity
+        private void ApplyDomainInfo()
         {
-            // اگر کاربر TenantId مشخصی داشت، رکوردها فیلتر می‌شوند؛ در غیر این‌صورت فیلتر اعمال نمی‌شود (برای دسترسی‌های Admin کل سیستم)
-            modelBuilder.Entity<TEntity>().HasQueryFilter(e =>
-                !_currentUserService.TenantId.HasValue || e.TenantId == _currentUserService.TenantId.Value);
-        }
-        private void ConfigureFiscalYearFilter<TEntity>(ModelBuilder modelBuilder)
-            where TEntity : class, IFiscalYearScoped
-        {
-            // فیلتر رکوردهای مرتبط با سال مالی جاری
-            modelBuilder.Entity<TEntity>().HasQueryFilter(e =>
-                !_currentFiscalYearService.FiscalYearId.HasValue || e.FiscalYearId == _currentFiscalYearService.FiscalYearId.Value);
+            var userId = _currentUserService?.UserId;
+            var tenantId = _currentUserService?.TenantId;
+            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+            var now = DateTime.UtcNow;
+
+            foreach (var entry in ChangeTracker.Entries().Where(e => e.State == EntityState.Added || e.State == EntityState.Modified))
+            {
+                // Auditing
+                if (entry.Entity is AuditedEntity auditedEntity)
+                {
+                    if (entry.State == EntityState.Added)
+                    {
+                        auditedEntity.CreatedAt = now;
+                        auditedEntity.CreatedById = userId;
+                        auditedEntity.IsDeleted = false;
+                    }
+                    else
+                    {
+                        auditedEntity.ModifiedAt = now;
+                        auditedEntity.ModifiedById = userId;
+
+                        entry.Property("CreatedAt").IsModified = false;
+                        entry.Property("CreatedById").IsModified = false;
+                    }
+                }
+
+                // Tenant Scope
+                if (entry.Entity is TenantScopedEntity tenantEntity && entry.State == EntityState.Added)
+                {
+                    if (tenantEntity.TenantId == 0 && tenantId.HasValue)
+                        tenantEntity.TenantId = tenantId.Value;
+                }
+
+                // Fiscal Year Scope
+                if (entry.Entity is IFiscalYearScoped fiscalYearEntity && entry.State == EntityState.Added)
+                {
+                    if (fiscalYearEntity.FiscalYearId == 0 && fiscalYearId.HasValue)
+                        fiscalYearEntity.FiscalYearId = fiscalYearId.Value;
+                }
+            }
         }
         private static void ConfigureAuditedEntity<TEntity>(ModelBuilder builder) where TEntity : AuditedEntity
         {
@@ -595,68 +630,6 @@ namespace HSCrm.DataModel.Context
                 .HasForeignKey(e => e.ModifiedById)
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
-        }
-        private void ApplyAuditAndTenantInfo()
-        {
-            var userId = _currentUserService?.UserId;
-            var tenantId = _currentUserService?.TenantId;
-            var now = DateTime.UtcNow;
-
-
-            foreach (var entry in ChangeTracker.Entries())
-            {
-                // -------------------------
-                // Audit Handling
-                // -------------------------
-                if (entry.Entity is AuditedEntity auditedEntity)
-                {
-                    if (entry.State == EntityState.Added)
-                    {
-                        auditedEntity.CreatedAt = now;
-                        auditedEntity.CreatedById = userId;
-                        auditedEntity.IsDeleted = false;
-                    }
-                    else if (entry.State == EntityState.Modified)
-                    {
-                        auditedEntity.ModifiedAt = now;
-                        auditedEntity.ModifiedById = userId;
-                    }
-                }
-
-                // -------------------------
-                // Tenant Handling
-                // -------------------------
-                if (entry.Entity is TenantScopedEntity tenantEntity)
-                {
-                    if (entry.State == EntityState.Added)
-                    {
-                        // اگر کاربر tenant داشت
-                        if (tenantId.HasValue)
-                        {
-                            tenantEntity.TenantId = tenantId.Value;
-                        }
-                        // اگر سیستم در حال seed یا migration بود
-                        else if (tenantEntity.TenantId == 0)
-                        {
-                            tenantEntity.TenantId = 1;
-                        }
-                    }
-                    else if (entry.State == EntityState.Modified)
-                    {
-                        // جلوگیری از تغییر TenantId
-                        entry.Property(nameof(TenantScopedEntity.TenantId)).IsModified = false;
-                    }
-                }
-
-                if (entry.Entity is ApplicationUser userEntity && entry.State == EntityState.Added)
-                {
-                    if (tenantId.HasValue)
-                    {
-                        userEntity.TenantId = tenantId.Value;
-                    }
-                }
-
-            }
         }
         private void ApplyAuditTenantAndFiscalYearInfo()
         {
@@ -691,34 +664,31 @@ namespace HSCrm.DataModel.Context
         public override int SaveChanges()
         {
             cleanStr();
-
-            ApplyAuditAndTenantInfo();
             ApplyAuditTenantAndFiscalYearInfo();
             return base.SaveChanges();
         }
+
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
             cleanStr();
-            ApplyAuditAndTenantInfo();
             ApplyAuditTenantAndFiscalYearInfo();
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
-        public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
-        {
-            cleanStr();
-            ApplyAuditTenantAndFiscalYearInfo();
-            ApplyAuditAndTenantInfo();
 
-            return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-        }
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             cleanStr();
             ApplyAuditTenantAndFiscalYearInfo();
-            ApplyAuditAndTenantInfo();
-
             return base.SaveChangesAsync(cancellationToken);
         }
+
+        public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            cleanStr();
+            ApplyAuditTenantAndFiscalYearInfo();
+            return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
         private void cleanStr()
         {
             var changedEntities = ChangeTracker.Entries()
@@ -749,21 +719,6 @@ namespace HSCrm.DataModel.Context
                     }
                 }
             }
-        }
-        private LambdaExpression GetTenantFilterExpression(Type entityType)
-        {
-            var parameter = Expression.Parameter(entityType, "e");
-
-            var tenantProperty = Expression.Property(parameter, nameof(TenantScopedEntity.TenantId));
-
-            var currentTenant = Expression.Property(
-                Expression.Constant(this),
-                nameof(CurrentTenantId)
-            );
-
-            var body = Expression.Equal(tenantProperty, currentTenant);
-
-            return Expression.Lambda(body, parameter);
         }
     }
 }

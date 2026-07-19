@@ -28,5 +28,4 @@ namespace HSCrm.Entities.Entities
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;
     }
-
 }

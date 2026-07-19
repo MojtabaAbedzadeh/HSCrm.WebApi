@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HSCrm.DataModel.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260705095319_Mig-Initial")]
+    [Migration("20260715104234_Mig-Initial")]
     partial class MigInitial
     {
         /// <inheritdoc />
@@ -84,7 +84,7 @@ namespace HSCrm.DataModel.Migrations
                             Id = "CustomerId",
                             ConcurrencyStamp = "CustomerId",
                             Name = "Customer",
-                            NormalizedName = "Cutomer",
+                            NormalizedName = "CUSTOMER",
                             RoleFaName = "مشتتری",
                             TenantId = 1
                         },
@@ -378,6 +378,9 @@ namespace HSCrm.DataModel.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("FiscalYearId")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -405,6 +408,8 @@ namespace HSCrm.DataModel.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedById");
+
+                    b.HasIndex("FiscalYearId");
 
                     b.HasIndex("ModifiedById");
 
@@ -948,6 +953,9 @@ namespace HSCrm.DataModel.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int>("FiscalYearId")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -1004,6 +1012,8 @@ namespace HSCrm.DataModel.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedById");
+
+                    b.HasIndex("FiscalYearId");
 
                     b.HasIndex("ModifiedById");
 
@@ -1128,6 +1138,9 @@ namespace HSCrm.DataModel.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int>("FiscalYearId")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -1186,6 +1199,8 @@ namespace HSCrm.DataModel.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedById");
+
+                    b.HasIndex("FiscalYearId");
 
                     b.HasIndex("ModifiedById");
 
@@ -1671,6 +1686,12 @@ namespace HSCrm.DataModel.Migrations
                         .HasForeignKey("CreatedById")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("HSCrm.Entities.Entities.FiscalYear", "FiscalYear")
+                        .WithMany()
+                        .HasForeignKey("FiscalYearId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
                         .WithMany()
                         .HasForeignKey("ModifiedById")
@@ -1689,6 +1710,8 @@ namespace HSCrm.DataModel.Migrations
                         .IsRequired();
 
                     b.Navigation("CreatedBy");
+
+                    b.Navigation("FiscalYear");
 
                     b.Navigation("ModifiedBy");
 
@@ -1979,6 +2002,12 @@ namespace HSCrm.DataModel.Migrations
                         .HasForeignKey("CreatedById")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("HSCrm.Entities.Entities.FiscalYear", "FiscalYear")
+                        .WithMany()
+                        .HasForeignKey("FiscalYearId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
                         .WithMany()
                         .HasForeignKey("ModifiedById")
@@ -2007,6 +2036,8 @@ namespace HSCrm.DataModel.Migrations
                         .IsRequired();
 
                     b.Navigation("CreatedBy");
+
+                    b.Navigation("FiscalYear");
 
                     b.Navigation("ModifiedBy");
 
@@ -2086,6 +2117,12 @@ namespace HSCrm.DataModel.Migrations
                         .HasForeignKey("CreatedById")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("HSCrm.Entities.Entities.FiscalYear", "FiscalYear")
+                        .WithMany()
+                        .HasForeignKey("FiscalYearId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
                         .WithMany()
                         .HasForeignKey("ModifiedById")
@@ -2114,6 +2151,8 @@ namespace HSCrm.DataModel.Migrations
                         .IsRequired();
 
                     b.Navigation("CreatedBy");
+
+                    b.Navigation("FiscalYear");
 
                     b.Navigation("ModifiedBy");
 
