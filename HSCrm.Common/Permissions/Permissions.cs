@@ -146,4 +146,20 @@ public static class Permissions
         public const string Edit = "warehouses.edit";
         public const string Delete = "warehouses.delete";
     }
+
+    public static class Payment
+    {
+        public const string View = "Permissions.Payment.View";
+        public const string Create = "Permissions.Payment.Create";
+        public const string Edit = "Permissions.Payment.Edit";
+        public const string Delete = "Permissions.Payment.Delete";
+    }
+
+    public static class Receipt
+    {
+        public const string View = "Permissions.Receipt.View";
+        public const string Create = "Permissions.Receipt.Create";
+        public const string Edit = "Permissions.Receipt.Edit";
+        public const string Delete = "Permissions.Receipt.Delete";
+    }
 }

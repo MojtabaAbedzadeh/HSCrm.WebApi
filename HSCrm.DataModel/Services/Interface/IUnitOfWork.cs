@@ -16,6 +16,7 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<Supplier> supplierUW { get; }
         GenericCRUDClass<Customer> customerUW { get; }
         GenericCRUDClass<Expense> expenseUW { get; }
+        GenericCRUDClass<Receipt> receiptUW { get; }
         GenericCRUDClass<Payment> paymentUW { get; }
         GenericCRUDClass<SalesInvoice> salesInvoiceUW { get; }
         GenericCRUDClass<SalesInvoiceItem> salesInvoiceItemUW { get; }

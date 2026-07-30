@@ -1,12 +1,12 @@
-﻿using Common.Permissions;
+﻿using AutoMapper;
+using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
-using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
-using static HSCrm.Common.PublicTools.StringCleaner;
+using Microsoft.EntityFrameworkCore;
 
 namespace HSCrm.WebApi.Controllers
 {
@@ -15,139 +15,153 @@ namespace HSCrm.WebApi.Controllers
     public class PaymentController : ControllerBase
     {
         private readonly IUnitOfWork _context;
+        private readonly IMapper _mapper;
+        private readonly ICurrentFiscalYearService _currentFiscalYearService;
+        private readonly ICurrentUserService _currentUserService;
 
-        public PaymentController(IUnitOfWork context)
+        public PaymentController(
+            IUnitOfWork context,
+            IMapper mapper,
+            ICurrentFiscalYearService currentFiscalYearService,
+            ICurrentUserService currentUserService)
         {
             _context = context;
+            _mapper = mapper;
+            _currentFiscalYearService = currentFiscalYearService;
+            _currentUserService = currentUserService;
         }
 
-        [HttpGet("GetPayments")]
-        [Permission(Permissions.Payments.View)]
-        public ApiResponse<IEnumerable<Payment>> Get()
+        [HttpGet]
+        [Permission(Permissions.Payment.View)]
+        public async Task<ActionResult<ApiResponse<IEnumerable<PaymentModel>>>> GetAll(CancellationToken cancellationToken)
         {
-            var payments = _context.paymentUW.Get();
+            var payments = await _context.paymentUW.GetAsync(
+    x => x.TenantId == _currentUserService.TenantId
+         && x.FiscalYearId == _currentFiscalYearService.FiscalYearId,
+    true,
+    cancellationToken,
+    x => x.PurchaseInvoice!,
+    x => x.Expense!);
 
-            return new ApiResponse<IEnumerable<Payment>>
+            var result = _mapper.Map<IEnumerable<PaymentModel>>(payments);
+
+            return Ok(new ApiResponse<IEnumerable<PaymentModel>>
             {
                 Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = payments
-            };
+                Data = result
+            });
         }
 
-        [HttpGet("GetById")]
-        [Produces("application/json")]
-        [ProducesResponseType(typeof(Payment), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [Permission(Permissions.Payments.View)]
-        public ApiResponse GetById(int paymentId)
+        [HttpGet("{id:int}")]
+        [Permission(Permissions.Payment.View)]
+        public async Task<ActionResult<ApiResponse<PaymentModel>>> GetById(int id, CancellationToken cancellationToken)
         {
-            var payment = _context.paymentUW.GetById(paymentId);
+            var payment = await _context.paymentUW.GetByIdAsync(id, cancellationToken);
 
-            if (payment == null) return new ApiResponse
+            if (payment == null || payment.TenantId != _currentUserService.TenantId)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.NotFound,
-                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
-            };
-
-            return new ApiResponse<Payment>
-            {
-                Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = payment
-            };
-        }
-
-        [HttpPost("CreatePayment")]
-        [Permission(Permissions.Payments.Create)]
-        public ApiResponse Create([FromForm] PaymentCreateModel model)
-        {
-            if (!ModelState.IsValid) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-            };
-
-            try
-            {
-                Payment payment = new Payment()
-                {
-                    Method = model.Method,
-                    IsDeleted = false,
-                    PaymentDate = DateTime.Now,
-                    PurchaseInvoiceId = model.PurchaseInvoiceId,
-                    ReferenceNo = model.ReferenceNo,
-                    SalesInvoiceId = model.SalesInvoiceId,
-                    ExpenseId = model.ExpenseId,
-                    CreatedAt = DateTime.Now,
-                    CreatedById = User.GetUserId(),
-                    TenantId = User.GetTenantId().Value,
-                };
-
-                _context.paymentUW.Create(payment);
-                _context.Save();
-
-                return new ApiResponse<Payment>
-                {
-                    Status = true,
-                    StatusCode = ApiResultStatusCode.Success,
-                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = payment
-                };
-            }
-            catch (Exception)
-            {
-                return new ApiResponse
+                return NotFound(new ApiResponse<PaymentModel>
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
-                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
-                };
-            }
-        }
-
-        [HttpPut("UpdatePayment")]
-        [ProducesResponseType(typeof(Payment), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [Permission(Permissions.Payments.Edit)]
-        public ApiResponse Update([FromForm] PaymentEditModel model)
-        {
-            if (model.PaymentId == 0) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-            };
-
-            var getPayment = _context.paymentUW.GetById(model.PaymentId);
-
-            if (getPayment != null)
-            {
-                getPayment.SalesInvoiceId = model.SalesInvoiceId;
-                getPayment.PurchaseInvoiceId = model.PurchaseInvoiceId;
-                getPayment.ExpenseId = model.ExpenseId;
-                getPayment.PaymentDate = model.PaymentDate;
-                getPayment.Amount = model.Amount;
-                getPayment.Method = model.Method;
-                getPayment.ReferenceNo = model.ReferenceNo;
-                getPayment.ModifiedAt = DateTime.Now;
-                getPayment.ModifiedById = User.GetUserId();
+                    Message = "Payment not found"
+                });
             }
 
-            _context.paymentUW.Update(getPayment);
-            _context.Save();
+            var result = _mapper.Map<PaymentModel>(payment);
 
-            return new ApiResponse<Payment>
+            return Ok(new ApiResponse<PaymentModel>
             {
                 Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = getPayment
-            };
+                Data = result
+            });
+        }
+
+        [HttpPost]
+        [Permission(Permissions.Payment.Create)]
+        public async Task<ActionResult<ApiResponse<PaymentModel>>> Create([FromBody] PaymentCreateModel model, CancellationToken cancellationToken)
+        {
+            var payment = _mapper.Map<Payment>(model);
+
+            payment.TenantId = _currentUserService.TenantId ?? model.TenantId;
+            payment.FiscalYearId = (int)_currentFiscalYearService.FiscalYearId;
+            payment.CreatedAt = DateTime.Now;
+            payment.CreatedById = model.UserId;
+
+            await _context.paymentUW.CreateAsync(payment, cancellationToken);
+            await _context.SaveAsync();
+
+            var result = _mapper.Map<PaymentModel>(payment);
+
+            return Ok(new ApiResponse<PaymentModel>
+            {
+                Status = true,
+                Data = result,
+                Message = "Payment created successfully"
+            });
+        }
+
+        [HttpPut("{id:int}")]
+        [Permission(Permissions.Payment.Edit)]
+        public async Task<ActionResult<ApiResponse<PaymentModel>>> Update(int id, [FromBody] PaymentEditModel model, CancellationToken cancellationToken)
+        {
+            var payment = await _context.paymentUW.GetByIdAsync(id, cancellationToken);
+
+            if (payment == null || payment.TenantId != _currentUserService.TenantId)
+            {
+                return NotFound(new ApiResponse<PaymentModel>
+                {
+                    Status = false,
+                    Message = "Payment not found"
+                });
+            }
+
+            payment.PurchaseInvoiceId = model.PurchaseInvoiceId;
+            payment.ExpenseId = model.ExpenseId;
+            payment.PaymentDate = model.PaymentDate;
+            payment.Amount = model.Amount;
+            payment.Method = model.Method;
+            payment.ReferenceNo = model.ReferenceNo;
+            payment.Description = model.Description;
+            payment.ModifiedAt = DateTime.Now;
+            payment.ModifiedById = _currentUserService.UserId;
+
+            _context.paymentUW.Update(payment, cancellationToken);
+            await _context.SaveAsync();
+
+            var result = _mapper.Map<PaymentModel>(payment);
+
+            return Ok(new ApiResponse<PaymentModel>
+            {
+                Status = true,
+                Data = result,
+                Message = "Payment updated successfully"
+            });
+        }
+
+        [HttpDelete("{id:int}")]
+        [Permission(Permissions.Payment.Delete)]
+        public async Task<ActionResult<ApiResponse<bool>>> Delete(int id, CancellationToken cancellationToken)
+        {
+            var payment = await _context.paymentUW.GetByIdAsync(id, cancellationToken);
+
+            if (payment == null || payment.TenantId != _currentUserService.TenantId)
+            {
+                return NotFound(new ApiResponse<bool>
+                {
+                    Status = false,
+                    Message = "Payment not found"
+                });
+            }
+
+            _context.paymentUW.Delete(payment, cancellationToken);
+            await _context.SaveAsync();
+
+            return Ok(new ApiResponse<bool>
+            {
+                Status = true,
+                Data = true,
+                Message = "Payment deleted successfully"
+            });
         }
     }
 }

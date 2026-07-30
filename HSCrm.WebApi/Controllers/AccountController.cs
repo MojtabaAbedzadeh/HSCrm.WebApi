@@ -145,6 +145,8 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
+        // مسیر فایل: HSCrm.WebApi/HSCrm.WebApi/Controllers/AccountController.cs
+
         [Route("check-user")]
         [HttpPost]
         public async Task<IActionResult> CheckUser(UserLoginModel model, CancellationToken ct)
@@ -162,48 +164,36 @@ namespace HSCrm.WebApi.Controllers
             if (!result.Succeeded)
                 return Unauthorized("Invalid Login Info.");
 
-            // ۳. واکشی سال‌های مالی مربوط به Tenant به صورت مستقیم و بدون اعمال فیلترهای عمومی (جهت کارایی بهتر)
+            // ۳. واکشی سال‌های مالی
             var allFiscalYears = _iuwcontext.fiscalYearUW
                 .Get(f => f.TenantId == user.TenantId)
                 .IgnoreQueryFilters()
                 .OrderByDescending(f => f.Id)
-                .ToList(); // واکشی به حافظه برای محاسبات امن و بدون خطای دیتابیس
+                .ToList();
 
-            // تبدیل به مدل خروجی دراپ‌داون
             var fiscalYears = allFiscalYears.Select(f => new
             {
                 drId = f.Id,
                 drName = f.Title
             }).ToList();
 
-            // پیدا کردن سال مالی جاری در حافظه (برای جلوگیری از خطاهای احتمالی LINQ-to-Entities)
             var currentFiscalYear = allFiscalYears.FirstOrDefault(f => f.IsCurrent);
-
-            byte fiscalYearStatus = 10; // پیش‌فرض: نامشخص
+            byte fiscalYearStatus = 10;
 
             if (currentFiscalYear != null)
             {
-                // مقایسه تاریخ‌ها در حافظه (C# Memory) به صورت امن 
                 var today = DateTime.Today;
                 var endDate = currentFiscalYear.EndDate.Date;
 
                 if (currentFiscalYear.IsCurrent && endDate >= today)
-                {
                     fiscalYearStatus = 0; // جاری و معتبر
-                }
                 else if (currentFiscalYear.IsCurrent && endDate < today)
-                {
                     fiscalYearStatus = 1; // جاری اما منقضی شده
-                }
                 else
-                {
                     fiscalYearStatus = 2; // غیرفعال
-                }
             }
             else
             {
-                // 💡 مدیریت خطا: اگر سال مالی جاری تعریف نشده بود، فرآیند را بلاک نکنیم 
-                // تا کاربر (به خصوص نقش‌های ادمین/Owner) بتواند وارد شده و سال مالی جدید ایجاد کند.
                 fiscalYearStatus = 2;
             }
 
@@ -214,24 +204,26 @@ namespace HSCrm.WebApi.Controllers
             // ۵. تولید توکن JWT
             var token = await _token.GenerateTokenAsync(user, model.FiscalYearId, ct);
 
+            // ۶. بازگرداندن پاسخ با فرمت استاندارد و هماهنگ با UserLoginDto داشبورد
             return Ok(new
             {
                 Token = token,
-                UserFirstName = user.UserFirstName,
-                UserLastName = user.UserLastName,
-                UserImageUrl = user.UserImageUrl,
-                UserName = user.UserName,
-                Email = user.Email,
-                PhoneNumber = user.PhoneNumber,
-                Roles = roles,
-                Permissions = permissions,
-                FiscalYearStatus = fiscalYearStatus,
-                Success = true,
                 TenantId = user.TenantId,
                 UserId = user.Id,
-                FiscalYears = fiscalYears
+                UserName = user.UserName,
+                UserFirstName = user.UserFirstName,
+                UserLastName = user.UserLastName,
+                Email = user.Email,
+                PhoneNumber = user.PhoneNumber,
+                UserImageUrl = user.UserImageUrl,
+                FiscalYearStatus = fiscalYearStatus,
+                Roles = roles,
+                Permissions = permissions,
+                FiscalYears = fiscalYears,
+                Success = true
             });
         }
+
 
         [Route("login")]
         [HttpPost]

@@ -27,7 +27,7 @@ namespace HSCrm.DataModel.Services.Repository
 
 
         // UPDATE
-        public virtual void Update(TEntity entity)
+        public virtual void Update(TEntity entity, CancellationToken ct = default)
         {
             _table.Attach(entity);
             _context.Entry(entity).State = EntityState.Modified;
@@ -66,7 +66,7 @@ namespace HSCrm.DataModel.Services.Repository
         public virtual Task<TEntity?> GetByIdAsync(object id, CancellationToken ct = default) => _table.FindAsync(new[] { id }, ct).AsTask();
 
         // DELETE
-        public virtual void Delete(TEntity entity)
+        public virtual void Delete(TEntity entity, CancellationToken ct = default)
         {
             if (_context.Entry(entity).State == EntityState.Detached)
                 _table.Attach(entity);

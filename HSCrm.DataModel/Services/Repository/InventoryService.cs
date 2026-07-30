@@ -45,7 +45,6 @@ namespace HSCrm.DataModel.Services.Repository
                 this.inventoryUW.Update(stock);
             }
         }
-
         public void RollbackInventory(SalesInvoice invoice)
         {
             foreach (var item in invoice.Items)

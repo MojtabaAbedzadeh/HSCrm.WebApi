@@ -8,7 +8,6 @@ using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
-using static Common.Permissions.Permissions;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -21,13 +20,28 @@ namespace HSCrm.WebApi.Controllers
         private readonly IUnitOfWork _context;
         private readonly IInventoryService _inventory;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
+        private readonly IPaymentSettlementService _paymentSettlementService;
 
-        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService)
+        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService, IPaymentSettlementService paymentSettlementService)
         {
             _context = context;
             _inventory = inventory;
             _currentFiscalYearService = currentFiscalYearService;
+            _paymentSettlementService = paymentSettlementService;
         }
+
+        [HttpGet("SettlementSummary/{id}")]
+        public IActionResult SettlementSummary(int id)
+        {
+            var invoice = _context.purchaseInvoiceUW.GetById(id); // نام واقعی متد را از کنترلر خودت بگذار
+            if (invoice == null)
+                return NotFound();
+
+            var totalAmount = invoice.Total; // فیلد واقعی مبلغ کل
+            var result = _paymentSettlementService.BuildPurchaseInvoiceSummary(id, totalAmount);
+            return Ok(result);
+        }
+
 
         [HttpGet("GetPurchaseInvoices")]
         [Permission(Permissions.PurchaseInvoices.View)]
@@ -114,7 +128,6 @@ namespace HSCrm.WebApi.Controllers
                 var tenantId = User.GetTenantId().Value;
                 var fiscalYearId = _currentFiscalYearService.FiscalYearId;
 
-                // ✅ 1. بررسی تکراری بودن شماره فاکتور (در همان Tenant)
                 //bool invoiceNumberExists = _context.purchaseInvoiceUW.Get().Any(i => i.Number == model.InvoiceNumber && i.TenantId == model.TenantId);
                 bool invoiceNumberExists = _context.purchaseInvoiceUW
                     .Get()

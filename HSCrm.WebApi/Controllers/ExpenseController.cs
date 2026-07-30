@@ -16,11 +16,27 @@ namespace HSCrm.WebApi.Controllers
     public class ExpenseController : ControllerBase
     {
         private readonly IUnitOfWork _context;
+        private readonly IPaymentSettlementService _paymentSettlementService;
 
-        public ExpenseController(IUnitOfWork context)
+
+        public ExpenseController(IUnitOfWork context, IPaymentSettlementService paymentSettlementService)
         {
             _context = context;
+            _paymentSettlementService = paymentSettlementService;
         }
+
+        [HttpGet("SettlementSummary/{id}")]
+        public IActionResult SettlementSummary(int id)
+        {
+            var expense = _context.expenseUW.GetById(id); // اگر متد/ریپازیتوری‌ات فرق دارد، همان را بگذار
+            if (expense == null)
+                return NotFound();
+
+            var totalAmount = expense.Amount; // یا مبلغ اصلی هزینه
+            var result = _paymentSettlementService.BuildExpenseSummary(id, totalAmount);
+            return Ok(result);
+        }
+
 
         [HttpGet("GetExpense")]
         [Permission(Permissions.Expenses.View)]

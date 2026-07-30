@@ -13,7 +13,6 @@ namespace HSCrm.Entities.Models
         public bool UserGenderC { get; set; }
         public int TenantId { get; set; }
     }
-
     public class UserModelDto
     {
         public string Id { get; set; }
@@ -26,7 +25,6 @@ namespace HSCrm.Entities.Models
         public bool UserStatus { get; set; }
         public string RoleName { get; set; }
     }
-
     public class UserEditModel
     {
         public required string UserId { get; set; }

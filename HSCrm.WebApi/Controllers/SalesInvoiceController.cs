@@ -20,12 +20,28 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly IInventoryService _inventory;
+        private readonly IPaymentSettlementService _paymentSettlementService;
 
-        public SalesInvoiceController(IUnitOfWork context, IInventoryService inventory)
+        public SalesInvoiceController(IUnitOfWork context, IInventoryService inventory, IPaymentSettlementService paymentSettlementService)
         {
             _context = context;
             _inventory = inventory;
+            _paymentSettlementService = paymentSettlementService;
         }
+
+        [HttpGet("SettlementSummary/{id}")]
+        public IActionResult SettlementSummary(int id)
+        {
+            var invoice = _context.salesInvoiceUW.GetById(id); // اگر نام متدت فرق دارد، همان متد فعلی خودت را بگذار
+            if (invoice == null)
+                return NotFound();
+
+            var totalAmount = invoice.Total; // اگر نام فیلد مبلغ کل فرق دارد، همان فیلد واقعی خودت را بگذار
+
+            var result = _paymentSettlementService.BuildSalesInvoiceSummary(id, totalAmount);
+            return Ok(result);
+        }
+
 
         [HttpGet("GetSalesInvoices")]
         [Permission(Permissions.SalesInvoices.View)]

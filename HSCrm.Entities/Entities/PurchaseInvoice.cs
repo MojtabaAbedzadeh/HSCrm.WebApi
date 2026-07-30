@@ -23,6 +23,8 @@ namespace HSCrm.Entities.Entities
         public decimal Tax { get; set; }
         public decimal Discount { get; set; }
         public decimal Total { get; set; }
+        public SettlementStatus PayStatus { get; set; } = SettlementStatus.Unpaid;
+        public decimal PaidAmount { get; set; }
 
         public ICollection<PurchaseInvoiceItem> Items { get; set; } = new List<PurchaseInvoiceItem>();
         public int FiscalYearId { get; set; }

@@ -16,6 +16,8 @@ namespace HSCrm.Entities.Models
         public string IssueDate { get; set; }
         public required string PurchaserId { get; set; }
         public List<SalesInvoiceItemCreateModel> Items { get; set; } = new();
+        public bool IsPaid { get; set; }
+        public decimal? PaidAmount { get; set; }
     }
 
     public class SalesInvoiceCreateModel
@@ -29,6 +31,10 @@ namespace HSCrm.Entities.Models
         public decimal InvoiceTax { get; set; }
         public required string IssueDate { get; set; }
         public required string SellerUserId { get; set; }
+        public bool IsPaid { get; set; }
+        public decimal PaidAmount { get; set; }
+        public string? PaymentMethod { get; set; }
+        public string? PaymentReferenceNo { get; set; }
         public List<SalesInvoiceItemCreateModel> Items { get; set; } = new();
     }
     public class SalesInvoiceItemCreateModel

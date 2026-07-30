@@ -33,6 +33,7 @@ namespace HSCrm.DataModel.Context
         public DbSet<SalesInvoice> SalesInvoices { get; set; }
         public DbSet<SalesInvoiceItem> SalesInvoiceItems { get; set; }
         public DbSet<Expense> Expenses { get; set; }
+        public DbSet<Receipt> Receipts { get; set; }
         public DbSet<Payment> Payments { get; set; }
         public DbSet<Attachment> Attachments { get; set; }        public DbSet<Inventory> Inventories { get; set; }
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
@@ -279,6 +280,16 @@ namespace HSCrm.DataModel.Context
             });
 
             // ======================= Expense =======================
+            builder.Entity<Payment>(entity =>
+            {
+                entity.HasOne(d => d.Expense)
+                    .WithMany(p => p.Payments) // اگر در کلاس Expense لیست Payments را اضافه کردی
+                    .HasForeignKey(d => d.ExpenseId)
+                    .OnDelete(DeleteBehavior.Restrict); // جلوگیری از حذف هزینه در صورت وجود پرداخت
+
+                entity.Property(e => e.Amount).HasPrecision(18, 2);
+            });
+
             builder.Entity<Expense>(e =>
             {
                 e.ToTable("Expenses");
@@ -470,22 +481,55 @@ namespace HSCrm.DataModel.Context
             {
                 e.ToTable("Payments");
 
-                e.HasOne(x => x.SalesInvoice)
-                 .WithMany()
-                 .HasForeignKey(x => x.SalesInvoiceId)
-                 .OnDelete(DeleteBehavior.Restrict);
+                e.HasKey(x => x.Id);
 
                 e.HasOne(x => x.PurchaseInvoice)
-                 .WithMany()
-                 .HasForeignKey(x => x.PurchaseInvoiceId)
-                 .OnDelete(DeleteBehavior.Restrict);
+                    .WithMany()
+                    .HasForeignKey(x => x.PurchaseInvoiceId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Expense)
+                    .WithMany(x => x.Payments)
+                    .HasForeignKey(x => x.ExpenseId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.FiscalYear)
+                    .WithMany()
+                    .HasForeignKey(x => x.FiscalYearId)
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 e.HasOne(x => x.Tenant)
-                 .WithMany()
-                 .HasForeignKey(x => x.TenantId)
-                 .OnDelete(DeleteBehavior.Restrict);
+                    .WithMany()
+                    .HasForeignKey(x => x.TenantId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
 
-                e.Property(x => x.Amount).HasPrecision(18, 2);
+            // ========= Receipt =========
+            builder.Entity<Receipt>(e =>
+            {
+                e.ToTable("Receipts");
+
+                e.HasKey(x => x.Id);
+
+                e.HasOne(x => x.SalesInvoice)
+                    .WithMany()
+                    .HasForeignKey(x => x.SalesInvoiceId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Customer)
+                    .WithMany()
+                    .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.FiscalYear)
+                    .WithMany()
+                    .HasForeignKey(x => x.FiscalYearId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Tenant)
+                    .WithMany()
+                    .HasForeignKey(x => x.TenantId)
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             // ========= Attachment =========
@@ -569,49 +613,6 @@ namespace HSCrm.DataModel.Context
                 if (combinedBody != null)
                 {
                     modelBuilder.Entity(clrType).HasQueryFilter(Expression.Lambda(combinedBody, parameter));
-                }
-            }
-        }
-        private void ApplyDomainInfo()
-        {
-            var userId = _currentUserService?.UserId;
-            var tenantId = _currentUserService?.TenantId;
-            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
-            var now = DateTime.UtcNow;
-
-            foreach (var entry in ChangeTracker.Entries().Where(e => e.State == EntityState.Added || e.State == EntityState.Modified))
-            {
-                // Auditing
-                if (entry.Entity is AuditedEntity auditedEntity)
-                {
-                    if (entry.State == EntityState.Added)
-                    {
-                        auditedEntity.CreatedAt = now;
-                        auditedEntity.CreatedById = userId;
-                        auditedEntity.IsDeleted = false;
-                    }
-                    else
-                    {
-                        auditedEntity.ModifiedAt = now;
-                        auditedEntity.ModifiedById = userId;
-
-                        entry.Property("CreatedAt").IsModified = false;
-                        entry.Property("CreatedById").IsModified = false;
-                    }
-                }
-
-                // Tenant Scope
-                if (entry.Entity is TenantScopedEntity tenantEntity && entry.State == EntityState.Added)
-                {
-                    if (tenantEntity.TenantId == 0 && tenantId.HasValue)
-                        tenantEntity.TenantId = tenantId.Value;
-                }
-
-                // Fiscal Year Scope
-                if (entry.Entity is IFiscalYearScoped fiscalYearEntity && entry.State == EntityState.Added)
-                {
-                    if (fiscalYearEntity.FiscalYearId == 0 && fiscalYearId.HasValue)
-                        fiscalYearEntity.FiscalYearId = fiscalYearId.Value;
                 }
             }
         }

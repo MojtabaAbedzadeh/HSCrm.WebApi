@@ -8,7 +8,21 @@ namespace Automation.WebApi.AutoMapperProfile
     {
         public AutoMapping()
         {
+            CreateMap<PaymentCreateModel, Payment>().ReverseMap();
+            CreateMap<PaymentEditModel, Payment>().ReverseMap();
+            CreateMap<Payment, PaymentModel>().ReverseMap();
+
+            CreateMap<ReceiptCreateModel, Receipt>().ReverseMap();
+            CreateMap<ReceiptEditModel, Receipt>().ReverseMap();
+            CreateMap<Receipt, ReceiptModel>().ReverseMap();
+
             CreateMap<ApplicationUser, UserEditModel>().ReverseMap();
+
+
+            CreateMap<PurchaseInvoice, PurchaseInvoiceModel>().ReverseMap();
+            CreateMap<PurchaseInvoiceItem, PurchaseInvoiceItemModel>().ReverseMap();
+
+            CreateMap<InvoiceCreateModel, PurchaseInvoice>().ReverseMap();
         }
     }
 }

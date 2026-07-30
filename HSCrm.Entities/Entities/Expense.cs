@@ -13,5 +13,6 @@ namespace HSCrm.Entities.Entities
         public string? Description { get; set; }
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;
+        public ICollection<Payment> Payments { get; set; }
     }
 }

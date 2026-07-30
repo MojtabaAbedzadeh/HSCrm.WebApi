@@ -26,6 +26,7 @@ namespace HSCrm.DataModel.Services.Repository
         private GenericCRUDClass<Customer>? _customer;
         private GenericCRUDClass<Expense>? _expense;
         private GenericCRUDClass<Payment>? _payment;
+        private GenericCRUDClass<Receipt>? _receipt;
         private GenericCRUDClass<SalesInvoice>? _salesInvoice;
         private GenericCRUDClass<SalesInvoiceItem>? _salesInvoiceItem;
         private GenericCRUDClass<Inventory>? _inventory;
@@ -48,6 +49,7 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<Customer> customerUW => _customer ??= new GenericCRUDClass<Customer>(_context);
         public GenericCRUDClass<Expense> expenseUW => _expense ??= new GenericCRUDClass<Expense>(_context);
         public GenericCRUDClass<Payment> paymentUW => _payment ??= new GenericCRUDClass<Payment>(_context);
+        public GenericCRUDClass<Receipt> receiptUW => _receipt ??= new GenericCRUDClass<Receipt>(_context);
         public GenericCRUDClass<SalesInvoice> salesInvoiceUW => _salesInvoice ??= new GenericCRUDClass<SalesInvoice>(_context);
         public GenericCRUDClass<SalesInvoiceItem> salesInvoiceItemUW => _salesInvoiceItem ??= new GenericCRUDClass<SalesInvoiceItem>(_context);
         public GenericCRUDClass<Inventory> inventoryUW => _inventory ??= new GenericCRUDClass<Inventory>(_context);
@@ -63,12 +65,10 @@ namespace HSCrm.DataModel.Services.Repository
         {
             return new EntityTransaction(_context);
         }
-
         public void Save()
         {
             _context.SaveChanges();
         }
-
         public async Task SaveAsync()
         {
             await _context.SaveChangesAsync();
