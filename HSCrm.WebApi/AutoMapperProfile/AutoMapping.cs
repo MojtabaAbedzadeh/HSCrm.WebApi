@@ -8,21 +8,45 @@ namespace Automation.WebApi.AutoMapperProfile
     {
         public AutoMapping()
         {
+            // Payment Mappings
             CreateMap<PaymentCreateModel, Payment>().ReverseMap();
             CreateMap<PaymentEditModel, Payment>().ReverseMap();
             CreateMap<Payment, PaymentModel>().ReverseMap();
 
+            // Receipt Mappings
             CreateMap<ReceiptCreateModel, Receipt>().ReverseMap();
             CreateMap<ReceiptEditModel, Receipt>().ReverseMap();
             CreateMap<Receipt, ReceiptModel>().ReverseMap();
 
+            // User Mappings
             CreateMap<ApplicationUser, UserEditModel>().ReverseMap();
 
+            // ==========================================
+            // ✅ Purchase Invoice Mappings (نقشه‌برداری فاکتور خرید)
+            // ==========================================
+            CreateMap<PurchaseInvoiceCreateModel, PurchaseInvoice>();
+            CreateMap<PurchaseInvoiceItemCreateModel, PurchaseInvoiceItem>()
+                .ForMember(dest => dest.UnitPricePurchase, opt => opt.MapFrom(src => src.UnitPrice));
+
+            CreateMap<PurchaseInvoiceEditModel, PurchaseInvoice>();
+            CreateMap<PurchaseInvoiceItemEditModel, PurchaseInvoiceItem>()
+                .ForMember(dest => dest.UnitPricePurchase, opt => opt.MapFrom(src => src.UnitPrice));
 
             CreateMap<PurchaseInvoice, PurchaseInvoiceModel>().ReverseMap();
-            CreateMap<PurchaseInvoiceItem, PurchaseInvoiceItemModel>().ReverseMap();
+            // در صورتی که کلاس PurchaseInvoiceItemModel مجزا برای نمایش آیتم‌های خرید دارید:
+            // CreateMap<PurchaseInvoiceItem, PurchaseInvoiceItemModel>().ReverseMap();
 
-            CreateMap<InvoiceCreateModel, PurchaseInvoice>().ReverseMap();
+            // ==========================================
+            // ✅ Sales Invoice Mappings (نقشه‌برداری فاکتور فروش)
+            // ==========================================
+            CreateMap<SalesInvoiceCreateModel, SalesInvoice>();
+            CreateMap<SalesInvoiceItemCreateModel, SalesInvoiceItem>()
+                .ForMember(dest => dest.UnitPriceSell, opt => opt.MapFrom(src => src.UnitPrice));
+
+            CreateMap<SalesInvoiceEditModel, SalesInvoice>();
+            CreateMap<SalesInvoiceItemEditModel, SalesInvoiceItem>();
+
+            CreateMap<SalesInvoice, SalesInvoiceModel>().ReverseMap();
         }
     }
 }

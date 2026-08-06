@@ -32,16 +32,15 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("SettlementSummary/{id}")]
         public IActionResult SettlementSummary(int id)
         {
-            var invoice = _context.salesInvoiceUW.GetById(id); // اگر نام متدت فرق دارد، همان متد فعلی خودت را بگذار
+            var invoice = _context.salesInvoiceUW.GetById(id);
             if (invoice == null)
                 return NotFound();
 
-            var totalAmount = invoice.Total; // اگر نام فیلد مبلغ کل فرق دارد، همان فیلد واقعی خودت را بگذار
+            var totalAmount = invoice.Total;
 
             var result = _paymentSettlementService.BuildSalesInvoiceSummary(id, totalAmount);
             return Ok(result);
         }
-
 
         [HttpGet("GetSalesInvoices")]
         [Permission(Permissions.SalesInvoices.View)]
@@ -99,7 +98,6 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                // ✅ 1. بررسی تکراری بودن شماره فاکتور (در همان Tenant)
                 bool invoiceNumberExists = _context.salesInvoiceUW.Get().Any(i => i.Number == model.InvoiceNumber && i.TenantId == model.TenantId);
 
                 if (invoiceNumberExists)
@@ -109,12 +107,11 @@ namespace HSCrm.WebApi.Controllers
                     return new ApiResponse
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.Conflict, // 409
+                        StatusCode = ApiResultStatusCode.Conflict,
                         Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
                     };
                 }
 
-                // ✅ 2. محاسبه مجموع آیتم‌ها
                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
 
                 decimal finalTotal = itemsTotal - model.InvoiceDiscount + model.InvoiceTax;
@@ -122,7 +119,6 @@ namespace HSCrm.WebApi.Controllers
                 if (finalTotal < 0)
                     finalTotal = 0;
 
-                // ✅ 3. ساخت Entity فاکتور فروش
                 var invoice = new SalesInvoice
                 {
                     TenantId = User.GetTenantId().Value,
@@ -139,7 +135,6 @@ namespace HSCrm.WebApi.Controllers
                     CreatedAt = DateTime.Now
                 };
 
-                // ✅ 4. آیتم‌های فاکتور
                 foreach (var item in model.Items)
                 {
                     invoice.Items.Add(new SalesInvoiceItem
@@ -156,18 +151,15 @@ namespace HSCrm.WebApi.Controllers
                     });
                 }
 
-                // ✅ 5. ثبت فاکتور
                 _context.salesInvoiceUW.Create(invoice);
                 _context.Save();
 
-                // ✅ 6. اعمال موجودی فقط اگر فاکتور نهایی بود
                 if (invoice.Status == SalesInvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForSalesInvoice(invoice);
                     _context.Save();
                 }
 
-                // ✅ 7. Commit نهایی
                 transaction.Commit();
 
                 return new ApiResponse<SalesInvoice>
@@ -177,7 +169,7 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                 };
             }
-            catch (NotEnoughInventoryException ex)
+            catch (NotEnoughInventoryException)
             {
                 transaction.Rollback();
 
@@ -188,7 +180,6 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.NotEnoughInventory.DisplayNameAttribute(DisplayProperty.Name)
                 };
             }
-
             catch (Exception)
             {
                 transaction.Rollback();
@@ -208,11 +199,11 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoiceModel>> GetByProjectId(int projectId)
-        {            
+        {
             var invoiceList = _context.salesInvoiceUW
                 .Get(e => e.ProjectId == projectId,
-                     asNoTracking: true, // فرض می‌کنیم AsNoTracking درست است
-                     includes: e => e.Project) // <-- این نحوه فراخوانی صحیح است
+                     asNoTracking: true,
+                     includes: e => e.Project)
                 .Select(e => new SalesInvoiceModel
                 {
                     Id = e.Id,
@@ -224,7 +215,6 @@ namespace HSCrm.WebApi.Controllers
                     Tax = e.Tax,
                     Discount = e.Discount,
                     Total = e.Total,
-                    // اضافه کردن اطلاعات پروژه
                     Project = e.Project,
                 }).ToList();
 
@@ -269,15 +259,12 @@ namespace HSCrm.WebApi.Controllers
                 var oldStatus = invoice.Status;
                 var newStatus = (SalesInvoiceStatus)model.Status;
 
-                // اگر قبلاً Final بوده → موجودی را برگردان
                 if (oldStatus == SalesInvoiceStatus.Final)
                 {
                     _inventory.RollbackInventory(invoice);
                 }
 
-                // حذف آیتم‌ها
                 _context.salesInvoiceItemUW.DeleteByRange(x => x.SalesInvoiceId == invoice.Id);
-
                 invoice.Items.Clear();
 
                 foreach (var item in model.Items)
@@ -299,7 +286,6 @@ namespace HSCrm.WebApi.Controllers
 
                 _context.Save();
 
-                // اگر وضعیت جدید Final است → اعمال موجودی
                 if (newStatus == SalesInvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForSalesInvoice(invoice);
@@ -314,7 +300,7 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name)
                 };
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 tr.Rollback();
                 return new ApiResponse

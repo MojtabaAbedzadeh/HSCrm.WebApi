@@ -1,167 +1,237 @@
-﻿using AutoMapper;
-using Common.Permissions;
+﻿using Common.Permissions;
 using Framework.Authorization;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Entities.Models.Dto;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class PaymentController : ControllerBase
     {
         private readonly IUnitOfWork _context;
-        private readonly IMapper _mapper;
-        private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly ICurrentUserService _currentUserService;
+        private readonly ICurrentFiscalYearService _currentFiscalYearService;
 
-        public PaymentController(
-            IUnitOfWork context,
-            IMapper mapper,
-            ICurrentFiscalYearService currentFiscalYearService,
-            ICurrentUserService currentUserService)
+        public PaymentController(IUnitOfWork context, ICurrentUserService currentUserService, ICurrentFiscalYearService currentFiscalYearService)
         {
             _context = context;
-            _mapper = mapper;
-            _currentFiscalYearService = currentFiscalYearService;
             _currentUserService = currentUserService;
+            _currentFiscalYearService = currentFiscalYearService;
         }
 
-        [HttpGet]
-        [Permission(Permissions.Payment.View)]
-        public async Task<ActionResult<ApiResponse<IEnumerable<PaymentModel>>>> GetAll(CancellationToken cancellationToken)
+        //[HttpGet("GetPayments")]
+        //[Permission(Permissions.Payments.View)]
+        //public async Task<ApiResponse<IEnumerable<Payment>>> Get()
+        //{
+        //    var tenantId = _currentUserService.TenantId;
+
+        //    if (tenantId is null)
+        //    {
+        //        return new ApiResponse<IEnumerable<Payment>>
+        //        {
+        //            Status = false,
+        //            StatusCode = ApiResultStatusCode.Unauthorized,
+        //            Message = "Tenant is missing."
+        //        };
+        //    }
+
+        //    var payments =  _context.paymentUW
+        //        .Get(p => p.TenantId == tenantId.Value)
+        //        .ToList();
+
+        //    return new ApiResponse<IEnumerable<Payment>>
+        //    {
+        //        Status = true,
+        //        StatusCode = ApiResultStatusCode.Success,
+        //        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+        //        Data = payments
+        //    };
+        //}
+
+        [HttpGet("GetPayments")]
+        [Permission(Permissions.Payments.View)]
+        public async Task<ApiResponse<IEnumerable<PaymentDto>>> Get(CancellationToken cancellationToken)
         {
+            var tenantId = _currentUserService.TenantId;
+
+            if (tenantId is null)
+            {
+                return new ApiResponse<IEnumerable<PaymentDto>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "Tenant is missing."
+                };
+            }
+
             var payments = await _context.paymentUW.GetAsync(
-    x => x.TenantId == _currentUserService.TenantId
-         && x.FiscalYearId == _currentFiscalYearService.FiscalYearId,
-    true,
-    cancellationToken,
-    x => x.PurchaseInvoice!,
-    x => x.Expense!);
+                predicate: p => p.TenantId == tenantId.Value,
+                asNoTracking: true,
+                ct: cancellationToken,
 
-            var result = _mapper.Map<IEnumerable<PaymentModel>>(payments);
+                // Navigationهای موردنیاز
+                p => p.PurchaseInvoice!,
+                p => p.Expense!,
+                p => p.Expense!.Project!
+            );
 
-            return Ok(new ApiResponse<IEnumerable<PaymentModel>>
+            var result = payments.Select(p => new PaymentDto
+            {
+                Id = p.Id,
+                Amount = p.Amount,
+                PaymentDate = p.PaymentDate,
+                Method = p.Method,
+                ReferenceNo = p.ReferenceNo,
+
+                PurchaseInvoiceId = p.PurchaseInvoiceId,
+                ExpenseId = p.ExpenseId,
+
+                Title = p.PurchaseInvoiceId.HasValue
+                    ? $"پرداخت از بابت فاکتور شماره  {p.PurchaseInvoice.Number}"
+                    : p.ExpenseId.HasValue
+                    ? $"پرداخت از بابت {p.Expense?.ExpenseTitle}" +
+                          $"{(p.Expense?.Project != null ? $" پروژه {p.Expense.Project.ProjectTitle}" : "")}"
+                        : "پرداخت بدون مرجع"
+            })
+            .OrderByDescending(x => x.PaymentDate)
+            .ToList();
+
+            return new ApiResponse<IEnumerable<PaymentDto>>
             {
                 Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                 Data = result
-            });
+            };
         }
 
-        [HttpGet("{id:int}")]
-        [Permission(Permissions.Payment.View)]
-        public async Task<ActionResult<ApiResponse<PaymentModel>>> GetById(int id, CancellationToken cancellationToken)
+        [HttpGet("ReferenceAutocomplete")]
+        [Permission(Permissions.Payments.View)]
+        public ApiResponse<IEnumerable<PaymentReferenceDto>> ReferenceAutocomplete(string term, string referenceType = "all")
         {
-            var payment = await _context.paymentUW.GetByIdAsync(id, cancellationToken);
+            term ??= string.Empty;
+            referenceType = string.IsNullOrWhiteSpace(referenceType)
+                ? "all"
+                : referenceType.Trim();
 
-            if (payment == null || payment.TenantId != _currentUserService.TenantId)
+            if (term.Length < 2)
             {
-                return NotFound(new ApiResponse<PaymentModel>
+                return new ApiResponse<IEnumerable<PaymentReferenceDto>>
                 {
-                    Status = false,
-                    Message = "Payment not found"
-                });
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "موفق",
+                    Data = Enumerable.Empty<PaymentReferenceDto>()
+                };
             }
 
-            var result = _mapper.Map<PaymentModel>(payment);
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
 
-            return Ok(new ApiResponse<PaymentModel>
+            var data = new List<PaymentReferenceDto>();
+
+            if (referenceType is "all" or "purchaseInvoice")
             {
-                Status = true,
-                Data = result
-            });
-        }
+                var purchaseInvoices = _context.purchaseInvoiceUW
+                    .Get(x => x.FiscalYearId == fiscalYearId && (x.Number.Contains(term) || x.Supplier.SupplierFullName.Contains(term)),
+                    true,
+                    x => x.Supplier)
+                        .Take(15)
+                        .ToList();
 
-        [HttpPost]
-        [Permission(Permissions.Payment.Create)]
-        public async Task<ActionResult<ApiResponse<PaymentModel>>> Create([FromBody] PaymentCreateModel model, CancellationToken cancellationToken)
-        {
-            var payment = _mapper.Map<Payment>(model);
 
-            payment.TenantId = _currentUserService.TenantId ?? model.TenantId;
-            payment.FiscalYearId = (int)_currentFiscalYearService.FiscalYearId;
-            payment.CreatedAt = DateTime.Now;
-            payment.CreatedById = model.UserId;
-
-            await _context.paymentUW.CreateAsync(payment, cancellationToken);
-            await _context.SaveAsync();
-
-            var result = _mapper.Map<PaymentModel>(payment);
-
-            return Ok(new ApiResponse<PaymentModel>
-            {
-                Status = true,
-                Data = result,
-                Message = "Payment created successfully"
-            });
-        }
-
-        [HttpPut("{id:int}")]
-        [Permission(Permissions.Payment.Edit)]
-        public async Task<ActionResult<ApiResponse<PaymentModel>>> Update(int id, [FromBody] PaymentEditModel model, CancellationToken cancellationToken)
-        {
-            var payment = await _context.paymentUW.GetByIdAsync(id, cancellationToken);
-
-            if (payment == null || payment.TenantId != _currentUserService.TenantId)
-            {
-                return NotFound(new ApiResponse<PaymentModel>
+                data.AddRange(purchaseInvoices.Select(x => new PaymentReferenceDto
                 {
-                    Status = false,
-                    Message = "Payment not found"
-                });
+                    Id = x.Id,
+                    Type = "purchaseInvoice",
+                    Title = $"{x.Number} - {x.Supplier.SupplierFullName}",
+                    Amount = x.Total,
+                    Date = x.IssueDate
+                }));
             }
 
-            payment.PurchaseInvoiceId = model.PurchaseInvoiceId;
-            payment.ExpenseId = model.ExpenseId;
-            payment.PaymentDate = model.PaymentDate;
-            payment.Amount = model.Amount;
-            payment.Method = model.Method;
-            payment.ReferenceNo = model.ReferenceNo;
-            payment.Description = model.Description;
-            payment.ModifiedAt = DateTime.Now;
-            payment.ModifiedById = _currentUserService.UserId;
-
-            _context.paymentUW.Update(payment, cancellationToken);
-            await _context.SaveAsync();
-
-            var result = _mapper.Map<PaymentModel>(payment);
-
-            return Ok(new ApiResponse<PaymentModel>
+            if (referenceType is "all" or "expense")
             {
-                Status = true,
-                Data = result,
-                Message = "Payment updated successfully"
-            });
-        }
+                var expenses = _context.expenseUW
+                    .Get(
+                        x =>
+                            x.FiscalYearId == fiscalYearId &&
+                            x.ExpenseTitle.Contains(term),
+                        true,
+                        x => x.Project)
+                    .Take(15)
+                    .ToList();
 
-        [HttpDelete("{id:int}")]
-        [Permission(Permissions.Payment.Delete)]
-        public async Task<ActionResult<ApiResponse<bool>>> Delete(int id, CancellationToken cancellationToken)
-        {
-            var payment = await _context.paymentUW.GetByIdAsync(id, cancellationToken);
 
-            if (payment == null || payment.TenantId != _currentUserService.TenantId)
-            {
-                return NotFound(new ApiResponse<bool>
+                data.AddRange(expenses.Select(x => new PaymentReferenceDto
                 {
-                    Status = false,
-                    Message = "Payment not found"
-                });
+                    Id = x.Id,
+                    Type = "expense",
+                    Title = $"{x.ExpenseTitle} - {x.Project.ProjectTitle}",
+                    Amount = x.Amount,
+                    Date = x.ExpenseDate
+                }));
             }
 
-            _context.paymentUW.Delete(payment, cancellationToken);
-            await _context.SaveAsync();
-
-            return Ok(new ApiResponse<bool>
+            return new ApiResponse<IEnumerable<PaymentReferenceDto>>
             {
                 Status = true,
-                Data = true,
-                Message = "Payment deleted successfully"
-            });
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "موفق",
+                Data = data
+                    .OrderByDescending(x => x.Date)
+                    .Take(20)
+                    .ToList()
+            };
         }
+
+        [HttpPost("Create")]
+        [Permission(Permissions.Payments.Create)]
+        public ApiResponse Create([FromBody] PaymentModel model)
+        {
+            if (model.PurchaseInvoiceId.HasValue == model.ExpenseId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "فقط یکی از فاکتور خرید یا هزینه باید انتخاب شود."
+                };
+            }
+            var userId = User.GetUserId();
+
+            var entity = new Payment
+            {
+                FiscalYearId = model.FiscalYearId,
+                PurchaseInvoiceId = model.PurchaseInvoiceId,
+                ExpenseId = model.ExpenseId,
+                PaymentDate = model.PaymentDate,
+                Amount = model.Amount,
+                Method = model.Method,
+                CreatedAt = DateTime.Now,
+                CreatedById = userId,
+                ReferenceNo = model.ReferenceNo
+            };
+
+            _context.paymentUW.Create(entity);
+            _context.Save();
+
+            return new ApiResponse
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "پرداخت با موفقیت ثبت شد."
+            };
+        }
+
     }
 }

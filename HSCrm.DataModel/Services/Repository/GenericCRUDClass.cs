@@ -48,11 +48,7 @@ namespace HSCrm.DataModel.Services.Repository
         }
 
         // READ (async)
-        public virtual Task<List<TEntity>> GetAsync(
-            Expression<Func<TEntity, bool>>? predicate = null,
-            bool asNoTracking = true,
-            CancellationToken ct = default,
-            params Expression<Func<TEntity, object>>[] includes)
+        public virtual Task<List<TEntity>> GetAsync(Expression<Func<TEntity, bool>>? predicate = null, bool asNoTracking = true, CancellationToken ct = default, params Expression<Func<TEntity, object>>[] includes)
         {
             IQueryable<TEntity> q = _table;
             if (asNoTracking) q = q.AsNoTracking();

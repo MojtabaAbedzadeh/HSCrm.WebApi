@@ -73,6 +73,5 @@ namespace HSCrm.DataModel.Services.Repository
                 await _context.SaveChangesAsync();
             }
         }
-
     }
 }

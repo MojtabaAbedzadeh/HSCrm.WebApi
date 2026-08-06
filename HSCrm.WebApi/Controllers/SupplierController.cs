@@ -4,6 +4,7 @@ using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Entities.Models.Dto;
 using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
@@ -18,11 +19,13 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly ICurrentUserService _currentUserService;
 
-        public SupplierController(IUnitOfWork context, UserManager<ApplicationUser> userManager)
+        public SupplierController(IUnitOfWork context, UserManager<ApplicationUser> userManager, ICurrentUserService currentUserService)
         {
             _context = context;
             _userManager = userManager;
+            _currentUserService = currentUserService;
         }
 
         [HttpGet("GetSupplier")]
@@ -174,5 +177,96 @@ namespace HSCrm.WebApi.Controllers
                 Data = supplierList
             };
         }
+
+        [HttpGet("GetFinancialProfile/{supplierId}")]
+        [Permission(Permissions.Suppliers.View)]
+        public async Task<ApiResponse<SupplierFinancialProfileDto>> GetFinancialProfile(
+            int supplierId,
+            CancellationToken cancellationToken)
+        {
+            var tenantId = _currentUserService.TenantId;
+
+            if (tenantId is null)
+            {
+                return new ApiResponse<SupplierFinancialProfileDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "Tenant is missing."
+                };
+            }
+
+            var supplier = await _context.supplierUW.GetByIdAsync(
+                supplierId,
+                cancellationToken);
+
+            if (supplier == null || supplier.TenantId != tenantId.Value)
+            {
+                return new ApiResponse<SupplierFinancialProfileDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "تامین‌کننده یافت نشد."
+                };
+            }
+
+            var invoices = await _context.purchaseInvoiceUW.GetAsync(
+                predicate: pi => pi.SupplierId == supplierId
+                              && pi.TenantId == tenantId.Value,
+                asNoTracking: true,
+                ct: cancellationToken
+            );
+
+            var payments = await _context.paymentUW.GetAsync(
+                predicate: p => p.PurchaseInvoice != null
+                             && p.PurchaseInvoice.SupplierId == supplierId
+                             && p.TenantId == tenantId.Value,
+                asNoTracking: true,
+                ct: cancellationToken
+            );
+
+            var totalInvoices = invoices.Sum(x => x.Total);
+            var totalPayments = payments.Sum(x => x.Amount);
+
+            var profile = new SupplierFinancialProfileDto
+            {
+                SupplierId = supplier.Id,
+                SupplierName = supplier.SupplierFullName,
+
+                TotalInvoices = totalInvoices,
+                TotalPayments = totalPayments,
+
+                Invoices = invoices
+        .Select(i => new SupplierInvoiceDto
+        {
+            InvoiceId = i.Id,
+            InvoiceNumber = i.Number,
+            InvoiceDate = i.IssueDate,
+            TotalAmount = i.Total
+        })
+        .OrderByDescending(i => i.InvoiceDate)
+        .ToList(),
+
+                Payments = payments
+        .Select(p => new SupplierPaymentDto
+        {
+            PaymentId = p.Id,
+            Amount = p.Amount,
+            PaymentDate = p.PaymentDate,
+            Method = p.Method,
+            ReferenceNo = p.ReferenceNo
+        })
+        .OrderByDescending(p => p.PaymentDate)
+        .ToList()
+            };
+
+            return new ApiResponse<SupplierFinancialProfileDto>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Data = profile
+            };
+        }
+
     }
 }

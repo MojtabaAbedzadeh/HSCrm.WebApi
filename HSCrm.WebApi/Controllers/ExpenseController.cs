@@ -6,6 +6,7 @@ using HSCrm.Entities.Models;
 using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -17,12 +18,14 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly IPaymentSettlementService _paymentSettlementService;
+        private readonly ICurrentFiscalYearService _currentFiscalYearService;
 
 
-        public ExpenseController(IUnitOfWork context, IPaymentSettlementService paymentSettlementService)
+        public ExpenseController(IUnitOfWork context, IPaymentSettlementService paymentSettlementService, ICurrentFiscalYearService currentFiscalYearService)
         {
             _context = context;
             _paymentSettlementService = paymentSettlementService;
+            _currentFiscalYearService = currentFiscalYearService;
         }
 
         [HttpGet("SettlementSummary/{id}")]
@@ -42,7 +45,11 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Expenses.View)]
         public ApiResponse<IEnumerable<Expense>> Get()
         {
-            var expenses = _context.expenseUW.Get(null, true, x => x.Project, x => x.Tenant, x => x.CreatedBy).ToList();
+            var expenses = _context.expenseUW
+                .Get(null, true, x => x.Project, x => x.Tenant, x => x.CreatedBy)
+                .IgnoreQueryFilters()
+                .ToList();
+            //var expenses = _context.expenseUW.Get(null, true, x => x.Project, x => x.Tenant, x => x.CreatedBy).ToList();
 
             return new ApiResponse<IEnumerable<Expense>>
             {
@@ -132,59 +139,98 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Expenses.Create)]
         public ApiResponse Create([FromForm] ExpenseCreateModel model)
         {
-            if (!ModelState.IsValid) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-            };
+            if (!ModelState.IsValid)
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "اطلاعات وارد شده معتبر نیست"
+                };
 
-            var getExpense = _context.expenseUW.Get(c => c.ExpenseTitle == model.ExpenseTitle);
-
-            if (getExpense.Count() > 0) return new ApiResponse
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.Conflict,
-                Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
-            };
+            using var transaction = _context.BeginTransaction();
 
             try
             {
-                Expense expense = new Expense()
+                var tenantId = User.GetTenantId().Value;
+                var userId = User.GetUserId();
+                var fiscalYearId = _currentFiscalYearService.FiscalYearId!.Value;
+
+                var expense = new Expense
                 {
-                    TenantId = User.GetTenantId().Value,
+                    TenantId = tenantId,
+                    FiscalYearId = fiscalYearId,
                     ExpenseTitle = model.ExpenseTitle,
                     ProjectId = model.ProjectId,
                     Type = model.Type,
                     ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate),
                     Amount = model.Amount,
                     Description = model.Description,
+
+                    PaymentStatus = model.PaymentStatus,
+                    PaidAmount = model.PaidAmount,
+                    PaymentMethod = model.PaymentMethod,
+                    ReferenceNo = model.ReferenceNo,
+
                     CreatedAt = DateTime.Now,
-                    CreatedById = User.GetUserId()
+                    CreatedById = userId
                 };
 
                 _context.expenseUW.Create(expense);
                 _context.Save();
 
-                return new ApiResponse<Expense>
+                // اگر پرداختی ثبت شده باشد، Payment هم بساز
+                var paidAmount = model.PaymentStatus switch
+                {
+                    1 => model.PaidAmount,   // پرداخت بخشی
+                    2 => model.Amount,       // پرداخت کامل
+                    _ => 0m                  // بدون پرداخت
+                };
+
+                if (paidAmount > 0)
+                {
+                    if (paidAmount > model.Amount)
+                        paidAmount = model.Amount;
+
+                    var payment = new Entities.Entities.Payment
+                    {
+                        TenantId = tenantId,
+                        FiscalYearId = fiscalYearId,
+                        ExpenseId = expense.Id,
+                        Amount = paidAmount,
+                        Method = model.PaymentMethod ?? "Cash",
+                        ReferenceNo = model.ReferenceNo,
+                        PaymentDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate),
+                        CreatedAt = DateTime.Now,                        
+                        CreatedById = userId
+                    };
+
+                    _context.paymentUW.Create(payment);
+                    _context.Save();
+                }
+
+                transaction.Commit();
+
+                return new ApiResponse
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
-                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = expense
+                    Message = "هزینه با موفقیت ثبت شد"
                 };
             }
-            catch (Exception)
+            catch
             {
+                transaction.Rollback();
+
                 return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
-                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
+                    Message = "خطا در ثبت هزینه"
                 };
             }
-
         }
+
+
 
         [HttpPut("UpdateExpense")]
         [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]
@@ -210,6 +256,11 @@ namespace HSCrm.WebApi.Controllers
                 getExpense.ModifiedAt = DateTime.UtcNow;
                 getExpense.ModifiedById = User.GetUserId();
                 getExpense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
+                getExpense.PaymentStatus = model.PaymentStatus;
+                getExpense.PaidAmount = model.PaidAmount;
+                getExpense.PaymentMethod = model.PaymentMethod;
+                getExpense.ReferenceNo = model.ReferenceNo;
+
             }
 
             _context.expenseUW.Update(getExpense);
