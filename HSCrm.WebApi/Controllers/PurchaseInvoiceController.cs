@@ -8,6 +8,7 @@ using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
+using System.Linq.Expressions;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -44,25 +45,27 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetPurchaseInvoices")]
         [Permission(Permissions.PurchaseInvoices.View)]
-        public ApiResponse<IEnumerable<PurchaseInvoice>> Get(int? supplierId = null, DateTime? fromDate = null, DateTime? toDate = null, decimal? minTotal = null, decimal? maxTotal = null)
+        public ApiResponse<IEnumerable<PurchaseInvoiceModel>> Get(
+            string supplierFullName = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null,
+            decimal? minTotal = null,
+            decimal? maxTotal = null)
         {
-            var query = _context.purchaseInvoiceUW.Get(null, true, x => x.Supplier, x => x.Tenant);
-
-            if (supplierId.HasValue)
+            // بارگذاری ارتباطات مورد نیاز شامل Supplier
+            var query = _context.purchaseInvoiceUW.Get(null, true, x => x.Supplier, x => x.Tenant).AsQueryable();
+            if (!string.IsNullOrEmpty(supplierFullName))
             {
-                query = query.Where(x =>
-                    x.SupplierId == supplierId.Value);
+                query = query.Where(x => x.Supplier.SupplierFullName.Contains(supplierFullName));
             }
             if (fromDate.HasValue)
             {
                 var startDate = fromDate.Value.Date;
-
                 query = query.Where(x => x.IssueDate >= startDate);
             }
             if (toDate.HasValue)
             {
                 var endDateExclusive = toDate.Value.Date.AddDays(1);
-
                 query = query.Where(x => x.IssueDate < endDateExclusive);
             }
             if (minTotal.HasValue)
@@ -73,18 +76,34 @@ namespace HSCrm.WebApi.Controllers
             {
                 query = query.Where(x => x.Total <= maxTotal.Value);
             }
+
             var invoices = query
                 .OrderByDescending(x => x.CreatedAt)
                 .ThenByDescending(x => x.Id)
                 .ToList();
 
-            return new ApiResponse<IEnumerable<PurchaseInvoice>>
+            // نگاشت فاکتورها به مدل DTO خروجی جهت محاسبه مانده و انتقال به ویو
+            var result = invoices.Select(x => new PurchaseInvoiceModel
+            {
+                Id = x.Id,
+                Number = x.Number,
+                SupplierId = x.SupplierId,
+                Supplier = x.Supplier,
+                IssueDate = x.IssueDate,
+                PayStatus = x.PayStatus,
+                PaidAmount = x.PaidAmount,
+                Subtotal = x.Subtotal,
+                Tax = x.Tax,
+                Discount = x.Discount,
+                Total = x.Total
+            }).ToList();
+
+            return new ApiResponse<IEnumerable<PurchaseInvoiceModel>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success
-                    .DisplayNameAttribute(DisplayProperty.Name),
-                Data = invoices
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = result
             };
         }
 
@@ -96,24 +115,46 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse GetById(int InvoiceId)
         {
-            var factor = _context.purchaseInvoiceUW.GetById(InvoiceId);
+            // استفاده از متد Get ریپازیتوری به همراه Expressions برای Include کردن ارتباطات به صورت Type-safe
+            var factor = _context.purchaseInvoiceUW.Get(
+                x => x.Id == InvoiceId,
+                includes: new Expression<Func<PurchaseInvoice, object>>[]
+                {
+                    x => x.Items,
+                    x => x.Supplier,
+                    x => x.Warehouse
+                }
+            ).FirstOrDefault();
 
-            if (factor == null) return new ApiResponse<PurchaseInvoice>
+            if (factor == null)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.NotFound,
-                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
-                Data = factor
-            };
+                return new ApiResponse { Status = false, Message = "فاکتور یافت نشد" };
+            }
+
+            if (factor.Items != null)
+            {
+                foreach (var item in factor.Items)
+                {
+                    // قطع حلقه تکرار برای جلوگیری از خطای سریالایز JSON
+                    item.PurchaseInvoice = null;
+
+                    // لود اطلاعات محصول
+                    var product = _context.productUW.GetById(item.ProductId);
+                    if (product != null)
+                    {
+                        item.Product = product;
+                    }
+                }
+            }
 
             return new ApiResponse<PurchaseInvoice>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = factor
+                Data = factor // حتماً از نام Data استفاده کن نه AdditionalData
             };
         }
+
 
         [HttpGet("GetBySupplierId")]
         [Produces("application/json")]
@@ -234,7 +275,7 @@ namespace HSCrm.WebApi.Controllers
                     };
                 }
 
-                decimal itemsTotal =  model.Items.Sum(item =>
+                decimal itemsTotal = model.Items.Sum(item =>
                         (item.Quantity * item.UnitPrice)
                         - item.Discount
                         + item.Tax);

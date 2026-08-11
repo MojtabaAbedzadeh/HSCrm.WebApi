@@ -25,6 +25,8 @@ namespace HSCrm.Entities.Entities
         public decimal Total { get; set; }
         public SettlementStatus PayStatus { get; set; } = SettlementStatus.Unpaid;
         public decimal PaidAmount { get; set; }
+        public decimal RemainingAmount => Total - PaidAmount;
+
 
         public ICollection<PurchaseInvoiceItem> Items { get; set; } = new List<PurchaseInvoiceItem>();
         public int FiscalYearId { get; set; }

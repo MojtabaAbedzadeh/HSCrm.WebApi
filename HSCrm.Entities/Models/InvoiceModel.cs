@@ -93,8 +93,7 @@ namespace HSCrm.Entities.Models
         public required string Number { get; set; }
         public int SupplierId { get; set; }
         public Supplier Supplier { get; set; } = default!;
-        public int? ProjectId { get; set; }
-        public Project Project { get; set; }
+
         public DateTime IssueDate { get; set; }
         public SalesInvoiceStatus Status { get; set; }
         public decimal Subtotal { get; set; }
@@ -102,6 +101,9 @@ namespace HSCrm.Entities.Models
         public decimal Discount { get; set; }
         public decimal Total { get; set; }
         public string? Notes { get; set; }
+        public SettlementStatus PayStatus { get; set; } = SettlementStatus.Unpaid;
+        public decimal PaidAmount { get; set; }
+        public decimal RemainingAmount => Total - PaidAmount;
     }
 
     #endregion

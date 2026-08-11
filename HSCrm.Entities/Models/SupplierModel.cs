@@ -17,4 +17,12 @@ namespace HSCrm.Entities.Models
         public string? SupplierPhone { get; set; }
         public required string ModifiedById { get; set; }
     }
+
+    public class SupplierModelDTO
+    {
+        public int SupplierId { get; set; }
+        public required string SupplierFullName { get; set; }
+        public string? SupplierAddress { get; set; }
+        public string? SupplierPhone { get; set; }
+    }
 }
