@@ -13,7 +13,6 @@ namespace HSCrm.DataModel.Services.Repository
             _context = context;
             _table = _context.Set<TEntity>();
         }
-
         // CREATE
         public virtual void Create(TEntity entity) => _table.Add(entity);
         public virtual Task CreateAsync(TEntity entity, CancellationToken ct = default) => _table.AddAsync(entity, ct).AsTask();
@@ -24,15 +23,12 @@ namespace HSCrm.DataModel.Services.Repository
 
             _table.AddRange(entities);
         }
-
-
         // UPDATE
         public virtual void Update(TEntity entity, CancellationToken ct = default)
         {
             _table.Attach(entity);
             _context.Entry(entity).State = EntityState.Modified;
         }
-
         // READ (sync)
         public virtual IQueryable<TEntity> Get(Expression<Func<TEntity, bool>>? predicate = null, bool asNoTracking = true, params Expression<Func<TEntity, object>>[] includes)
         {
@@ -46,7 +42,6 @@ namespace HSCrm.DataModel.Services.Repository
                     q = q.Include(inc);
             return q;
         }
-
         // READ (async)
         public virtual Task<List<TEntity>> GetAsync(Expression<Func<TEntity, bool>>? predicate = null, bool asNoTracking = true, CancellationToken ct = default, params Expression<Func<TEntity, object>>[] includes)
         {
@@ -57,10 +52,8 @@ namespace HSCrm.DataModel.Services.Repository
                 foreach (var inc in includes) q = q.Include(inc);
             return q.ToListAsync(ct);
         }
-
         public virtual TEntity? GetById(object id) => _table.Find(id);
         public virtual Task<TEntity?> GetByIdAsync(object id, CancellationToken ct = default) => _table.FindAsync(new[] { id }, ct).AsTask();
-
         // DELETE
         public virtual void Delete(TEntity entity, CancellationToken ct = default)
         {
@@ -68,13 +61,11 @@ namespace HSCrm.DataModel.Services.Repository
                 _table.Attach(entity);
             _table.Remove(entity);
         }
-
         public virtual void DeleteById(object id)
         {
             var entity = GetById(id);
             if (entity != null) Delete(entity);
         }
-
         public virtual void DeleteByRange(Expression<Func<TEntity, bool>>? predicate = null)
         {
             IQueryable<TEntity> q = _table;

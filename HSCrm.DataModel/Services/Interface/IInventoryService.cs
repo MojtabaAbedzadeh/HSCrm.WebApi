@@ -6,7 +6,7 @@ namespace HSCrm.DataModel.Services.Interface
     {
         void ApplyInventoryForSalesInvoice(SalesInvoice invoice);
         void RollbackInventory(SalesInvoice invoice);
-        void ApplyInventoryForPurchaseInvoice(PurchaseInvoice invoice);
+        Task ApplyInventoryForPurchaseInvoice(PurchaseInvoice invoice);
         void RollbackInventoryForPurchaseInvoice(PurchaseInvoice invoice);
     }
 }

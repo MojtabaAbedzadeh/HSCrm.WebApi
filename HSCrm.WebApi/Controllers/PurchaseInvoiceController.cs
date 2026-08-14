@@ -8,6 +8,7 @@ using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
+using System.Globalization;
 using System.Linq.Expressions;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
@@ -187,400 +188,318 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateInvoice")]
-        [Permission(Permissions.PurchaseInvoices.Create)]
         public ApiResponse Create([FromBody] PurchaseInvoiceCreateModel model)
         {
-            if (model == null)
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "اطلاعات فاکتور ارسال نشده است."
-                };
-            }
-
-            if (model.Items == null || model.Items.Count == 0)
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.NoContent,
-                    Message = ApiResultStatusCode.NoContent
-                        .DisplayNameAttribute(DisplayProperty.Name)
-                };
-            }
-
-            if (User.GetTenantId() == null)
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.Unauthorized,
-                    Message = ApiResultStatusCode.Unauthorized
-                        .DisplayNameAttribute(DisplayProperty.Name)
-                };
-            }
-
-            if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "شماره فاکتور الزامی است."
-                };
-            }
-
-            using var transaction = _context.BeginTransaction();
-
             try
             {
-                var tenantId = User.GetTenantId().Value;
-
-                var userId = User.GetUserId();
-
-                var fiscalYearId = _currentFiscalYearService.FiscalYearId;
-
-                if (!fiscalYearId.HasValue)
-                {
-                    transaction.Rollback();
-
+                if (model == null)
                     return new ApiResponse
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.BadRequest,
-                        Message = "سال مالی جاری مشخص نشده است."
+                        Message = "مدل فاکتور معتبر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
                     };
-                }
 
-                bool invoiceNumberExists = _context.purchaseInvoiceUW
-                        .Get()
-                        .IgnoreQueryFilters()
-                        .Any(invoice =>
-                            invoice.Number == model.InvoiceNumber &&
-                            invoice.TenantId == tenantId &&
-                            invoice.FiscalYearId == fiscalYearId.Value);
-
-                if (invoiceNumberExists)
-                {
-                    transaction.Rollback();
-
+                if (model.Items == null || !model.Items.Any())
                     return new ApiResponse
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.Conflict,
-                        Message = ApiResultStatusCode.Conflict
-                            .DisplayNameAttribute(DisplayProperty.Name)
+                        Message = "حداقل یک قلم کالا باید ثبت شود.",
+                        StatusCode = ApiResultStatusCode.BadRequest
                     };
-                }
 
-                decimal itemsTotal = model.Items.Sum(item =>
-                        (item.Quantity * item.UnitPrice)
-                        - item.Discount
-                        + item.Tax);
+                var tenantId = User.GetTenantId();
+                if (tenantId == null) return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "شناسه شرکت معتبر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
 
-                decimal finalTotal = itemsTotal - model.InvoiceDiscount + model.InvoiceTax;
-
-                if (finalTotal < 0)
-                {
-                    finalTotal = 0;
-                }
-
-                /*
-                 * اعتبارسنجی وضعیت پرداخت
-                 *
-                 * 0 = بدون پرداخت
-                 * 1 = پرداخت کامل
-                 * 2 = پرداخت بخشی
-                 */
-
-                if (model.PaymentStatus < 0 || model.PaymentStatus > 2)
-                {
-                    transaction.Rollback();
-
+                if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
                     return new ApiResponse
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.BadRequest,
-                        Message = "وضعیت پرداخت معتبر نیست."
+                        Message = "شماره فاکتور الزامی است.",
+                        StatusCode = ApiResultStatusCode.BadRequest
                     };
-                }
 
-                decimal paidAmount = model.PaidAmount;
-
-                if (paidAmount < 0)
-                {
-                    paidAmount = 0;
-                }
-
-                if (model.PaymentStatus == 0)
-                {
-                    paidAmount = 0;
-                }
-                else if (model.PaymentStatus == 1)
-                {
-                    paidAmount = finalTotal;
-                }
-                else if (model.PaymentStatus == 2)
-                {
-                    if (paidAmount <= 0)
-                    {
-                        transaction.Rollback();
-
-                        return new ApiResponse
-                        {
-                            Status = false,
-                            StatusCode = ApiResultStatusCode.BadRequest,
-                            Message = "برای پرداخت بخشی، مبلغ پرداختی باید بیشتر از صفر باشد."
-                        };
-                    }
-
-                    if (paidAmount >= finalTotal)
-                    {
-                        transaction.Rollback();
-
-                        return new ApiResponse
-                        {
-                            Status = false,
-                            StatusCode = ApiResultStatusCode.BadRequest,
-                            Message = "در پرداخت بخشی، مبلغ پرداختی باید کمتر از مبلغ کل فاکتور باشد."
-                        };
-                    }
-                }
-
-                if (paidAmount > finalTotal)
-                {
-                    transaction.Rollback();
-
+                var fiscalYear = _currentFiscalYearService.FiscalYearId;
+                if (fiscalYear == null)
                     return new ApiResponse
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.BadRequest,
-                        Message = "مبلغ پرداختی نمی‌تواند بیشتر از مبلغ کل فاکتور باشد."
+                        Message = "سال مالی فعال یافت نشد.",
+                        StatusCode = ApiResultStatusCode.NotFound
                     };
-                }
+
+                var existsInvoice = _context.purchaseInvoiceUW
+                    .Get(x => x.Number == model.InvoiceNumber && x.FiscalYearId == fiscalYear.Value)
+                    .Any();
+
+                if (existsInvoice)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "شماره فاکتور تکراری است.",
+                        StatusCode = ApiResultStatusCode.Conflict
+                    };
+
+                if (model.SupplierId <= 0)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "تأمین‌کننده معتبر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                if (model.WarehouseId <= 0)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "انبار معتبر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                if (!DateTime.TryParseExact(model.IssueDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var issueDate))
+                    issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
+
+                // محاسبات
+                var subtotal = model.Items.Sum(x => (x.Quantity * x.UnitPrice) - x.Discount + x.Tax);
+                var total = subtotal - model.InvoiceDiscount + model.InvoiceTax;
 
                 var invoice = new PurchaseInvoice
                 {
-                    TenantId = tenantId,
-                    FiscalYearId = fiscalYearId.Value,
+                    Number = model.InvoiceNumber,
                     SupplierId = model.SupplierId,
                     WarehouseId = model.WarehouseId,
-                    Number = model.InvoiceNumber,
-                    IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
+                    PurchaserUserId = User.GetUserId(),
                     Status = model.Status,
+                    IssueDate = issueDate,
+                    Subtotal = subtotal,
                     Discount = model.InvoiceDiscount,
                     Tax = model.InvoiceTax,
-                    Total = finalTotal,
-                    PayStatus = (SettlementStatus)model.PaymentStatus,
-                    PaidAmount = model.PaidAmount,
-                    PurchaserUserId = model.PurchaserId,
-                    CreatedById = userId,
-                    CreatedAt = DateTime.Now
+                    Total = total,
+                    FiscalYearId = fiscalYear.Value,
+                    CreatedById = User.GetUserId(),
+                    CreatedAt = DateTime.Now,
+                    PayStatus = SettlementStatus.Unpaid,
+                    PaidAmount = 0
                 };
 
                 foreach (var item in model.Items)
                 {
+                    if (item.ProductId <= 0)
+                        return new ApiResponse
+                        {
+                            Status = false,
+                            Message = "کالای نامعتبر در آیتم‌ها وجود دارد.",
+                            StatusCode = ApiResultStatusCode.BadRequest
+                        };
+
                     if (item.Quantity <= 0)
-                    {
-                        transaction.Rollback();
-
                         return new ApiResponse
                         {
                             Status = false,
-                            StatusCode = ApiResultStatusCode.BadRequest,
-                            Message = "تعداد محصول باید بیشتر از صفر باشد."
+                            Message = "مقدار کالا باید بزرگتر از صفر باشد.",
+                            StatusCode = ApiResultStatusCode.BadRequest
                         };
-                    }
 
-                    if (item.UnitPrice < 0 ||
-                        item.Discount < 0 ||
-                        item.Tax < 0)
-                    {
-                        transaction.Rollback();
-
+                    if (item.UnitPrice < 0)
                         return new ApiResponse
                         {
                             Status = false,
-                            StatusCode = ApiResultStatusCode.BadRequest,
-                            Message = "مقادیر مبلغ، تخفیف و مالیات نمی‌توانند منفی باشند."
+                            Message = "قیمت واحد نمی‌تواند منفی باشد.",
+                            StatusCode = ApiResultStatusCode.BadRequest
                         };
-                    }
 
                     invoice.Items.Add(new PurchaseInvoiceItem
                     {
                         ProductId = item.ProductId,
-
                         Quantity = item.Quantity,
-
                         UnitPricePurchase = item.UnitPrice,
-
                         Discount = item.Discount,
-
-                        Tax = item.Tax,
-
-                        LineTotal =
-                            (item.Quantity * item.UnitPrice)
-                            - item.Discount
-                            + item.Tax,
-
-                        TenantId = tenantId,
-
-                        CreatedById = userId,
-
-                        CreatedAt = DateTime.Now
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedById = User.GetUserId(),
+                        Tax = item.Tax
                     });
                 }
 
                 _context.purchaseInvoiceUW.Create(invoice);
+                _context.SaveAsync();
 
-                /*
-                 * ابتدا فاکتور ذخیره می‌شود تا invoice.Id ساخته شود.
-                 */
-                _context.Save();
-
+                // فقط در وضعیت Final اثر انبار اعمال می‌شود
                 if (invoice.Status == SalesInvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForPurchaseInvoice(invoice);
-
-                    _context.Save();
+                    _context.SaveAsync();
                 }
 
-                /*
-                 * اگر مبلغی پرداخت شده باشد، Payment به همان فاکتور متصل می‌شود.
-                 */
-                if (paidAmount > 0)
-                {
-                    var payment = new Payment
-                    {
-                        TenantId = tenantId,
-
-                        FiscalYearId = fiscalYearId.Value,
-
-                        PurchaseInvoiceId = invoice.Id,
-
-                        PaymentDate = DateTime.Now,
-
-                        Amount = paidAmount,
-
-                        Method =
-                            string.IsNullOrWhiteSpace(model.PaymentMethod)
-                                ? "Cash"
-                                : model.PaymentMethod.Trim(),
-
-                        CreatedById = userId,
-
-                        CreatedAt = DateTime.Now
-                    };
-
-                    _context.paymentUW.Create(payment);
-
-                    _context.Save();
-                }
-
-                transaction.Commit();
-
-                return new ApiResponse
+                return new ApiResponse<int>
                 {
                     Status = true,
+                    Message = "فاکتور خرید با موفقیت ثبت شد.",
                     StatusCode = ApiResultStatusCode.Success,
-                    Message = ApiResultStatusCode.Success
-                        .DisplayNameAttribute(DisplayProperty.Name)
+                    Data = invoice.Id
                 };
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                transaction.Rollback();
-
                 return new ApiResponse
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
-                    Message = ApiResultStatusCode.ServerError
-                        .DisplayNameAttribute(DisplayProperty.Name)
+                    Message = ex.Message,
+                    StatusCode = ApiResultStatusCode.ServerError
                 };
             }
         }
 
-        [HttpPut("UpdateInvoice")]
-        [ProducesResponseType(typeof(PurchaseInvoice), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [Permission(Permissions.PurchaseInvoices.Edit)]
-        public ApiResponse Update([FromBody] PurchaseInvoiceEditModel model)
+        [HttpPost("ConfirmInvoice/{id}")]
+        public ApiResponse ConfirmInvoice(int id)
         {
-            if (model.InvoiceId == 0 || model.Items == null)
+            try
+            {
+                var invoice = _context.purchaseInvoiceUW.GetById(id);
+                if (invoice == null)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور یافت نشد.",
+                        StatusCode = ApiResultStatusCode.NotFound
+                    };
+
+                if (invoice.Status == SalesInvoiceStatus.Final)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور قبلاً تایید نهایی شده است.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                invoice.Status = SalesInvoiceStatus.Final;
+                _inventory.ApplyInventoryForPurchaseInvoice(invoice);
+
+                _context.purchaseInvoiceUW.Update(invoice);
+                _context.SaveAsync();
+
+                return new ApiResponse
+                {
+                    Status = true,
+                    Message = "فاکتور با موفقیت تایید شد.",
+                    StatusCode = ApiResultStatusCode.Success
+                };
+            }
+            catch (Exception ex)
+            {
                 return new ApiResponse
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                    Message = ex.Message,
+                    StatusCode = ApiResultStatusCode.ServerError
                 };
-
+            }
+        }
+        [HttpPut("UpdateInvoice")]
+        public async Task<ApiResponse> Update([FromBody] PurchaseInvoiceEditModel model)
+        {
             try
             {
-                var invoice = _context.purchaseInvoiceUW.GetById(model.InvoiceId);
+                if (model == null)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "مدل فاکتور معتبر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                var invoice = _context.purchaseInvoiceUW
+                    .Get()
+                    .Include(x => x.Items)
+                    .FirstOrDefault(x => x.Id == model.InvoiceId);
 
                 if (invoice == null)
                     return new ApiResponse
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.NotFound,
-                        Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
+                        Message = "فاکتور یافت نشد.",
+                        StatusCode = ApiResultStatusCode.NotFound
                     };
 
-                // حذف جزئیات قبلی با DeleteByRange
-                _context.purchaseInvoiceDetailUW.DeleteByRange(d => d.PurchaseInvoiceId == model.InvoiceId);
+                if (invoice.Status == SalesInvoiceStatus.Final)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور تایید نهایی شده و قابل ویرایش نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
 
-                var newDetails = model.Items.Select(i => new PurchaseInvoiceItem
-                {
-                    PurchaseInvoiceId = model.InvoiceId,
-                    ProductId = i.ProductId,
-                    Quantity = i.Quantity,
-                    UnitPricePurchase = i.UnitPrice,
-                    Discount = i.Discount,
-                    Tax = i.Tax,
-                    CreatedAt = DateTime.UtcNow,
-                    CreatedById = User.GetUserId(),
-                    TenantId = User.GetTenantId().Value,
-                    LineTotal = (i.Quantity * i.UnitPrice) - i.Discount + i.Tax
-                }).ToList();
+                if (model.Items == null || !model.Items.Any())
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "حداقل یک قلم کالا باید ثبت شود.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
 
-                _context.purchaseInvoiceDetailUW.CreateRange(newDetails);
+                var subtotal = model.Items.Sum(x => (x.Quantity * x.UnitPrice) - x.Discount + x.Tax);
+                var total = subtotal - model.InvoiceDiscount + model.InvoiceTax;
 
-                decimal itemsTotal = newDetails.Sum(x => x.LineTotal);
-                decimal finalTotal = itemsTotal - model.InvoiceDiscount + model.InvoiceTax;
-                if (finalTotal < 0) finalTotal = 0;
-
+                invoice.Number = model.InvoiceNumber;
                 invoice.SupplierId = model.SupplierId;
                 invoice.WarehouseId = model.WarehouseId;
-                invoice.Number = model.InvoiceNumber;
                 invoice.IssueDate = model.IssueDate;
                 invoice.Status = model.Status;
-                invoice.Tax = model.InvoiceTax;
+                invoice.PurchaserUserId = model.PurchaserId;
+                invoice.Subtotal = subtotal;
                 invoice.Discount = model.InvoiceDiscount;
-                invoice.Total = finalTotal;
+                invoice.Tax = model.InvoiceTax;
+                invoice.Total = total;
+                invoice.ModifiedAt = DateTime.UtcNow;
+                invoice.ModifiedById = User.GetUserId();
+
+                // حذف آیتم‌های قبلی
+                if (invoice.Items != null && invoice.Items.Any())
+                {
+                    _context.purchaseInvoiceDetailUW.DeleteByRange(x => x.PurchaseInvoiceId == invoice.Id);
+                }
+
+                // اگر null بود، مقداردهی کن
+                invoice.Items = new List<PurchaseInvoiceItem>();
+
+                foreach (var item in model.Items)
+                {
+                    invoice.Items.Add(new PurchaseInvoiceItem
+                    {
+                        PurchaseInvoiceId = invoice.Id,
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity,
+                        UnitPricePurchase = item.UnitPrice,
+                        Discount = item.Discount,
+                        Tax = item.Tax,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
 
                 _context.purchaseInvoiceUW.Update(invoice);
-                _context.Save();
+                await _context.SaveAsync();
 
-                return new ApiResponse<PurchaseInvoice>
+                return new ApiResponse
                 {
                     Status = true,
-                    StatusCode = ApiResultStatusCode.Success,
-                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = invoice
+                    Message = "فاکتور با موفقیت ویرایش شد.",
+                    StatusCode = ApiResultStatusCode.Success
                 };
             }
-            catch
+            catch (Exception ex)
             {
                 return new ApiResponse
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
-                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
+                    Message = ex.Message,
+                    StatusCode = ApiResultStatusCode.ServerError
                 };
             }
         }
+
     }
 }

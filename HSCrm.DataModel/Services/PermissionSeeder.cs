@@ -67,6 +67,8 @@ namespace HSCrm.DataModel.Seeders
                 "Create" => "ایجاد",
                 "Edit" => "ویرایش",
                 "Delete" => "حذف",
+                "Approve" => "تأیید",
+                "Reject" => "رد",
                 _ => action
             };
 

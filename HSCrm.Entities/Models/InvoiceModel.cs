@@ -7,51 +7,16 @@ namespace HSCrm.Entities.Models
 
     public class PurchaseInvoiceCreateModel
     {
-        public int ProjectId { get; set; }
-
         public int SupplierId { get; set; }
-
         public int WarehouseId { get; set; }
-
-        // این مقدار از مرورگر دریافت می‌شود، اما سمت API نباید به آن اعتماد شود.
         public int TenantId { get; set; }
-
         public required string InvoiceNumber { get; set; }
-
         public SalesInvoiceStatus Status { get; set; }
-
         public decimal InvoiceDiscount { get; set; }
-
         public decimal InvoiceTax { get; set; }
-
-        public string IssueDate { get; set; } = string.Empty;
-
+        public string IssueDate { get; set; }
         public required string PurchaserId { get; set; }
-
-        /*
-         * وضعیت پرداخت:
-         *
-         * 0 = بدون پرداخت
-         * 1 = پرداخت کامل
-         * 2 = پرداخت بخشی
-         */
-        public int PaymentStatus { get; set; }
-
-        /*
-         * مبلغ پرداختی اولیه فاکتور
-         */
-        public decimal PaidAmount { get; set; }
-
-        /*
-         * Cash
-         * Card
-         * BankTransfer
-         * Cheque
-         * Other
-         */
-        public string? PaymentMethod { get; set; }
-
-        public List<SalesInvoiceItemCreateModel> Items { get; set; } = new();
+        public List<PurchaseInvoiceItemCreateModel> Items { get; set; } = new();
     }
 
     public class PurchaseInvoiceItemCreateModel
@@ -66,13 +31,13 @@ namespace HSCrm.Entities.Models
     public class PurchaseInvoiceEditModel
     {
         public int InvoiceId { get; set; }
-        public required string InvoiceNumber { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
         public int SupplierId { get; set; }
         public int WarehouseId { get; set; }
         public DateTime IssueDate { get; set; }
         public SalesInvoiceStatus Status { get; set; }
         public int TenantId { get; set; }
-        public required string PurchaserId { get; set; }
+        public string PurchaserId { get; set; } = string.Empty;
         public decimal InvoiceTax { get; set; }
         public decimal InvoiceDiscount { get; set; }
         public List<PurchaseInvoiceItemEditModel> Items { get; set; } = new();
@@ -80,20 +45,21 @@ namespace HSCrm.Entities.Models
 
     public class PurchaseInvoiceItemEditModel
     {
+        public int InvoiceId { get; set; }
         public int ProductId { get; set; }
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal Tax { get; set; }
         public decimal Discount { get; set; }
+        public string? ModifiedById { get; set; }
     }
 
     public class PurchaseInvoiceModel
     {
         public int Id { get; set; }
-        public required string Number { get; set; }
+        public string Number { get; set; } = string.Empty;
         public int SupplierId { get; set; }
-        public Supplier Supplier { get; set; } = default!;
-
+        public Supplier Supplier { get; set; }
         public DateTime IssueDate { get; set; }
         public SalesInvoiceStatus Status { get; set; }
         public decimal Subtotal { get; set; }
@@ -101,7 +67,7 @@ namespace HSCrm.Entities.Models
         public decimal Discount { get; set; }
         public decimal Total { get; set; }
         public string? Notes { get; set; }
-        public SettlementStatus PayStatus { get; set; } = SettlementStatus.Unpaid;
+        public SettlementStatus PayStatus { get; set; }
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount => Total - PaidAmount;
     }

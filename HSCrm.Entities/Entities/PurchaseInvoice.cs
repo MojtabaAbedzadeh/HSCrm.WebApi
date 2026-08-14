@@ -4,8 +4,6 @@ namespace HSCrm.Entities.Entities
 {
     public class PurchaseInvoice : TenantScopedEntity, IFiscalYearScoped
     {
-        public required string Number { get; set; }
-
         public int WarehouseId { get; set; }
         public Warehouse Warehouse { get; set; } = default!;
 
@@ -15,10 +13,12 @@ namespace HSCrm.Entities.Entities
         public int SupplierId { get; set; }
         public Supplier Supplier { get; set; } = default!;
 
+        public int FiscalYearId { get; set; }
+        public FiscalYear FiscalYear { get; set; } = default!;
+
         public SalesInvoiceStatus Status { get; set; }
-
+        public required string Number { get; set; }
         public DateTime IssueDate { get; set; }
-
         public decimal Subtotal { get; set; }
         public decimal Tax { get; set; }
         public decimal Discount { get; set; }
@@ -27,9 +27,7 @@ namespace HSCrm.Entities.Entities
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount => Total - PaidAmount;
 
-
         public ICollection<PurchaseInvoiceItem> Items { get; set; } = new List<PurchaseInvoiceItem>();
-        public int FiscalYearId { get; set; }
-        public FiscalYear FiscalYear { get; set; } = default!;
+       
     }
 }

@@ -11,7 +11,6 @@ namespace HSCrm.DataModel.Services.Repository
         public InventoryService(ApplicationDbContext context) : base(context)
         {
         }
-
         public void ApplyInventoryForSalesInvoice(SalesInvoice invoice)
         {
             foreach (var item in invoice.Items)
@@ -75,19 +74,18 @@ namespace HSCrm.DataModel.Services.Repository
                 });
             }
         }
-        public void ApplyInventoryForPurchaseInvoice(PurchaseInvoice invoice)
+        public async Task ApplyInventoryForPurchaseInvoice(PurchaseInvoice invoice)
         {
             foreach (var item in invoice.Items)
             {
-                var stock = this.inventoryUW
-                    .Get(x => x.ProductId == item.ProductId &&
+                var stock = (await this.inventoryUW
+                    .GetAsync(x => x.ProductId == item.ProductId &&
                               x.TenantId == invoice.TenantId
-                               && x.WarehouseId == invoice.WarehouseId)
+                               && x.WarehouseId == invoice.WarehouseId))
                     .SingleOrDefault();
 
                 if (stock == null)
                 {
-                    // ✅ موجودی جدید
                     stock = new Inventory
                     {
                         TenantId = invoice.TenantId,
@@ -95,10 +93,10 @@ namespace HSCrm.DataModel.Services.Repository
                         CreatedAt = DateTime.UtcNow,
                         CreatedById = invoice.CreatedById,
                         WarehouseId = invoice.WarehouseId,                        
-                        Quantity = item.Quantity // ✅ مستقیم مقدار بده
+                        Quantity = item.Quantity 
                     };
 
-                    this.inventoryUW.Create(stock); // ✅ فقط Create
+                   await this.inventoryUW.CreateAsync(stock); // ✅ فقط Create
                 }
                 else
                 {
@@ -108,7 +106,7 @@ namespace HSCrm.DataModel.Services.Repository
                 }
 
                 // ✅ ثبت گردش موجودی
-                this.inventoryTransactionUW.Create(new InventoryTransaction
+                await this.inventoryTransactionUW.CreateAsync(new InventoryTransaction
                 {
                     TenantId = invoice.TenantId,
                     ProductId = item.ProductId,

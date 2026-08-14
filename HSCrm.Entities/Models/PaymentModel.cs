@@ -32,6 +32,16 @@ namespace HSCrm.Entities.Models
         public int TenantId { get; set; }
         public Tenant Tenant { get; set; }
     }
+
+    public class RegisterPurchasePaymentModel
+    {
+        public int PurchaseInvoiceId { get; set; }
+        public decimal Amount { get; set; }
+        public DateTime PaymentDate { get; set; }
+        public string PaymentMethod { get; set; } = string.Empty;
+        public string? Description { get; set; }
+    }
+
     public class PaymentModel
     {
         public int PaymentId { get; set; }

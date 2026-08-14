@@ -9,6 +9,9 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SinaPharm.Common;
+using System.Globalization;
+using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -232,6 +235,108 @@ namespace HSCrm.WebApi.Controllers
                 Message = "پرداخت با موفقیت ثبت شد."
             };
         }
+
+        [HttpPost("RegisterPurchasePayment")]
+        public ApiResponse RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
+        {
+            try
+            {
+                if (model == null) return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+                if (model.PurchaseInvoiceId <= 0) return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+                if (model.Amount <= 0) return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+                var invoice = _context.purchaseInvoiceUW.GetById(model.PurchaseInvoiceId);
+                if (invoice == null) return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+                if (invoice.Status != SalesInvoiceStatus.Final) return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+                var alreadyPaid = _context.paymentUW
+                    .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+                    .Sum(x => x.Amount);
+
+                var remaining = invoice.Total - alreadyPaid;
+                if (model.Amount > remaining) return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+                var payment = new Payment
+                {
+                    PurchaseInvoiceId = invoice.Id,
+                    Amount = model.Amount,
+                    PaymentDate = model.PaymentDate,
+                    Method = model.PaymentMethod,
+                    Description = model.Description,
+                    CreatedById = User.GetUserId(),
+                    CreatedAt = DateTime.Now
+                };
+
+                _context.paymentUW.Create(payment);
+                _context.SaveAsync();
+
+                var totalPaid = _context.paymentUW
+                    .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+                    .Sum(x => x.Amount);
+
+                invoice.PaidAmount = totalPaid;
+                invoice.PayStatus = totalPaid <= 0
+                    ? SettlementStatus.Unpaid
+                    : totalPaid < invoice.Total
+                        ? SettlementStatus.Partial
+                        : SettlementStatus.Paid;
+
+                _context.purchaseInvoiceUW.Update(invoice);
+                _context.SaveAsync();
+
+                return new ApiResponse
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                    AdditionalData = invoice
+                
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
+                };
+            }
+        }
+
 
     }
 }
