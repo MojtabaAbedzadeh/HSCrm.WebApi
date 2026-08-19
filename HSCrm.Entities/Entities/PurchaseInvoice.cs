@@ -16,7 +16,7 @@ namespace HSCrm.Entities.Entities
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;
 
-        public SalesInvoiceStatus Status { get; set; }
+        public InvoiceStatus Status { get; set; }
         public required string Number { get; set; }
         public DateTime IssueDate { get; set; }
         public decimal Subtotal { get; set; }
@@ -26,6 +26,7 @@ namespace HSCrm.Entities.Entities
         public SettlementStatus PayStatus { get; set; } = SettlementStatus.Unpaid;
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount => Total - PaidAmount;
+        public string Description { get; set; }
 
         public ICollection<PurchaseInvoiceItem> Items { get; set; } = new List<PurchaseInvoiceItem>();
        

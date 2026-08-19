@@ -1,154 +1,354 @@
-﻿using HSCrm.DataModel.Context;
-using HSCrm.DataModel.Exceptions;
+﻿using HSCrm.Common.PublicTools;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
+using HSCrm.Entities.Models.Dto;
+using Microsoft.EntityFrameworkCore;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.DataModel.Services.Repository
 {
     public class InventoryService : UnitOfWork, IInventoryService
     {
-        public InventoryService(ApplicationDbContext context) : base(context)
+        private readonly ApplicationDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly ICurrentFiscalYearService _currentFiscalYear;
+        private readonly ICurrentUserService _currentUser;
+
+        public InventoryService(ApplicationDbContext context, IUnitOfWork unitOfWork, ICurrentFiscalYearService currentFiscalYear, ICurrentUserService currentUser) : base(context)
         {
+            _context = context;
+            _unitOfWork = unitOfWork;
+            _currentFiscalYear = currentFiscalYear;
+            _currentUser = currentUser;
         }
+
         public void ApplyInventoryForSalesInvoice(SalesInvoice invoice)
         {
+            if (invoice == null || invoice.Items == null || !invoice.Items.Any())
+                return;
+
+            if (invoice.Status != InvoiceStatus.Final)
+                return;
+
             foreach (var item in invoice.Items)
             {
-                var stock = this.inventoryUW
-                    .Get(x => x.ProductId == item.ProductId &&
-                              x.TenantId == invoice.TenantId &&
-                              x.WarehouseId == invoice.WarehouseId)
-                    .SingleOrDefault();
+                var inventory = _context.Inventories.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId);
 
-                if (stock == null || stock.Quantity < item.Quantity)
-                    throw new NotEnoughInventoryException("موجودی کالا کافی نیست");
-
-                // ثبت گردش
-                this.inventoryTransactionUW.Create(new InventoryTransaction
+                if (inventory == null)
                 {
+                    inventory = new Inventory
+                    {
+                        ProductId = item.ProductId,
+                        TenantId = invoice.TenantId,
+                        WarehouseId = invoice.WarehouseId,
+                        CreatedAt = DateTime.UtcNow,
+                        Quantity = 0
+                    };
+                    _context.Inventories.Add(inventory);
+                }
+
+                if (inventory.Quantity < item.Quantity)
+                    throw new InvalidOperationException("موجودی انبار برای ثبت فروش کافی نیست.");
+
+                inventory.Quantity -= item.Quantity;
+
+                _context.InventoryTransactions.Add(new InventoryTransaction
+                {
+                    FiscalYearId = invoice.FiscalYearId,
+                    WarehouseId = invoice.WarehouseId,
                     TenantId = invoice.TenantId,
                     ProductId = item.ProductId,
-                    FiscalYearId = 1,
-                    WarehouseId = invoice.WarehouseId,
                     QuantityChange = -item.Quantity,
+                    CreatedAt = DateTime.UtcNow,
                     TransactionType = InventoryTransactionType.Sale,
-                    ReferenceId = item.Id,
-                    ReferenceType = InventoryReferenceType.SalesInvoiceItem,
-                    CreatedById = invoice.CreatedById,
-                    CreatedAt = DateTime.UtcNow
+                    ReferenceId = invoice.Id,
+                    ReferenceType = InventoryReferenceType.SalesInvoice
                 });
-
-                // کاهش موجودی
-                stock.Quantity -= item.Quantity;
-                this.inventoryUW.Update(stock);
             }
         }
+
         public void RollbackInventory(SalesInvoice invoice)
         {
+            if (invoice == null || invoice.Items == null || !invoice.Items.Any())
+                return;
+
+            if (invoice.Status != InvoiceStatus.Final)
+                return;
+
             foreach (var item in invoice.Items)
             {
-                var stock = this.inventoryUW
-                    .Get(x => x.ProductId == item.ProductId &&
-                              x.TenantId == invoice.TenantId)
-                    .SingleOrDefault();
+                var inventory = _context.Inventories.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId);
 
-                if (stock == null)
-                    throw new Exception("رکورد موجودی برای کالا یافت نشد");
+                if (inventory == null)
+                    throw new InvalidOperationException("موجودی انبار برای بازگشت فروش پیدا نشد.");
 
-                // ✅ برگرداندن موجودی
-                stock.Quantity += item.Quantity;
-                this.inventoryUW.Update(stock);
+                inventory.Quantity += item.Quantity;
 
-                // ✅ ثبت گردش برگشتی
-                this.inventoryTransactionUW.Create(new InventoryTransaction
+                _context.InventoryTransactions.Add(new InventoryTransaction
                 {
+                    FiscalYearId = invoice.FiscalYearId,
+                    WarehouseId = invoice.WarehouseId,
                     TenantId = invoice.TenantId,
                     ProductId = item.ProductId,
-                    QuantityChange = item.Quantity, // مثبت
+                    CreatedAt = DateTime.UtcNow,
+                    QuantityChange = item.Quantity,
                     TransactionType = InventoryTransactionType.SaleRollback,
-                    CreatedById = invoice.CreatedById,
-                    ReferenceId = item.Id,
-                    ReferenceType = InventoryReferenceType.SalesInvoiceItem,
-                    CreatedAt = DateTime.UtcNow
+                    ReferenceId = invoice.Id,
+                    ReferenceType = InventoryReferenceType.SalesInvoice
                 });
             }
         }
+
         public async Task ApplyInventoryForPurchaseInvoice(PurchaseInvoice invoice)
         {
+            if (invoice == null || invoice.Items == null || !invoice.Items.Any())
+                return;
+
+            if (invoice.Status != InvoiceStatus.Final)
+                return;
+
             foreach (var item in invoice.Items)
             {
-                var stock = (await this.inventoryUW
-                    .GetAsync(x => x.ProductId == item.ProductId &&
-                              x.TenantId == invoice.TenantId
-                               && x.WarehouseId == invoice.WarehouseId))
-                    .SingleOrDefault();
+                var inventory = await _context.Inventories.FirstOrDefaultAsync(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId);
 
-                if (stock == null)
+                if (inventory == null)
                 {
-                    stock = new Inventory
+                    inventory = new Inventory
                     {
-                        TenantId = invoice.TenantId,
                         ProductId = item.ProductId,
                         CreatedAt = DateTime.UtcNow,
-                        CreatedById = invoice.CreatedById,
-                        WarehouseId = invoice.WarehouseId,                        
-                        Quantity = item.Quantity 
+                        TenantId = invoice.TenantId,
+                        WarehouseId = invoice.WarehouseId,
+                        Quantity = 0
                     };
-
-                   await this.inventoryUW.CreateAsync(stock); // ✅ فقط Create
-                }
-                else
-                {
-                    // ✅ موجودی قبلی
-                    stock.Quantity += item.Quantity;
-                    this.inventoryUW.Update(stock); // ✅ فقط برای موجود
+                    await _context.Inventories.AddAsync(inventory);
                 }
 
-                // ✅ ثبت گردش موجودی
-                await this.inventoryTransactionUW.CreateAsync(new InventoryTransaction
+                inventory.Quantity += item.Quantity;
+
+                await _context.InventoryTransactions.AddAsync(new InventoryTransaction
                 {
-                    TenantId = invoice.TenantId,
-                    ProductId = item.ProductId,
-                    CreatedById = invoice.CreatedById,
-                    QuantityChange = item.Quantity,
-                    FiscalYearId = 1,
+                    FiscalYearId = invoice.FiscalYearId,
                     WarehouseId = invoice.WarehouseId,
+                    TenantId = invoice.TenantId,
+                    CreatedAt = DateTime.UtcNow,
+                    ProductId = item.ProductId,
+                    QuantityChange = item.Quantity,
                     TransactionType = InventoryTransactionType.Purchase,
-                    ReferenceId = item.Id,
-                    ReferenceType = InventoryReferenceType.PurchaseInvoiceItem,
-                    CreatedAt = DateTime.UtcNow
+                    ReferenceId = invoice.Id,
+                    ReferenceType = InventoryReferenceType.PurchaseInvoice
                 });
             }
         }
+
         public void RollbackInventoryForPurchaseInvoice(PurchaseInvoice invoice)
         {
+            if (invoice == null || invoice.Items == null || !invoice.Items.Any())
+                return;
+
+            if (invoice.Status != InvoiceStatus.Final)
+                return;
+
             foreach (var item in invoice.Items)
             {
-                var stock = this.inventoryUW
-                    .Get(x => x.ProductId == item.ProductId &&
-                              x.TenantId == invoice.TenantId)
-                    .SingleOrDefault();
+                var inventory = _context.Inventories.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId);
 
-                if (stock == null || stock.Quantity < item.Quantity)
-                    throw new Exception("امکان برگشت موجودی وجود ندارد");
+                if (inventory == null || inventory.Quantity < item.Quantity)
+                    throw new InvalidOperationException("موجودی انبار برای برگشت خرید کافی نیست.");
 
-                // ✅ کاهش موجودی
-                stock.Quantity -= item.Quantity;
-                this.inventoryUW.Update(stock);
+                inventory.Quantity -= item.Quantity;
 
-                // ✅ ثبت گردش برگشتی
-                this.inventoryTransactionUW.Create(new InventoryTransaction
+                _context.InventoryTransactions.Add(new InventoryTransaction
                 {
+                    FiscalYearId = invoice.FiscalYearId,
+                    CreatedAt = DateTime.UtcNow,
+                    WarehouseId = invoice.WarehouseId,
                     TenantId = invoice.TenantId,
                     ProductId = item.ProductId,
-                    CreatedById = invoice.CreatedById,
-                    QuantityChange = -item.Quantity, // منفی
+                    QuantityChange = -item.Quantity,
                     TransactionType = InventoryTransactionType.PurchaseRollback,
-                    ReferenceId = item.Id,
-                    ReferenceType = InventoryReferenceType.PurchaseInvoiceItem,
-                    CreatedAt = DateTime.UtcNow
+                    ReferenceId = invoice.Id,
+                    ReferenceType = InventoryReferenceType.PurchaseInvoice
                 });
+            }
+        }
+
+        public async Task<List<KardexDto>> GetProductKardexAsync(
+    int productId,
+    DateTime? fromDate,
+    DateTime? toDate,
+    int? warehouseId = null)
+        {
+            var baseQuery = _context.InventoryTransactions
+                .AsNoTracking()
+                .Where(x => x.ProductId == productId);
+
+            if (warehouseId.HasValue)
+            {
+                baseQuery = baseQuery.Where(x =>
+                    x.WarehouseId == warehouseId.Value);
+            }
+
+            decimal openingBalance = 0;
+
+            if (fromDate.HasValue)
+            {
+                openingBalance = await baseQuery
+                    .Where(x => x.CreatedAt < fromDate.Value)
+                    .SumAsync(x => (decimal?)x.QuantityChange) ?? 0;
+            }
+
+            var query = baseQuery;
+
+            if (fromDate.HasValue)
+            {
+                query = query.Where(x =>
+                    x.CreatedAt >= fromDate.Value);
+            }
+
+            if (toDate.HasValue)
+            {
+                var endDate = toDate.Value
+                    .Date
+                    .AddDays(1)
+                    .AddTicks(-1);
+
+                query = query.Where(x =>
+                    x.CreatedAt <= endDate);
+            }
+
+            /*
+             * به‌جای item.Warehouse.Title،
+             * مستقیماً جدول Warehouse را Join می‌کنیم.
+             */
+            var transactions = await
+                (
+                    from item in query
+                    join warehouse in _context.Set<Warehouse>()
+                        on item.WarehouseId equals warehouse.Id
+                        into warehouseGroup
+                    from warehouse in warehouseGroup.DefaultIfEmpty()
+                    orderby item.CreatedAt, item.Id
+                    select new
+                    {
+                        Item = item,
+
+                        // اگر انبار حذف شده یا رکورد آن پیدا نشود:
+                        WarehouseTitle = warehouse != null
+                            ? warehouse.Title
+                            : "نامشخص"
+                    }
+                )
+                .ToListAsync();
+
+            decimal runningBalance = openingBalance;
+
+            var result = new List<KardexDto>();
+
+            foreach (var transaction in transactions)
+            {
+                var item = transaction.Item;
+
+                var inputQty = item.QuantityChange > 0
+                    ? item.QuantityChange
+                    : 0;
+
+                var outputQty = item.QuantityChange < 0
+                    ? Math.Abs(item.QuantityChange)
+                    : 0;
+
+                runningBalance += item.QuantityChange;
+
+                result.Add(new KardexDto
+                {
+                    TransactionDate = item.CreatedAt,
+
+                    TransactionTypeTitle =
+                        item.TransactionType.ToPersianName(),
+
+                    ReferenceTypeTitle =
+                        item.ReferenceType.ToPersianName(),
+
+                    WarehouseTitle =
+                        transaction.WarehouseTitle,
+
+                    ReferenceId = item.ReferenceId,
+
+                    QuantityChange = item.QuantityChange,
+
+                    InputQuantity = inputQty,
+
+                    OutputQuantity = outputQty,
+
+                    RunningBalance = runningBalance,
+
+                    WarehouseId = item.WarehouseId,
+
+                    Description = GetKardexDescription(
+                        item.ReferenceType,
+                        item.ReferenceId)
+                });
+            }
+
+            return result;
+        }
+
+
+        private static string GetKardexDescription(InventoryReferenceType referenceType, long referenceId)
+        {
+            return $"ثبت شده بر اساس {referenceType.ToPersianName()} به شماره: {referenceId}";
+        }
+
+        public async Task ApplyAdjustmentAsync(AdjustmentDto dto, CancellationToken ct = default)
+        {
+            using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var inventory = await _context.Inventories.FirstOrDefaultAsync(x => x.ProductId == dto.ProductId && x.WarehouseId == dto.WarehouseId, ct);
+
+                if (inventory == null)
+                {
+                    throw new Exception("رکورد موجودی برای این کالا و انبار یافت نشد.");
+                }
+
+                inventory.Quantity += dto.QuantityChange;
+
+                var transactionLog = new InventoryTransaction
+                {
+                    ProductId = dto.ProductId,
+                    WarehouseId = dto.WarehouseId,
+                    TenantId = (int)_currentUser.TenantId,
+                    FiscalYearId = (int)_currentFiscalYear.FiscalYearId,
+                    QuantityChange = dto.QuantityChange,
+                    TransactionType = InventoryTransactionType.Adjustment,
+                    Description = dto.Description,
+                    ReferenceId = dto.ReferenceId,
+                    ReferenceType = InventoryReferenceType.SalesInvoice,
+                    CreatedAt = DateTime.Now,
+                };
+
+                await _context.InventoryTransactions.AddAsync(transactionLog, ct);
+                await _unitOfWork.SaveAsync();
+                await transaction.CommitAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
             }
         }
     }

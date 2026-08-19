@@ -2,6 +2,7 @@
 using Framework.Authorization;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
+using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.Extensions;
@@ -228,6 +229,39 @@ namespace HSCrm.WebApi.Controllers
                     .FirstOrDefault()
             }).ToList();
             return Ok(result);
+        }
+
+        [HttpGet("ProductDropdownList")]
+        public ApiResponse ProductDropdownList()
+        {
+            var tenantId = User.GetTenantId();
+
+            if (!tenantId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "TenantId برای کاربر فعلی یافت نشد."
+                };
+            }
+
+            var productList = _context.productUW
+                .Get(p => p.TenantId == tenantId.Value)
+                .Select(p => new DropdownDto
+                {
+                    DrId = p.Id,
+                    DrName = p.ProductTitle
+                })
+                .ToList();
+
+            return new ApiResponse<IEnumerable<DropdownDto>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = productList
+            };
         }
     }
 }

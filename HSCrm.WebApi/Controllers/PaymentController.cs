@@ -197,44 +197,163 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
+        //[HttpPost("Create")]
+        //[Permission(Permissions.Payments.Create)]
+        //public ApiResponse Create([FromBody] PaymentModel model)
+        //{
+        //    if (model.PurchaseInvoiceId.HasValue == model.ExpenseId.HasValue)
+        //    {
+        //        return new ApiResponse
+        //        {
+        //            Status = false,
+        //            StatusCode = ApiResultStatusCode.BadRequest,
+        //            Message = "فقط یکی از فاکتور خرید یا هزینه باید انتخاب شود."
+        //        };
+        //    }
+        //    var userId = User.GetUserId();
+
+        //    var entity = new Payment
+        //    {
+        //        FiscalYearId = model.FiscalYearId,
+        //        PurchaseInvoiceId = model.PurchaseInvoiceId,
+        //        ExpenseId = model.ExpenseId,
+        //        PaymentDate = model.PaymentDate,
+        //        Amount = model.Amount,
+        //        Method = model.Method,
+        //        CreatedAt = DateTime.Now,
+        //        CreatedById = userId,
+        //        ReferenceNo = model.ReferenceNo
+        //    };
+
+        //    _context.paymentUW.Create(entity);
+        //    _context.Save();
+
+        //    return new ApiResponse
+        //    {
+        //        Status = true,
+        //        StatusCode = ApiResultStatusCode.Success,
+        //        Message = "پرداخت با موفقیت ثبت شد."
+        //    };
+        //}
+
+
         [HttpPost("Create")]
         [Permission(Permissions.Payments.Create)]
         public ApiResponse Create([FromBody] PaymentModel model)
         {
+            // 1. اعتبارسنجی ورودی: فقط یکی از فاکتور خرید یا هزینه باید مقدار داشته باشد
             if (model.PurchaseInvoiceId.HasValue == model.ExpenseId.HasValue)
             {
                 return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "فقط یکی از فاکتور خرید یا هزینه باید انتخاب شود."
+                    Message = "لطفاً دقیقاً یکی از موارد فاکتور خرید یا هزینه را انتخاب کنید."
                 };
             }
+
             var userId = User.GetUserId();
 
-            var entity = new Payment
+            // شروع تراکنش برای اطمینان از ثبت پرداخت و آپدیت فاکتور با هم
+            using var transaction = _context.BeginTransaction();
+            try
             {
-                FiscalYearId = model.FiscalYearId,
-                PurchaseInvoiceId = model.PurchaseInvoiceId,
-                ExpenseId = model.ExpenseId,
-                PaymentDate = model.PaymentDate,
-                Amount = model.Amount,
-                Method = model.Method,
-                CreatedAt = DateTime.Now,
-                CreatedById = userId,
-                ReferenceNo = model.ReferenceNo
-            };
+                // 2. ثبت رکورد پرداخت جدید
+                var entity = new Payment
+                {
+                    FiscalYearId = model.FiscalYearId,
+                    PurchaseInvoiceId = model.PurchaseInvoiceId,
+                    ExpenseId = model.ExpenseId,
+                    PaymentDate = model.PaymentDate,
+                    Amount = model.Amount,
+                    Method = model.Method,
+                    CreatedAt = DateTime.Now,
+                    CreatedById = userId,
+                    ReferenceNo = model.ReferenceNo,
+                    Description = model.Description // اگر در مدل فیلد توضیحات داری
+                };
 
-            _context.paymentUW.Create(entity);
-            _context.Save();
+                _context.paymentUW.Create(entity);
+                _context.Save();
 
-            return new ApiResponse
+                // 3. به‌روزرسانی موجودیت مرتبط (فاکتور خرید یا هزینه)
+                if (model.PurchaseInvoiceId.HasValue)
+                {
+                    UpdatePurchaseInvoiceStatus(model.PurchaseInvoiceId.Value);
+                }
+                else if (model.ExpenseId.HasValue)
+                {
+                    UpdateExpenseStatus(model.ExpenseId.Value);
+                }
+
+                // تایید نهایی تراکنش
+                transaction.Commit();
+
+                return new ApiResponse
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "پرداخت با موفقیت ثبت و وضعیت فاکتور به‌روزرسانی شد."
+                };
+            }
+            catch (Exception ex)
             {
-                Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = "پرداخت با موفقیت ثبت شد."
-            };
+                transaction.Rollback();
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = "خطا در ثبت پرداخت: " + ex.Message
+                };
+            }
         }
+
+        // متد کمکی برای محاسبه مجدد و آپدیت فاکتور خرید
+        private void UpdatePurchaseInvoiceStatus(int invoiceId)
+        {
+            var invoice = _context.purchaseInvoiceUW.GetById(invoiceId);
+            if (invoice == null) return;
+
+            // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این فاکتور
+            var totalPaid = _context.paymentUW.Get(p => p.PurchaseInvoiceId == invoiceId && !p.IsDeleted)
+                                             .Sum(p => p.Amount);
+
+            invoice.PaidAmount = totalPaid;
+            // محاسبه وضعیت تسویه
+            if (invoice.PaidAmount <= 0)
+                invoice.PayStatus = SettlementStatus.Unpaid;
+            else if (invoice.PaidAmount < invoice.Total)
+                invoice.PayStatus = SettlementStatus.Partial;
+            else
+                invoice.PayStatus = SettlementStatus.Paid;
+
+            _context.purchaseInvoiceUW.Update(invoice);
+            _context.Save();
+        }
+
+        // متد کمکی برای محاسبه مجدد و آپدیت هزینه
+        private void UpdateExpenseStatus(int expenseId)
+        {
+            var expense = _context.expenseUW.GetById(expenseId);
+            if (expense == null) return;
+
+            // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این هزینه
+            var totalPaid = _context.paymentUW.Get(p => p.ExpenseId == expenseId && !p.IsDeleted)
+                                             .Sum(p => p.Amount);
+
+            expense.PaidAmount = totalPaid;
+            // فرض بر این است که برای هزینه هم فیلد Amount مبلغ کل است
+            if (expense.PaidAmount <= 0)
+                expense.PaymentStatus = (int)SettlementStatus.Unpaid;
+            else if (expense.PaidAmount < expense.Amount)
+                expense.PaymentStatus = (int)SettlementStatus.Partial;
+            else
+                expense.PaymentStatus = (int)SettlementStatus.Paid;
+
+            _context.expenseUW.Update(expense);
+            _context.Save();
+        }
+
 
         [HttpPost("RegisterPurchasePayment")]
         public ApiResponse RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
@@ -270,7 +389,7 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
-                if (invoice.Status != SalesInvoiceStatus.Final) return new ApiResponse
+                if (invoice.Status != InvoiceStatus.Final) return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,

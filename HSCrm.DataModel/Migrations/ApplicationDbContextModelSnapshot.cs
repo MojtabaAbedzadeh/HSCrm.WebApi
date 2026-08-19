@@ -561,6 +561,10 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("CreatedById")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("FiscalYearId")
                         .HasColumnType("int");
 
@@ -957,6 +961,10 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("CreatedById")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal>("Discount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -1223,6 +1231,10 @@ namespace HSCrm.DataModel.Migrations
 
                     b.Property<string>("CreatedById")
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("Discount")
                         .HasPrecision(18, 2)

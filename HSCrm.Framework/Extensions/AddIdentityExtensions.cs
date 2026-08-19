@@ -11,22 +11,33 @@ namespace HSCrm.Framework.Extensions
 {
     public static class AddIdentityExtention
     {
-        public static IServiceCollection AddIdentityService(this IServiceCollection service, IConfiguration config)
+        public static IServiceCollection AddIdentityService(
+            this IServiceCollection service,
+            IConfiguration config)
         {
             service.AddIdentity<ApplicationUser, ApplicationRole>(opt =>
             {
-                opt.Password.RequireDigit = false;
-                opt.Password.RequireUppercase = false;
-                opt.Password.RequireLowercase = false;
-                opt.Password.RequireNonAlphanumeric = false;
-            })
-                .AddRoles<ApplicationRole>()
-                .AddRoleValidator<RoleValidator<ApplicationRole>>()
-                .AddRoleManager<RoleManager<ApplicationRole>>()
-                .AddSignInManager<SignInManager<ApplicationUser>>()
-                .AddEntityFrameworkStores<ApplicationDbContext>();
+                // Password policy
+                opt.Password.RequireDigit = true;
+                opt.Password.RequireUppercase = true;
+                opt.Password.RequireLowercase = true;
+                opt.Password.RequireNonAlphanumeric = true;
+                opt.Password.RequiredLength = 8;
+                opt.Password.RequiredUniqueChars = 1;
 
-            var key = config["Jwt:Key"] ?? config["TokenKey"];
+                // User policy
+                opt.User.RequireUniqueEmail = true;
+
+                // Lockout policy
+                opt.Lockout.AllowedForNewUsers = true;
+                opt.Lockout.MaxFailedAccessAttempts = 5;
+                opt.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+            })
+            .AddEntityFrameworkStores<ApplicationDbContext>()
+            .AddDefaultTokenProviders();
+
+            var jwtSettings = config.GetSection("Jwt");
+            var key = jwtSettings["Key"] ?? throw new InvalidOperationException("JWT Key is missing in appsettings.json");
 
             service.AddAuthentication(options =>
             {
@@ -37,16 +48,16 @@ namespace HSCrm.Framework.Extensions
             {
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
-                    ValidateIssuer = false,
-                    ValidateAudience = false,
+                    ValidateIssuer = true, // فعال شد
+                    ValidateAudience = true, // فعال شد
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
-
-                    IssuerSigningKey = new SymmetricSecurityKey(
-                        Encoding.UTF8.GetBytes(key))
+                    ValidIssuer = jwtSettings["Issuer"],
+                    ValidAudience = jwtSettings["Audience"],
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+                    ClockSkew = TimeSpan.Zero // حذف تاخیر زمانی پیش‌فرض برای دقت بیشتر در Expiry
                 };
             });
-
 
             return service;
         }

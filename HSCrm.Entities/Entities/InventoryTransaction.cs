@@ -14,6 +14,7 @@ namespace HSCrm.Entities.Entities
         public decimal QuantityChange { get; set; }
         public InventoryTransactionType TransactionType { get; set; }
         public long ReferenceId { get; set; }
+        public string Description { get; set; }
         public InventoryReferenceType ReferenceType { get; set; }
 
         // Navigation

@@ -65,6 +65,10 @@ namespace HSCrm.DataModel.Services.Repository
         {
             return new EntityTransaction(_context);
         }
+        public async Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default)
+        {
+            return await EntityTransaction.StartAsync(_context, ct);
+        }
         public void Save()
         {
             _context.SaveChanges();

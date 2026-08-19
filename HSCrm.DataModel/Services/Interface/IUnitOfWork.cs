@@ -3,7 +3,7 @@ using HSCrm.Entities.Entities;
 
 namespace HSCrm.DataModel.Services.Interface
 {
-    public interface IUnitOfWork
+    public interface IUnitOfWork : IDisposable
     {
         GenericCRUDClass<ApplicationUser> userManagerUW { get; }
         GenericCRUDClass<ApplicationRole> roleManagerUW { get; }
@@ -29,6 +29,7 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<RolePermission> rolePermissionUW{ get; }
 
         IEntityTransaction BeginTransaction();
+        Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default);
         void Save();
         Task SaveAsync();
     }

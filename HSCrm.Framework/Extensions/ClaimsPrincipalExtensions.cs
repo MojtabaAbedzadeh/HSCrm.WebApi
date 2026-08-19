@@ -13,6 +13,9 @@ namespace HSCrm.Framework.Extensions
         {
             var tenantIdValue = user.FindFirst("TenantId")?.Value;
 
+            if (string.IsNullOrWhiteSpace(tenantIdValue))
+                return null;
+
             if (int.TryParse(tenantIdValue, out var tenantId))
                 return tenantId;
 

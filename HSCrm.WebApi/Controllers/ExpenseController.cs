@@ -40,7 +40,6 @@ namespace HSCrm.WebApi.Controllers
             return Ok(result);
         }
 
-
         [HttpGet("GetExpense")]
         [Permission(Permissions.Expenses.View)]
         public ApiResponse<IEnumerable<Expense>> Get()
@@ -229,8 +228,6 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
         }
-
-
 
         [HttpPut("UpdateExpense")]
         [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]

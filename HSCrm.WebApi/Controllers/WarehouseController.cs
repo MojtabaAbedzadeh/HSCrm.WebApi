@@ -6,11 +6,13 @@ using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class WarehouseController : ControllerBase
@@ -162,14 +164,32 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
+  
         [HttpGet("WarehouseDropdownList")]
-        public ApiResponse WarehouseDropdownList(int tenantId)
+        public ApiResponse WarehouseDropdownList()
         {
-            IEnumerable<DropdownDto> warehouseList = _context.warehouseUW.Get(p => p.TenantId == User.GetTenantId().Value).Select(p => new DropdownDto
+            var claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList();
+
+            var tenantId = User.GetTenantId();
+
+            if (!tenantId.HasValue)
             {
-                DrId = p.Id,
-                DrName = p.Title,
-            });
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "شناسه مستاجر (TenantId) در درخواست موجود نیست."
+                };
+            }
+
+            var warehouseList = _context.warehouseUW
+                .Get(p => p.TenantId == tenantId.Value)
+                .Select(p => new DropdownDto
+                {
+                    DrId = p.Id,
+                    DrName = p.Title
+                })
+                .ToList();
 
             return new ApiResponse<IEnumerable<DropdownDto>>
             {
@@ -179,5 +199,6 @@ namespace HSCrm.WebApi.Controllers
                 Data = warehouseList
             };
         }
+
     }
 }

@@ -11,7 +11,7 @@ namespace HSCrm.Entities.Models
         public int WarehouseId { get; set; }
         public int TenantId { get; set; }
         public required string InvoiceNumber { get; set; }
-        public SalesInvoiceStatus Status { get; set; }
+        public InvoiceStatus Status { get; set; }
         public decimal InvoiceDiscount { get; set; }
         public decimal InvoiceTax { get; set; }
         public string IssueDate { get; set; }
@@ -35,7 +35,7 @@ namespace HSCrm.Entities.Models
         public int SupplierId { get; set; }
         public int WarehouseId { get; set; }
         public DateTime IssueDate { get; set; }
-        public SalesInvoiceStatus Status { get; set; }
+        public InvoiceStatus Status { get; set; }
         public int TenantId { get; set; }
         public string PurchaserId { get; set; } = string.Empty;
         public decimal InvoiceTax { get; set; }
@@ -61,7 +61,7 @@ namespace HSCrm.Entities.Models
         public int SupplierId { get; set; }
         public Supplier Supplier { get; set; }
         public DateTime IssueDate { get; set; }
-        public SalesInvoiceStatus Status { get; set; }
+        public InvoiceStatus Status { get; set; }
         public decimal Subtotal { get; set; }
         public decimal Tax { get; set; }
         public decimal Discount { get; set; }
@@ -82,7 +82,7 @@ namespace HSCrm.Entities.Models
         public int WarehouseId { get; set; }
         public int TenantId { get; set; }
         public required string InvoiceNumber { get; set; }
-        public SalesInvoiceStatus Status { get; set; } // Proforma / Final
+        public InvoiceStatus Status { get; set; } // Proforma / Final
         public decimal InvoiceDiscount { get; set; }
         public decimal InvoiceTax { get; set; }
         public required string IssueDate { get; set; }
@@ -107,7 +107,7 @@ namespace HSCrm.Entities.Models
     {
         public int InvoiceId { get; set; }
         public DateTime IssueDate { get; set; }
-        public SalesInvoiceStatus Status { get; set; } // Proforma / Final / Cancelled
+        public InvoiceStatus Status { get; set; } // Proforma / Final / Cancelled
         public int ProjectId { get; set; }
         public int TenantId { get; set; }
         public required string SellerUserId { get; set; }
@@ -132,7 +132,7 @@ namespace HSCrm.Entities.Models
         public int? ProjectId { get; set; }
         public Project Project { get; set; }
         public DateTime IssueDate { get; set; }
-        public SalesInvoiceStatus Status { get; set; }
+        public InvoiceStatus Status { get; set; }
         public decimal Subtotal { get; set; }
         public decimal Tax { get; set; }
         public decimal Discount { get; set; }

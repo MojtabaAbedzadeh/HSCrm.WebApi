@@ -16,7 +16,7 @@ namespace HSCrm.Entities.Entities
         public Project Project { get; set; } = default!;
 
         public DateTime IssueDate { get; set; }
-        public SalesInvoiceStatus Status { get; set; }
+        public InvoiceStatus Status { get; set; }
 
         public decimal Subtotal { get; set; }
         public decimal Tax { get; set; }
@@ -24,6 +24,7 @@ namespace HSCrm.Entities.Entities
         public decimal Total { get; set; }
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;
+        public string Description { get; set; }
 
         public ICollection<SalesInvoiceItem> Items { get; set; } = new List<SalesInvoiceItem>();
     }

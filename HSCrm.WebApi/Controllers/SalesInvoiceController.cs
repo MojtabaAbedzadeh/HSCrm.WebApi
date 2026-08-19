@@ -132,6 +132,7 @@ namespace HSCrm.WebApi.Controllers
                     Total = finalTotal,
                     SellerUserId = model.SellerUserId,
                     CreatedById = User.GetUserId(),
+                    Description = "فاکتور فروش شماره" + model.InvoiceNumber,
                     CreatedAt = DateTime.Now
                 };
 
@@ -154,7 +155,7 @@ namespace HSCrm.WebApi.Controllers
                 _context.salesInvoiceUW.Create(invoice);
                 _context.Save();
 
-                if (invoice.Status == SalesInvoiceStatus.Final)
+                if (invoice.Status == InvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForSalesInvoice(invoice);
                     _context.Save();
@@ -257,9 +258,9 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 var oldStatus = invoice.Status;
-                var newStatus = (SalesInvoiceStatus)model.Status;
+                var newStatus = (InvoiceStatus)model.Status;
 
-                if (oldStatus == SalesInvoiceStatus.Final)
+                if (oldStatus == InvoiceStatus.Final)
                 {
                     _inventory.RollbackInventory(invoice);
                 }
@@ -286,7 +287,7 @@ namespace HSCrm.WebApi.Controllers
 
                 _context.Save();
 
-                if (newStatus == SalesInvoiceStatus.Final)
+                if (newStatus == InvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForSalesInvoice(invoice);
                     _context.Save();
@@ -329,7 +330,7 @@ namespace HSCrm.WebApi.Controllers
                 if (invoice == null)
                     return NotFound("فاکتور یافت نشد");
 
-                if (invoice.Status == SalesInvoiceStatus.Final)
+                if (invoice.Status == InvoiceStatus.Final)
                     return BadRequest("قبلاً تأیید شده");
 
                 foreach (var item in invoice.Items)
@@ -367,7 +368,7 @@ namespace HSCrm.WebApi.Controllers
                     });
                 }
 
-                invoice.Status = SalesInvoiceStatus.Final;
+                invoice.Status = InvoiceStatus.Final;
 
                 await _context.SaveAsync();
                 tran.Commit();

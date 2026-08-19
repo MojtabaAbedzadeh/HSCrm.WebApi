@@ -444,7 +444,7 @@ namespace HSCrm.DataModel.Context
             builder.Entity<SalesInvoice>(entity =>
             {
                 entity.Property(x => x.Status)
-                      .HasDefaultValue(SalesInvoiceStatus.Proforma)
+                      .HasDefaultValue(InvoiceStatus.Proforma)
                       .IsRequired();
             });
 
@@ -635,31 +635,42 @@ namespace HSCrm.DataModel.Context
         private void ApplyAuditTenantAndFiscalYearInfo()
         {
             var entries = ChangeTracker.Entries()
-                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified);
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
+                .ToList();
 
             foreach (var entry in entries)
             {
-                // ۱. مقداردهی خودکار لایه Tenant
-                if (entry.Entity is TenantScopedEntity tenantEntity && entry.State == EntityState.Added)
+                // Tenant
+                if (entry.Entity is TenantScopedEntity tenantEntity)
                 {
                     if (tenantEntity.TenantId == 0 && _currentUserService.TenantId.HasValue)
-                    {
                         tenantEntity.TenantId = _currentUserService.TenantId.Value;
-                    }
                 }
 
-                // ۲. مقداردهی خودکار لایه FiscalYear
-                if (entry.Entity is IFiscalYearScoped fiscalYearEntity && entry.State == EntityState.Added)
+                // FiscalYear
+                if (entry.Entity is IFiscalYearScoped fiscalEntity)
                 {
-                    // اگر دستی ست نشده بود، از سرویس سال مالی جاری مقداردهی شود
-                    if (fiscalYearEntity.FiscalYearId == 0 && _currentFiscalYearService.FiscalYearId.HasValue)
-                    {
-                        fiscalYearEntity.FiscalYearId = _currentFiscalYearService.FiscalYearId.Value;
-                    }
+                    if (fiscalEntity.FiscalYearId == 0 && _currentFiscalYearService.FiscalYearId.HasValue)
+                        fiscalEntity.FiscalYearId = _currentFiscalYearService.FiscalYearId.Value;
                 }
 
-                // ۳. لایه Auditing (مانند ایجادکننده، تاریخ ثبت و ویرایش)
-                // کدهایی که از قبل در متد ApplyAuditAndTenantInfo داشتی را اینجا بگذار...
+                // Audit fields
+                if (entry.Entity is AuditedEntity auditedEntity)
+                {
+                    if (entry.State == EntityState.Added)
+                    {
+                        if (auditedEntity.CreatedAt == default)
+                            auditedEntity.CreatedAt = DateTime.UtcNow;
+
+                        if (string.IsNullOrWhiteSpace(auditedEntity.CreatedById))
+                            auditedEntity.CreatedById = _currentUserService.UserId;
+                    }
+                    else if (entry.State == EntityState.Modified)
+                    {
+                        auditedEntity.ModifiedAt = DateTime.UtcNow;
+                        auditedEntity.ModifiedById = _currentUserService.UserId;
+                    }
+                }
             }
         }
         public override int SaveChanges()

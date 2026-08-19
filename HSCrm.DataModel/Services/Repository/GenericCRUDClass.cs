@@ -72,5 +72,9 @@ namespace HSCrm.DataModel.Services.Repository
             if (predicate != null) q = q.Where(predicate);
             _table.RemoveRange(q);
         }
+        public virtual IQueryable<TEntity> Query(bool asNoTracking = true)
+        {
+            return asNoTracking ? _table.AsNoTracking() : _table;
+        }
     }
 }

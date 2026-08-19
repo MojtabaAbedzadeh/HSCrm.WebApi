@@ -1,70 +1,64 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.Tokens;
+﻿// HSCrm.Services/Tools/JwtTokenGenerator.cs
+
 using HSCrm.Entities.Entities;
 using HSCrm.Services.Tools.Interface;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 
-namespace HSCrm.WebApi.Tools
+public class JwtTokenGenerator : IJwtTokenGenerator
 {
-    public class JwtTokenGenerator : IJwtTokenGenerator
+    private readonly IConfiguration _config;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly SymmetricSecurityKey _signingKey;
+
+    public JwtTokenGenerator(IConfiguration config, UserManager<ApplicationUser> userManager)
     {
-        private readonly IConfiguration _config;
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly SymmetricSecurityKey _signingKey;
+        _config = config;
+        _userManager = userManager;
+        var key = _config["Jwt:Key"];
+        if (string.IsNullOrWhiteSpace(key))
+            throw new InvalidOperationException("JWT Key is missing. Set 'Jwt:Key' in appsettings.json");
 
-        public JwtTokenGenerator(IConfiguration config, UserManager<ApplicationUser> userManager)
+        _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+    }
+
+    public async Task<string> GenerateTokenAsync(ApplicationUser user, long? fiscalYearId = null, CancellationToken ct = default)
+    {
+        var claims = new List<Claim>
         {
-            _config = config;
-            _userManager = userManager;
-            var key = _config["Jwt:Key"] ?? _config["TokenKey"];
-            if (string.IsNullOrWhiteSpace(key))
-                throw new InvalidOperationException("JWT Key is missing. Set 'Jwt:Key' or 'TokenKey' in appsettings.json");
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+            new Claim(ClaimTypes.Name, user.UserName ?? ""),
+            new Claim("UserId", user.Id)
+        };
 
-            _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
-        }
+        if (user.TenantId > 0)
+            claims.Add(new Claim("TenantId", user.TenantId.ToString()));
 
-        public async Task<string> GenerateTokenAsync(ApplicationUser user, long? fiscalYearId = null, CancellationToken ct = default)
-        {
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id),                
-                new Claim(ClaimTypes.Name, user.UserName ?? ""),
-                new Claim("UserId", user.Id)
-            };
+        if (fiscalYearId.HasValue)
+            claims.Add(new Claim("FiscalYearId", fiscalYearId.Value.ToString()));
 
-            if (user.TenantId > 0)
-            {
-                claims.Add(new Claim("TenantId", user.TenantId.ToString()));
-            }
+        var roles = await _userManager.GetRolesAsync(user);
+        foreach (var role in roles)
+            claims.Add(new Claim(ClaimTypes.Role, role));
 
-            if (fiscalYearId.HasValue)
-            {
-                claims.Add(new Claim(
-                    "FiscalYearId",
-                    fiscalYearId.Value.ToString()));
-            }
+        var issuer = _config["Jwt:Issuer"];
+        var audience = _config["Jwt:Audience"];
+        var expiryDays = double.Parse(_config["Jwt:ExpiryInDays"] ?? "7");
 
-            var roles = await _userManager.GetRolesAsync(user);
-            foreach (var role in roles)
-                claims.Add(new Claim(ClaimTypes.Role, role));
+        var creds = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
 
-            var issuer = _config["Jwt:Issuer"] ?? "Automation";
-            var audience = _config["Jwt:Audience"] ?? "Automation";
+        var token = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddDays(expiryDays),
+            signingCredentials: creds
+        );
 
-            var creds = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
-
-            var token = new JwtSecurityToken(
-                issuer: issuer,
-                audience: audience,
-                claims: claims,
-                expires: DateTime.UtcNow.AddDays(7),
-                signingCredentials: creds
-            );
-
-            return new JwtSecurityTokenHandler().WriteToken(token);
-        }
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
