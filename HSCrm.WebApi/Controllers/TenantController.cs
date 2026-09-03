@@ -107,6 +107,7 @@ namespace HSCrm.WebApi.Controllers
                     Currency = model.Currency
                 };
 
+
                 _context.tenantUW.Create(tenant);
                 _context.Save();
 

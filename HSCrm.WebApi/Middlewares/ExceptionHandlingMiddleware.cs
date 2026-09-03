@@ -1,8 +1,6 @@
-﻿using FluentValidation;
-using HSCrm.DataModel.Exceptions;
+﻿using HSCrm.DataModel.Exceptions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.EntityFrameworkCore;
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using ValidationException = FluentValidation.ValidationException;
 
@@ -14,10 +12,7 @@ public sealed class ExceptionHandlingMiddleware
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
     private readonly IHostEnvironment _environment;
 
-    public ExceptionHandlingMiddleware(
-        RequestDelegate next,
-        ILogger<ExceptionHandlingMiddleware> logger,
-        IHostEnvironment environment)
+    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger, IHostEnvironment environment)
     {
         _next = next;
         _logger = logger;

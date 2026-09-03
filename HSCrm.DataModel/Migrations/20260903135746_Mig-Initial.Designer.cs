@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HSCrm.DataModel.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260715104234_Mig-Initial")]
+    [Migration("20260903135746_Mig-Initial")]
     partial class MigInitial
     {
         /// <inheritdoc />
@@ -390,8 +390,21 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("ModifiedById")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<decimal>("PaidAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("PaymentStatus")
+                        .HasColumnType("int");
+
                     b.Property<int>("ProjectId")
                         .HasColumnType("int");
+
+                    b.Property<string>("ReferenceNo")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -551,6 +564,10 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("CreatedById")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("FiscalYearId")
                         .HasColumnType("int");
 
@@ -626,6 +643,9 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("CreatedById")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int?>("ExpenseId")
                         .HasColumnType("int");
 
@@ -660,9 +680,6 @@ namespace HSCrm.DataModel.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
-                    b.Property<int?>("SalesInvoiceId")
-                        .HasColumnType("int");
-
                     b.Property<int>("TenantId")
                         .HasColumnType("int");
 
@@ -677,8 +694,6 @@ namespace HSCrm.DataModel.Migrations
                     b.HasIndex("ModifiedById");
 
                     b.HasIndex("PurchaseInvoiceId");
-
-                    b.HasIndex("SalesInvoiceId");
 
                     b.HasIndex("TenantId");
 
@@ -949,6 +964,10 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("CreatedById")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal>("Discount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -971,6 +990,13 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<string>("Number")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<decimal>("PaidAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("PayStatus")
+                        .HasColumnType("int");
 
                     b.Property<string>("PurchaserUserId")
                         .IsRequired()
@@ -1105,6 +1131,81 @@ namespace HSCrm.DataModel.Migrations
                         });
                 });
 
+            modelBuilder.Entity("HSCrm.Entities.Entities.Receipt", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedById")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("FiscalYearId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedById")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("ReceiptDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReferenceNo")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int?>("SalesInvoiceId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("FiscalYearId");
+
+                    b.HasIndex("ModifiedById");
+
+                    b.HasIndex("SalesInvoiceId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("Receipts", (string)null);
+                });
+
             modelBuilder.Entity("HSCrm.Entities.Entities.RolePermission", b =>
                 {
                     b.Property<string>("RoleId")
@@ -1133,6 +1234,10 @@ namespace HSCrm.DataModel.Migrations
 
                     b.Property<string>("CreatedById")
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("Discount")
                         .HasPrecision(18, 2)
@@ -1843,13 +1948,14 @@ namespace HSCrm.DataModel.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("HSCrm.Entities.Entities.Expense", "Expense")
-                        .WithMany()
-                        .HasForeignKey("ExpenseId");
+                        .WithMany("Payments")
+                        .HasForeignKey("ExpenseId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("HSCrm.Entities.Entities.FiscalYear", "FiscalYear")
                         .WithMany()
                         .HasForeignKey("FiscalYearId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
@@ -1860,11 +1966,6 @@ namespace HSCrm.DataModel.Migrations
                     b.HasOne("HSCrm.Entities.Entities.PurchaseInvoice", "PurchaseInvoice")
                         .WithMany()
                         .HasForeignKey("PurchaseInvoiceId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("HSCrm.Entities.Entities.SalesInvoice", "SalesInvoice")
-                        .WithMany()
-                        .HasForeignKey("SalesInvoiceId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("HSCrm.Entities.Entities.Tenant", "Tenant")
@@ -1882,8 +1983,6 @@ namespace HSCrm.DataModel.Migrations
                     b.Navigation("ModifiedBy");
 
                     b.Navigation("PurchaseInvoice");
-
-                    b.Navigation("SalesInvoice");
 
                     b.Navigation("Tenant");
                 });
@@ -2087,6 +2186,51 @@ namespace HSCrm.DataModel.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("PurchaseInvoice");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.Receipt", b =>
+                {
+                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById");
+
+                    b.HasOne("HSCrm.Entities.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.FiscalYear", "FiscalYear")
+                        .WithMany()
+                        .HasForeignKey("FiscalYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
+                        .WithMany()
+                        .HasForeignKey("ModifiedById");
+
+                    b.HasOne("HSCrm.Entities.Entities.SalesInvoice", "SalesInvoice")
+                        .WithMany()
+                        .HasForeignKey("SalesInvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("FiscalYear");
+
+                    b.Navigation("ModifiedBy");
+
+                    b.Navigation("SalesInvoice");
 
                     b.Navigation("Tenant");
                 });
@@ -2336,6 +2480,11 @@ namespace HSCrm.DataModel.Migrations
             modelBuilder.Entity("HSCrm.Entities.Entities.ApplicationUser", b =>
                 {
                     b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.Expense", b =>
+                {
+                    b.Navigation("Payments");
                 });
 
             modelBuilder.Entity("HSCrm.Entities.Entities.Permission", b =>

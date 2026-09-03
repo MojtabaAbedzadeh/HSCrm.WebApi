@@ -1,6 +1,5 @@
 ﻿using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
-using HSCrm.DataModel.Services;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
@@ -24,9 +23,8 @@ namespace HSCrm.WebApi.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IUnitOfWork _iuwcontext;
         private readonly IPermissionService _permissionService;
-        private readonly RoleSeeder _roleSeeder;
 
-        public AccountController(UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager, SignInManager<ApplicationUser> signInManager, IJwtTokenGenerator token, ApplicationDbContext context, IPermissionService permissionService, IJwtTokenGenerator jwtTokenGenerator, IUnitOfWork iuwcontext, RoleSeeder roleSeeder)
+        public AccountController(UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager, SignInManager<ApplicationUser> signInManager, IJwtTokenGenerator token, ApplicationDbContext context, IPermissionService permissionService, IJwtTokenGenerator jwtTokenGenerator, IUnitOfWork iuwcontext)
         {
             _context = context;
             _userManager = userManager;
@@ -36,7 +34,6 @@ namespace HSCrm.WebApi.Controllers
             _permissionService = permissionService;
             _jwtTokenGenerator = jwtTokenGenerator;
             _iuwcontext = iuwcontext;
-            _roleSeeder = roleSeeder;
         }
 
         [HttpPost("RegisterTenant")]
@@ -52,6 +49,7 @@ namespace HSCrm.WebApi.Controllers
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             
+
             try
             {
                 // ✅ 1. ساخت Tenant
@@ -89,8 +87,6 @@ namespace HSCrm.WebApi.Controllers
                 _context.FiscalYears.Add(defaultFiscalYear);
                 await _context.SaveChangesAsync(); // ذخیره سال مالی در همان تراکنش
 
-                await _roleSeeder.SeedRolesAsync(tenant.Id);
-
 
                 // ✅ 3. ساخت Owner User
                 var user = new ApplicationUser
@@ -101,6 +97,7 @@ namespace HSCrm.WebApi.Controllers
                     UserFirstName = model.FirstName,
                     UserLastName = model.LastName,
                     TenantId = tenant.Id,
+                    UserImageUrl = "https://localhost:7001/Upload/UserImage/defaultAvatar.png",
                     IsTenantOwner = true,
                     UserStatus = true,
                     UserType = 4,
@@ -148,8 +145,6 @@ namespace HSCrm.WebApi.Controllers
                 return StatusCode(500, ex.Message);
             }
         }
-
-        // مسیر فایل: HSCrm.WebApi/HSCrm.WebApi/Controllers/AccountController.cs
 
         [Route("check-user")]
         [HttpPost]

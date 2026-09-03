@@ -183,7 +183,7 @@ namespace HSCrm.DataModel.Context
                     TenantId = defaultTenantId,
                     IsTenantOwner = true,
                     UserStatus = true,
-                    UserType = 1,
+                    UserType = 110,
                     PasswordHash = "AQAAAAIAAYagAAAAEAsJ0rn1us3z/MyoCt4F9J63B6xi75XqeTzR+3b+aZPoajU3nTUfPjVQYV+ELmpG5g==",
                     SecurityStamp = "C674E456-6515-4D19-9B9D-9988D41C488F",
                     ConcurrencyStamp = "B1B2B3B4-B5B6-B7B8-B9B0-B1B2B3B4B5B6"

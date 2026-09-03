@@ -115,8 +115,8 @@ public static class Permissions
         public const string Create = "salesInvoices.create";
         public const string Edit = "salesInvoices.edit";
         public const string Delete = "salesInvoices.delete";
-        public const string Approve = "purchaseInvoices.approve";
-        public const string Reject = "purchaseInvoices.reject";
+        public const string Approve = "salesInvoices.approve";
+        public const string Reject = "salesInvoices.reject";
     }
 
     public static class Tenants

@@ -131,6 +131,10 @@ namespace HSCrm.DataModel.Migrations
                     ExpenseDate = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PaymentStatus = table.Column<int>(type: "int", nullable: false),
+                    PaidAmount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    PaymentMethod = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ReferenceNo = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     FiscalYearId = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
@@ -204,6 +208,7 @@ namespace HSCrm.DataModel.Migrations
                     QuantityChange = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     TransactionType = table.Column<byte>(type: "tinyint", nullable: false),
                     ReferenceId = table.Column<long>(type: "bigint", nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ReferenceType = table.Column<byte>(type: "tinyint", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
@@ -230,13 +235,13 @@ namespace HSCrm.DataModel.Migrations
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     FiscalYearId = table.Column<int>(type: "int", nullable: false),
-                    SalesInvoiceId = table.Column<int>(type: "int", nullable: true),
                     PurchaseInvoiceId = table.Column<int>(type: "int", nullable: true),
                     ExpenseId = table.Column<int>(type: "int", nullable: true),
                     PaymentDate = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Method = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ReferenceNo = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -252,13 +257,14 @@ namespace HSCrm.DataModel.Migrations
                         name: "FK_Payments_Expenses_ExpenseId",
                         column: x => x.ExpenseId,
                         principalTable: "Expenses",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_Payments_FiscalYears_FiscalYearId",
                         column: x => x.FiscalYearId,
                         principalTable: "FiscalYears",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -399,18 +405,21 @@ namespace HSCrm.DataModel.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    Number = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     WarehouseId = table.Column<int>(type: "int", nullable: false),
                     PurchaserUserId = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     UserId = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     SupplierId = table.Column<int>(type: "int", nullable: false),
+                    FiscalYearId = table.Column<int>(type: "int", nullable: false),
                     Status = table.Column<byte>(type: "tinyint", nullable: false),
+                    Number = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     IssueDate = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Subtotal = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Tax = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Discount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Total = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    FiscalYearId = table.Column<int>(type: "int", nullable: false),
+                    PayStatus = table.Column<int>(type: "int", nullable: false),
+                    PaidAmount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -428,6 +437,45 @@ namespace HSCrm.DataModel.Migrations
                         principalTable: "FiscalYears",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Receipts",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    FiscalYearId = table.Column<int>(type: "int", nullable: false),
+                    SalesInvoiceId = table.Column<int>(type: "int", nullable: true),
+                    CustomerId = table.Column<int>(type: "int", nullable: true),
+                    ReceiptDate = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    Method = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ReferenceNo = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ModifiedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false),
+                    TenantId = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Receipts", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Receipts_Customers_CustomerId",
+                        column: x => x.CustomerId,
+                        principalTable: "Customers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Receipts_FiscalYears_FiscalYearId",
+                        column: x => x.FiscalYearId,
+                        principalTable: "FiscalYears",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -515,6 +563,7 @@ namespace HSCrm.DataModel.Migrations
                     Discount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     Total = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     FiscalYearId = table.Column<int>(type: "int", nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedById = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -893,11 +942,6 @@ namespace HSCrm.DataModel.Migrations
                 column: "PurchaseInvoiceId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Payments_SalesInvoiceId",
-                table: "Payments",
-                column: "SalesInvoiceId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Payments_TenantId",
                 table: "Payments",
                 column: "TenantId");
@@ -1045,6 +1089,36 @@ namespace HSCrm.DataModel.Migrations
                 name: "IX_PurchaseInvoices_WarehouseId",
                 table: "PurchaseInvoices",
                 column: "WarehouseId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Receipts_CreatedById",
+                table: "Receipts",
+                column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Receipts_CustomerId",
+                table: "Receipts",
+                column: "CustomerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Receipts_FiscalYearId",
+                table: "Receipts",
+                column: "FiscalYearId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Receipts_ModifiedById",
+                table: "Receipts",
+                column: "ModifiedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Receipts_SalesInvoiceId",
+                table: "Receipts",
+                column: "SalesInvoiceId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Receipts_TenantId",
+                table: "Receipts",
+                column: "TenantId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_RolePermissions_PermissionId",
@@ -1435,14 +1509,6 @@ namespace HSCrm.DataModel.Migrations
                 onDelete: ReferentialAction.Restrict);
 
             migrationBuilder.AddForeignKey(
-                name: "FK_Payments_SalesInvoices_SalesInvoiceId",
-                table: "Payments",
-                column: "SalesInvoiceId",
-                principalTable: "SalesInvoices",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
-
-            migrationBuilder.AddForeignKey(
                 name: "FK_Payments_Tenants_TenantId",
                 table: "Payments",
                 column: "TenantId",
@@ -1642,6 +1708,36 @@ namespace HSCrm.DataModel.Migrations
                 onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
+                name: "FK_Receipts_SalesInvoices_SalesInvoiceId",
+                table: "Receipts",
+                column: "SalesInvoiceId",
+                principalTable: "SalesInvoices",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Receipts_Tenants_TenantId",
+                table: "Receipts",
+                column: "TenantId",
+                principalTable: "Tenants",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Receipts_Users_CreatedById",
+                table: "Receipts",
+                column: "CreatedById",
+                principalTable: "Users",
+                principalColumn: "UserId");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Receipts_Users_ModifiedById",
+                table: "Receipts",
+                column: "ModifiedById",
+                principalTable: "Users",
+                principalColumn: "UserId");
+
+            migrationBuilder.AddForeignKey(
                 name: "FK_RolePermissions_Roles_RoleId",
                 table: "RolePermissions",
                 column: "RoleId",
@@ -1809,6 +1905,9 @@ namespace HSCrm.DataModel.Migrations
 
             migrationBuilder.DropTable(
                 name: "PurchaseInvoiceItems");
+
+            migrationBuilder.DropTable(
+                name: "Receipts");
 
             migrationBuilder.DropTable(
                 name: "RolePermissions");

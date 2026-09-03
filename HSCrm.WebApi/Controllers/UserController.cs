@@ -93,8 +93,7 @@ namespace HSCrm.WebApi.Controllers
                 // بررسی تکراری بودن
                 var userNameExist = await _userManager.FindByNameAsync(model.UserNameC);
                 var emailExist = await _userManager.FindByEmailAsync(model.EmailC);
-                var phoneExist = _userManager.Users
-                    .FirstOrDefault(x => x.PhoneNumber == model.PhoneNumberC);
+                var phoneExist = _userManager.Users.FirstOrDefault(x => x.PhoneNumber == model.PhoneNumberC);
 
                 if (userNameExist != null || emailExist != null || phoneExist != null)
                 {
