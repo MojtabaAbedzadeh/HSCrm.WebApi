@@ -35,6 +35,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = x.Id,
                     Name = x.Name!,
+                    FaName = x.RoleFaName,
                     TenantId = x.TenantId
                 })
                 .ToListAsync(ct);

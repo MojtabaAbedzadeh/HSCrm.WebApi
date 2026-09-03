@@ -66,11 +66,18 @@ namespace HSCrm.DataModel.Services.Repository
             var entity = GetById(id);
             if (entity != null) Delete(entity);
         }
-        public virtual void DeleteByRange(Expression<Func<TEntity, bool>>? predicate = null)
+        public virtual void  DeleteByRange(Expression<Func<TEntity, bool>>? predicate = null)
         {
             IQueryable<TEntity> q = _table;
             if (predicate != null) q = q.Where(predicate);
             _table.RemoveRange(q);
+        }
+        public virtual void RemoveRange(IEnumerable<TEntity> entities)
+        {
+            if (entities == null || !entities.Any())
+                return;
+
+            _table.RemoveRange(entities);
         }
         public virtual IQueryable<TEntity> Query(bool asNoTracking = true)
         {

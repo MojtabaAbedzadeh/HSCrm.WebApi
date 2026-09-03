@@ -64,6 +64,7 @@ namespace HSCrm.DataModel.Services.Repository
                     ProductId = item.ProductId,
                     QuantityChange = -item.Quantity,
                     CreatedAt = DateTime.UtcNow,
+                    Description = "فاکتور فروش",
                     TransactionType = InventoryTransactionType.Sale,
                     ReferenceId = invoice.Id,
                     ReferenceType = InventoryReferenceType.SalesInvoice
@@ -144,6 +145,7 @@ namespace HSCrm.DataModel.Services.Repository
                     CreatedAt = DateTime.UtcNow,
                     ProductId = item.ProductId,
                     QuantityChange = item.Quantity,
+                    Description = "فاکتور خرید",
                     TransactionType = InventoryTransactionType.Purchase,
                     ReferenceId = invoice.Id,
                     ReferenceType = InventoryReferenceType.PurchaseInvoice
@@ -186,11 +188,7 @@ namespace HSCrm.DataModel.Services.Repository
             }
         }
 
-        public async Task<List<KardexDto>> GetProductKardexAsync(
-    int productId,
-    DateTime? fromDate,
-    DateTime? toDate,
-    int? warehouseId = null)
+        public async Task<List<KardexDto>> GetProductKardexAsync(int productId, DateTime? fromDate, DateTime? toDate, int? warehouseId = null)
         {
             var baseQuery = _context.InventoryTransactions
                 .AsNoTracking()

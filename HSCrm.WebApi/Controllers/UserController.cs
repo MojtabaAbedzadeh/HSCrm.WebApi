@@ -121,7 +121,7 @@ namespace HSCrm.WebApi.Controllers
                     UserName = model.UserNameC
                 };
 
-                IdentityResult result = await _userManager.CreateAsync(user, "123456");
+                IdentityResult result = await _userManager.CreateAsync(user, "@Omid1364");
 
                 if (!result.Succeeded)
                 {

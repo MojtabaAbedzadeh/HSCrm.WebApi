@@ -321,8 +321,11 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
+                var tenantId = User.GetTenantId().Value;
+                var userId = User.GetUserId();
+
                 var invoice = (await _context.salesInvoiceUW.GetAsync(
-                    x => x.Id == invoiceId,
+                    x => x.Id == invoiceId && x.TenantId == tenantId,
                     asNoTracking: false,
                     includes: x => x.Items
                 )).FirstOrDefault();
@@ -333,35 +336,36 @@ namespace HSCrm.WebApi.Controllers
                 if (invoice.Status == InvoiceStatus.Final)
                     return BadRequest("قبلاً تأیید شده");
 
+                // ۱. بررسی اولیه موجودی تمام اقلام
+                var inventoriesToUpdate = new List<(Inventory Inventory, SalesInvoiceItem Item)>();
+
                 foreach (var item in invoice.Items)
                 {
                     var inventory = (await _context.inventoryUW.GetAsync(
-                        x => x.TenantId == User.GetTenantId().Value &&
-                             x.ProductId == item.ProductId,
+                        x => x.TenantId == tenantId && x.ProductId == item.ProductId,
                         asNoTracking: false
                     )).FirstOrDefault();
 
                     if (inventory == null || inventory.Quantity < item.Quantity)
-                        return Conflict("موجودی کافی نیست");
+                        return Conflict($"موجودی کالای {item.ProductId} کافی نیست");
+
+                    inventoriesToUpdate.Add((inventory, item));
                 }
 
-                foreach (var item in invoice.Items)
+                // ۲. کسر موجودی و ثبت تراکنش انبار با WarehouseId معتبر
+                foreach (var (inventory, item) in inventoriesToUpdate)
                 {
-                    var inventory = (await _context.inventoryUW.GetAsync(
-                        x => x.TenantId == User.GetTenantId().Value &&
-                             x.ProductId == item.ProductId,
-                        asNoTracking: false
-                    )).First();
-
                     inventory.Quantity -= item.Quantity;
 
                     _context.inventoryTransactionUW.Create(new InventoryTransaction
                     {
-                        TenantId = User.GetTenantId().Value,
+                        TenantId = tenantId,
+                        WarehouseId = inventory.WarehouseId,
                         ProductId = item.ProductId,
                         QuantityChange = -item.Quantity,
                         CreatedAt = DateTime.UtcNow,
-                        CreatedById = User.GetUserId(),
+                        CreatedById = userId,
+                        Description = "تأیید فاکتور فروش شماره " + invoice.Id,
                         TransactionType = InventoryTransactionType.Sale,
                         ReferenceId = invoice.Id,
                         ReferenceType = InventoryReferenceType.SalesInvoice
@@ -373,14 +377,20 @@ namespace HSCrm.WebApi.Controllers
                 await _context.SaveAsync();
                 tran.Commit();
 
-                return Ok(new { statusCode = 200 });
+                return Ok(new { statusCode = 200, message = "فاکتور با موفقیت تأیید شد." });
             }
             catch (DbUpdateConcurrencyException)
             {
                 tran.Rollback();
-                return Conflict("تداخل موجودی");
+                return Conflict("تداخل همزمانی در ثبت موجودی، لطفاً مجدداً تلاش کنید.");
+            }
+            catch (Exception)
+            {
+                tran.Rollback();
+                throw;
             }
         }
+
 
         [HttpGet("GetInvoiceDetail")]
         [Permission(Permissions.SalesInvoices.View)]

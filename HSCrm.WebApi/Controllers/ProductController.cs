@@ -1,5 +1,6 @@
 ﻿using Common.Permissions;
 using Framework.Authorization;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
@@ -23,49 +24,45 @@ namespace HSCrm.WebApi.Controllers
         private readonly ApplicationDbContext _dbContext;
         private readonly ICurrentUserService _currentUserService;
 
-
         public ProductController(IUnitOfWork context, ICurrentUserService currentUserService, ApplicationDbContext dbContext)
         {
-            _dbContext = dbContext;
             _context = context;
             _currentUserService = currentUserService;
+            _dbContext = dbContext;
         }
 
         [HttpGet("GetProducts")]
         [Permission(Permissions.Products.View)]
-        public ApiResponse<IEnumerable<ProductWithPriceDto>> Get() // خروجی را به DTO تغییر می دهیم
+        public ApiResponse<IEnumerable<ProductWithPriceDto>> Get()
         {
-            // 1. Include کردن رابطه
-            var productsWithAllPrices = _context.productUW.Get(
+            var products = _context.productUW.Get(
                 includes: new Expression<Func<Product, object>>[] { p => p.ProductPrices }
             );
 
-            // 2. تبدیل و انتخاب قیمت فعال (اگر بیش از یک قیمت فعال مجاز باشد، اولین مورد انتخاب می شود)
-            var resultDto = productsWithAllPrices.Select(p => new ProductWithPriceDto
+            var resultDto = products.Select(p => new ProductWithPriceDto
             {
-                
-                ProductId = p.Id, 
+                ProductId = p.Id,
                 ProductTitle = p.ProductTitle,
                 IsActive = p.IsActive,
                 ProductUnit = p.ProductUnit,
                 TenantId = p.TenantId,
                 SellPrice = p.ProductPrices
-                                   .Where(pp => pp.IsActive && pp.EffectiveTo == null) // یا هر شرط دیگری برای قیمت فعال
-                                   .OrderByDescending(pp => pp.EffectiveFrom) // جدیدترین قیمت فعال اول باشد
-                                   .Select(pp => pp.SellPrice)
-                                   .FirstOrDefault(),
+                    .Where(pp => pp.IsActive && pp.EffectiveTo == null)
+                    .OrderByDescending(pp => pp.EffectiveFrom)
+                    .Select(pp => pp.SellPrice)
+                    .FirstOrDefault(),
                 BuyPrice = p.ProductPrices
-                                   .Where(pp => pp.IsActive && pp.EffectiveTo == null) 
-                                   .OrderByDescending(pp => pp.EffectiveFrom)
-                                   .Select(pp => pp.BuyPrice)
-                                   .FirstOrDefault()
-            }).ToList();
+                    .Where(pp => pp.IsActive && pp.EffectiveTo == null)
+                    .OrderByDescending(pp => pp.EffectiveFrom)
+                    .Select(pp => pp.BuyPrice)
+                    .FirstOrDefault()
+            });
 
             return new ApiResponse<IEnumerable<ProductWithPriceDto>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Message = "Success",
                 Data = resultDto
             };
         }
@@ -79,20 +76,22 @@ namespace HSCrm.WebApi.Controllers
         {
             var product = _context.productUW.GetById(productId);
 
-            if (product == null) return new ApiResponse<Product>
+            if (product == null)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.NotFound,
-                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
-                Data = product
-            };
+                return new ApiResponse<Product>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "محصول مورد نظر یافت نشد.",
+                    Data = null
+                };
+            }
 
             return new ApiResponse<Product>
-
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Message = "Success",
                 Data = product
             };
         }
@@ -101,29 +100,44 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Products.Create)]
         public ApiResponse Create([FromForm] ProductCreateModel model)
         {
-            if (!ModelState.IsValid) return new ApiResponse
+            if (model == null)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-            };
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "اطلاعات ورودی معتبر نمی باشد."
+                };
+            }
 
-            var getProduct = _context.productUW.Get(b => b.ProductTitle == model.ProductTitle);
-
-            if (getProduct.Count() > 0) return new ApiResponse
+            if (!ModelState.IsValid)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.Conflict,
-                Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
-            };
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "اطلاعات فرم ناقص یا نامعتبر است."
+                };
+            }
+
+            var duplicateProduct = _context.productUW.Get(b => b.ProductTitle == model.ProductTitle).FirstOrDefault();
+            if (duplicateProduct != null)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "نام محصول تکراری است."
+                };
+            }
 
             try
             {
-                Product product = new Product()
+                var product = new Product
                 {
                     ProductTitle = model.ProductTitle,
                     ProductUnit = model.ProductUnit,
-                    TenantId = User.GetTenantId().Value,
+                    TenantId = User.GetTenantId().GetValueOrDefault(),
                     CreatedById = User.GetUserId(),
                     IsActive = model.IsActive,
                     CreatedAt = DateTime.Now
@@ -136,20 +150,19 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
-                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                    Message = "محصول جدید با موفقیت ثبت شد.",
                     Data = product
                 };
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
-                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
+                    Message = $"خطایی در سمت سرور رخ داد: {ex.Message}"
                 };
             }
-
         }
 
         [HttpPut("UpdateProduct")]
@@ -158,82 +171,109 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Products.Edit)]
         public ApiResponse Update([FromBody] ProductEditModel model)
         {
-            if (model.ProductId == 0) return new ApiResponse
+            if (model == null || model.ProductId == 0)
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-            };
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "شناسه محصول نامعتبر است."
+                };
+            }
 
             var getProduct = _context.productUW.GetById(model.ProductId);
 
-            if (getProduct != null)
+            if (getProduct == null)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "محصول مورد نظر یافت نشد."
+                };
+            }
+
+            try
             {
                 getProduct.ProductTitle = model.ProductTitle;
                 getProduct.ProductUnit = model.ProductUnit;
                 getProduct.IsActive = model.IsActive;
                 getProduct.ModifiedAt = DateTime.UtcNow;
                 getProduct.ModifiedById = User.GetUserId();
+
+                _context.productUW.Update(getProduct);
+                _context.Save();
+
+                return new ApiResponse<Product>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "محصول با موفقیت ویرایش شد.",
+                    Data = getProduct
+                };
             }
-
-            _context.productUW.Update(getProduct);
-            _context.Save();
-
-            return new ApiResponse<Product>
+            catch (Exception ex)
             {
-                Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = getProduct
-            };
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = $"خطایی در ویرایش محصول رخ داد: {ex.Message}"
+                };
+            }
         }
 
         [HttpGet("Search")]
-        public IActionResult Search([FromQuery] string term)
+        public ApiResponse<IEnumerable<object>> Search([FromQuery] string term)
         {
-            Console.WriteLine("Tenant from Controller: " + User.GetTenantId());
+            if (string.IsNullOrEmpty(term))
+            {
+                return new ApiResponse<IEnumerable<object>>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "Success",
+                    Data = new List<object>()
+                };
+            }
 
-            if (string.IsNullOrWhiteSpace(term))
-                return Ok(new List<object>());
+            var cleanTerm = term.CleanName();
 
-            term = term.Trim();
-            var total = _context.productUW.Get(p => true).Count();
-
-            // 1) دریافت 10 محصول
-            var products = _context.productUW.Get(p => p.ProductTitle != null && p.ProductTitle.Contains(term), true)
+            var products = _context.productUW.Get(p => p.ProductTitle.Contains(cleanTerm))
                 .Take(10)
                 .ToList();
 
-            // 2) دریافت همه قیمت‌های مرتبط با همین 10 محصول
-            var productIds = products.Select(p => p.Id).ToList();
+            var result = new List<object>();
 
-            var prices = _context.priceUW
-                .Get(pp => productIds.Contains(pp.ProductId) && pp.IsActive, true)
-                .OrderByDescending(pp => pp.EffectiveFrom)
-                .ToList();
-
-            // 3) ساخت خروجی بدون Query تو در تو
-            var result = products.Select(p => new
+            foreach (var item in products)
             {
-                p.Id,
-                ProductTitle = p.ProductTitle,
+                var price = _context.priceUW.Get(p => p.ProductId == item.Id && p.IsActive && p.EffectiveTo == null)
+                    .OrderByDescending(p => p.EffectiveFrom)
+                    .FirstOrDefault();
 
-                SellPrice = prices
-                    .Where(pp => pp.ProductId == p.Id)
-                    .Select(pp => pp.SellPrice)
-                    .FirstOrDefault(),
+                result.Add(new
+                {
+                    Id = item.Id,
+                    ProductTitle = item.ProductTitle,
+                    SellPrice = price != null ? price.SellPrice : 0,
+                    BuyPrice = price != null ? price.BuyPrice : 0
+                });
+            }
 
-                BuyPrice = prices
-                    .Where(pp => pp.ProductId == p.Id)
-                    .Select(pp => pp.BuyPrice)
-                    .FirstOrDefault()
-            }).ToList();
-            return Ok(result);
+            return new ApiResponse<IEnumerable<object>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "Success",
+                Data = result
+            };
         }
 
         [HttpGet("ProductDropdownList")]
         public ApiResponse ProductDropdownList()
         {
+            var claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList();
+
             var tenantId = User.GetTenantId();
 
             if (!tenantId.HasValue)
@@ -242,7 +282,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "TenantId برای کاربر فعلی یافت نشد."
+                    Message = "شناسه شرکت (TenantId) در درخواست موجود نیست."
                 };
             }
 

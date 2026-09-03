@@ -21,7 +21,6 @@ namespace HSCrm.WebApi.Controllers
         private readonly IUnitOfWork _context;
         private readonly UserManager<ApplicationUser> _userManager;
 
-
         public CustomerController(IUnitOfWork context, UserManager<ApplicationUser> userManager)
         {
             _context = context;
@@ -49,6 +48,53 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Customers.View)]
         public ApiResponse<CustomerDetailViewModel> GetCustomerById(int customerId)
+        {
+            var customer = _context.customerUW.Get(null, false, c => c.ApplicationUser).FirstOrDefault(c => c.Id == customerId);
+
+            if (customer == null)
+            {
+                return new ApiResponse<CustomerDetailViewModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
+
+            var viewModel = new CustomerDetailViewModel
+            {
+                Id = customer.Id,
+                Phone = customer.Phone,
+                Email = customer.Email,
+                Address = customer.Address,
+                UserId = customer.ApplicationUserId,
+                UserFirstName = customer.ApplicationUser!.UserFirstName,
+                UserLastName = customer.ApplicationUser.UserLastName,
+                UserImageUrl = customer.ApplicationUser.UserImageUrl,
+                UserStatus = customer.ApplicationUser.UserStatus,
+                UserType = customer.ApplicationUser.UserType,
+                UserGender = customer.ApplicationUser.UserGender,
+                TenantId = customer.TenantId,
+                IsTenantOwner = customer.ApplicationUser.IsTenantOwner,
+                UserName = customer.ApplicationUser.UserName
+            };
+
+            return new ApiResponse<CustomerDetailViewModel>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = viewModel
+            };
+        }
+
+        [HttpGet("GetCustomerProfile")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Permission(Permissions.Customers.View)]
+        public ApiResponse<CustomerDetailViewModel> GetCustomerProfile(int customerId)
         {
             var customer = _context.customerUW.Get(null, false, c => c.ApplicationUser).FirstOrDefault(c => c.Id == customerId);
 

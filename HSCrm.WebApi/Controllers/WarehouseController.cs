@@ -199,6 +199,5 @@ namespace HSCrm.WebApi.Controllers
                 Data = warehouseList
             };
         }
-
     }
 }

@@ -1,4 +1,5 @@
-﻿using static HSCrm.Common.PublicTools.Enums;
+﻿using System.ComponentModel.DataAnnotations.Schema;
+using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Entities.Entities
 {
@@ -23,5 +24,8 @@ namespace HSCrm.Entities.Entities
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;
         public ICollection<Payment> Payments { get; set; } = new List<Payment>();
+
+        [NotMapped]
+        public string? CreatedByFullName => CreatedBy != null ? $"{CreatedBy.UserFirstName} {CreatedBy.UserLastName}".Trim() : null;
     }
 }

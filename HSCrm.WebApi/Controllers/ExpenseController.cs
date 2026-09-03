@@ -8,7 +8,6 @@ using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
-using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
@@ -20,7 +19,6 @@ namespace HSCrm.WebApi.Controllers
         private readonly IPaymentSettlementService _paymentSettlementService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
 
-
         public ExpenseController(IUnitOfWork context, IPaymentSettlementService paymentSettlementService, ICurrentFiscalYearService currentFiscalYearService)
         {
             _context = context;
@@ -28,15 +26,25 @@ namespace HSCrm.WebApi.Controllers
             _currentFiscalYearService = currentFiscalYearService;
         }
 
-        [HttpGet("SettlementSummary/{id}")]
+        [HttpGet("SettlementSummary/{id:int}")]
+        [Permission(Permissions.Expenses.View)]
         public IActionResult SettlementSummary(int id)
         {
-            var expense = _context.expenseUW.GetById(id); // اگر متد/ریپازیتوری‌ات فرق دارد، همان را بگذار
-            if (expense == null)
-                return NotFound();
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
 
-            var totalAmount = expense.Amount; // یا مبلغ اصلی هزینه
-            var result = _paymentSettlementService.BuildExpenseSummary(id, totalAmount);
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized("دسترسی غیرمجاز یا سال مالی نامعتبر");
+
+            // فیلتر صریح Tenant و FiscalYear برای امنیت داده
+            var expense = _context.expenseUW
+                .Get(x => x.Id == id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value)
+                .SingleOrDefault();
+
+            if (expense == null)
+                return NotFound("هزینه مورد نظر یافت نشد");
+
+            var result = _paymentSettlementService.BuildExpenseSummary(expense.Id, expense.Amount);
             return Ok(result);
         }
 
@@ -44,92 +52,55 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Expenses.View)]
         public ApiResponse<IEnumerable<Expense>> Get()
         {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse<IEnumerable<Expense>> { Status = false, Message = "دسترسی نامعتبر" };
+
+            // حذف IgnoreQueryFilters برای حفظ حریم چندمستاجری
             var expenses = _context.expenseUW
-                .Get(null, true, x => x.Project, x => x.Tenant, x => x.CreatedBy)
-                .IgnoreQueryFilters()
+                .Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value,
+                     true, x => x.Project, x => x.Tenant, x => x.CreatedBy)
                 .ToList();
-            //var expenses = _context.expenseUW.Get(null, true, x => x.Project, x => x.Tenant, x => x.CreatedBy).ToList();
 
             return new ApiResponse<IEnumerable<Expense>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = expenses
-            };
-        }
-
-        [HttpGet("GetById")]
-        [Produces("application/json")]
-        [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [Permission(Permissions.Expenses.View)]
-        public ApiResponse GetById(int expenseId)
-        {
-            var expenses = _context.expenseUW
-                .Get(e => e.Id == expenseId)
-                .Select(e => new ExpenseEditModel
-                {
-                    ExpenseId = e.Id,
-                    ExpenseTitle = e.ExpenseTitle,
-                    ProjectId = e.ProjectId,
-                    Type = e.Type,
-                    Amount = e.Amount,
-                    Description = e.Description,
-                    ExpenseDate = ConvertDate.ConvertMiladiToShamsi(e.ExpenseDate, "yyyy/MM/dd")
-                })
-                .ToList();
-
-            if (!expenses.Any())
-                return new ApiResponse<IEnumerable<ExpenseEditModel>>
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.NotFound,
-                    Message = "هزینه‌ای برای این پروژه ثبت نشده است"
-                };
-
-            return new ApiResponse<IEnumerable<ExpenseEditModel>>
-            {
-                Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Message = "لیست هزینه‌ها با موفقیت دریافت شد",
                 Data = expenses
             };
         }
 
         [HttpGet("GetByProjectId")]
-        [Produces("application/json")]
-        [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Expenses.View)]
-        public ApiResponse<IEnumerable<ExpenseEditModel>> GetByProjectId(int projectId)
+        public ApiResponse<IEnumerable<Expense>> GetByProjectId(int projectId)
         {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse<IEnumerable<Expense>> { Status = false, Message = "دسترسی نامعتبر" };
+
             var expenses = _context.expenseUW
-                .Get(e => e.ProjectId == projectId)
-                .Select(e => new ExpenseEditModel
-                {
-                    ExpenseId = e.Id,
-                    ExpenseTitle = e.ExpenseTitle,
-                    ProjectId = e.ProjectId,
-                    Type = e.Type,
-                    Amount = e.Amount,
-                    Description = e.Description,
-                    ExpenseDate = ConvertDate.ConvertMiladiToShamsi(e.ExpenseDate, "yyyy/MM/dd")
-                }).ToList();
+                .Get(
+                    x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && x.ProjectId == projectId,
+                    asNoTracking: true,
+                    includes:
+                    [
+                        x => x.Project,
+                        x => x.Tenant,
+                        x => x.CreatedBy
+                    ]
+                )
+                .ToList();
 
-            if (!expenses.Any())
-                return new ApiResponse<IEnumerable<ExpenseEditModel>>
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.NotFound,
-                    Message = "هزینه‌ای برای این پروژه ثبت نشده است"
-                };
-
-            return new ApiResponse<IEnumerable<ExpenseEditModel>>
+            return new ApiResponse<IEnumerable<Expense>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Message = "لیست هزینه‌ها با موفقیت دریافت شد",
                 Data = expenses
             };
         }
@@ -138,138 +109,161 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Expenses.Create)]
         public ApiResponse Create([FromForm] ExpenseCreateModel model)
         {
-            if (!ModelState.IsValid)
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "اطلاعات وارد شده معتبر نیست"
-                };
+            if (model == null || !ModelState.IsValid)
+                return new ApiResponse { Status = false, Message = "اطلاعات ورودی نامعتبر است" };
 
-            using var transaction = _context.BeginTransaction();
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            var userId = User.GetUserId();
 
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse { Status = false, Message = "خطا در احراز هویت یا سال مالی" };
+
+            DateTime expenseDate;
             try
             {
-                var tenantId = User.GetTenantId().Value;
-                var userId = User.GetUserId();
-                var fiscalYearId = _currentFiscalYearService.FiscalYearId!.Value;
+                expenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
+            }
+            catch
+            {
+                return new ApiResponse { Status = false, Message = "تاریخ وارد شده معتبر نیست" };
+            }
+
+            IEntityTransaction? transaction = null;
+            try
+            {
+                // شروع تراکنش داخل try جهت اطمینان از Rollback
+                transaction = _context.BeginTransaction();
 
                 var expense = new Expense
                 {
-                    TenantId = tenantId,
-                    FiscalYearId = fiscalYearId,
-                    ExpenseTitle = model.ExpenseTitle,
+                    TenantId = tenantId.Value,
+                    FiscalYearId = fiscalYearId.Value,
+                    ExpenseTitle = model.ExpenseTitle.Trim(),
                     ProjectId = model.ProjectId,
                     Type = model.Type,
-                    ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate),
+                    ExpenseDate = expenseDate,
                     Amount = model.Amount,
                     Description = model.Description,
-
                     PaymentStatus = model.PaymentStatus,
                     PaidAmount = model.PaidAmount,
                     PaymentMethod = model.PaymentMethod,
                     ReferenceNo = model.ReferenceNo,
-
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedById = userId
                 };
 
                 _context.expenseUW.Create(expense);
                 _context.Save();
 
-                // اگر پرداختی ثبت شده باشد، Payment هم بساز
-                var paidAmount = model.PaymentStatus switch
+                // منطق ثبت پرداخت خودکار بر اساس وضعیت
+                var actualPaidAmount = model.PaymentStatus switch
                 {
-                    1 => model.PaidAmount,   // پرداخت بخشی
-                    2 => model.Amount,       // پرداخت کامل
-                    _ => 0m                  // بدون پرداخت
+                    1 => model.PaidAmount,      // پرداخت جزئی
+                    2 => model.Amount,          // پرداخت کامل
+                    _ => 0m                     // عدم پرداخت
                 };
 
-                if (paidAmount > 0)
+                if (actualPaidAmount > 0)
                 {
-                    if (paidAmount > model.Amount)
-                        paidAmount = model.Amount;
-
-                    var payment = new Entities.Entities.Payment
+                    var payment = new Payment
                     {
-                        TenantId = tenantId,
-                        FiscalYearId = fiscalYearId,
+                        TenantId = tenantId.Value,
+                        FiscalYearId = fiscalYearId.Value,
                         ExpenseId = expense.Id,
-                        Amount = paidAmount,
+                        Amount = actualPaidAmount,
                         Method = model.PaymentMethod ?? "Cash",
                         ReferenceNo = model.ReferenceNo,
-                        PaymentDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate),
-                        CreatedAt = DateTime.Now,                        
+                        PaymentDate = expenseDate,
+                        CreatedAt = DateTime.UtcNow,
                         CreatedById = userId
                     };
-
                     _context.paymentUW.Create(payment);
                     _context.Save();
                 }
 
                 transaction.Commit();
-
-                return new ApiResponse
-                {
-                    Status = true,
-                    StatusCode = ApiResultStatusCode.Success,
-                    Message = "هزینه با موفقیت ثبت شد"
-                };
+                return new ApiResponse { Status = true, Message = "هزینه و پرداخت مربوطه با موفقیت ثبت شد" };
             }
-            catch
+            catch (Exception)
             {
-                transaction.Rollback();
-
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
-                    Message = "خطا در ثبت هزینه"
-                };
+                transaction?.Rollback();
+                return new ApiResponse { Status = false, Message = "خطا در ثبت عملیات مالی" };
             }
         }
 
         [HttpPut("UpdateExpense")]
-        [ProducesResponseType(typeof(Expense), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Expenses.Edit)]
         public ApiResponse Update([FromBody] ExpenseEditModel model)
         {
-            if (model.ExpenseId == 0) return new ApiResponse
+            if (model == null || model.ExpenseId <= 0)
+                return new ApiResponse { Status = false, Message = "شناسه هزینه معتبر نیست" };
+
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse { Status = false, Message = "عدم دسترسی به سال مالی" };
+
+            var expense = _context.expenseUW
+                .Get(x => x.Id == model.ExpenseId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value, false)
+                .SingleOrDefault();
+
+            if (expense == null)
+                return new ApiResponse { Status = false, Message = "هزینه یافت نشد" };
+
+            try
             {
-                Status = false,
-                StatusCode = ApiResultStatusCode.BadRequest,
-                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
-            };
+                expense.ExpenseTitle = model.ExpenseTitle.Trim();
+                expense.Description = model.Description;
+                expense.Type = model.Type;
+                expense.ProjectId = model.ProjectId;
+                expense.Amount = model.Amount;
+                expense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
+                expense.PaymentStatus = model.PaymentStatus;
+                expense.PaidAmount = model.PaidAmount;
+                expense.PaymentMethod = model.PaymentMethod;
+                expense.ReferenceNo = model.ReferenceNo;
+                expense.ModifiedAt = DateTime.UtcNow;
+                expense.ModifiedById = User.GetUserId();
 
-            var getExpense = _context.expenseUW.GetById(model.ExpenseId);
+                _context.expenseUW.Update(expense);
+                _context.Save();
 
-            if (getExpense != null)
-            {
-                getExpense.ExpenseTitle = model.ExpenseTitle;
-                getExpense.Description = model.Description;
-                getExpense.Type = model.Type;
-                getExpense.Amount = model.Amount;
-                getExpense.ModifiedAt = DateTime.UtcNow;
-                getExpense.ModifiedById = User.GetUserId();
-                getExpense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
-                getExpense.PaymentStatus = model.PaymentStatus;
-                getExpense.PaidAmount = model.PaidAmount;
-                getExpense.PaymentMethod = model.PaymentMethod;
-                getExpense.ReferenceNo = model.ReferenceNo;
-
+                return new ApiResponse { Status = true, Message = "هزینه با موفقیت ویرایش شد" };
             }
-
-            _context.expenseUW.Update(getExpense);
-            _context.Save();
-
-            return new ApiResponse<Expense>
+            catch (Exception)
             {
-                Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = getExpense
-            };
+                return new ApiResponse { Status = false, Message = "خطا در بروزرسانی هزینه" };
+            }
+        }
+
+        [HttpDelete("DeleteExpense/{id:int}")]
+        [Permission(Permissions.Expenses.Delete)]
+        public ApiResponse Delete(int id)
+        {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue) return new ApiResponse { Status = false, Message = "عدم دسترسی" };
+
+            var expense = _context.expenseUW
+                .Get(x => x.Id == id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value)
+                .SingleOrDefault();
+
+            if (expense == null)
+                return new ApiResponse { Status = false, Message = "رکورد یافت نشد" };
+
+            try
+            {
+                _context.expenseUW.Delete(expense);
+                _context.Save();
+                return new ApiResponse { Status = true, Message = "هزینه حذف شد" };
+            }
+            catch (Exception)
+            {
+                return new ApiResponse { Status = false, Message = "خطا در حذف هزینه" };
+            }
         }
     }
 }

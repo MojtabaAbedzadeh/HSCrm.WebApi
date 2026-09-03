@@ -6,62 +6,103 @@ namespace HSCrm.DataModel.Services
 {
     public static class RoleSeeder
     {
-        public static async Task SeedRolesAsync(ApplicationDbContext context)
+        // نقش‌های پایه که برای هر Tenant جدید باید ساخته شوند
+        private static readonly Dictionary<string, string> DefaultRoles = new()
         {
-            var roles = new List<ApplicationRole>
-            {
-                new ApplicationRole
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Name = "Admin",
-                    NormalizedName = "ADMIN",
-                    RoleFaName = "ادمین",
-                    TenantId = 1
-                },
-                new ApplicationRole
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Name = "Owner",
-                    NormalizedName = "OWNER",
-                    RoleFaName = "مدیر",
-                    TenantId = 1
-                },
-                new ApplicationRole
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Name = "Customer",
-                    NormalizedName = "CUSTOMER",
-                    RoleFaName = "مشتری",
-                    TenantId = 1
-                },
-                new ApplicationRole
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Name = "User",
-                    NormalizedName = "USER",
-                    RoleFaName = "کاربر",
-                    TenantId = 1
-                }
-            };
+            { "Owner", "مدیر" },
+            { "Admin", "ادمین" },
+            { "User", "کاربر" },
+            { "Customer", "مشتری" }
+        };
 
-            context.Roles.AddRange(roles);
+        public static async Task SeedRolesAsync(ApplicationDbContext context, int tenantId)
+        {
+            // گرفتن نام نقش‌های موجود برای این Tenant خاص
+            var existingRoleNames = await context.Roles
+                .Where(r => r.TenantId == tenantId)
+                .Select(r => r.Name)
+                .ToListAsync();
+
+            var newRoles = new List<ApplicationRole>();
+
+            foreach (var role in DefaultRoles)
+            {
+                if (!existingRoleNames.Contains(role.Key))
+                {
+                    newRoles.Add(new ApplicationRole
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        Name = role.Key,
+                        NormalizedName = role.Key.ToUpperInvariant(),
+                        RoleFaName = role.Value,
+                        TenantId = tenantId
+                    });
+                }
+            }
+
+            if (newRoles.Any())
+            {
+                await context.Roles.AddRangeAsync(newRoles);
+                await context.SaveChangesAsync();
+            }
+        }
+
+        public static async Task AssignPermissionsToRolesAsync(ApplicationDbContext context, int tenantId)
+        {
+            // دریافت تمام نقش‌های این Tenant
+            var roles = await context.Roles
+                .Where(r => r.TenantId == tenantId)
+                .ToDictionaryAsync(r => r.Name!);
+
+            // دریافت تمام مجوزهای سیستم (فرض بر این است که Permissions سراسری هستند)
+            var allPermissions = await context.Permissions.ToListAsync();
+
+            foreach (var role in roles)
+            {
+                var roleId = role.Value.Id;
+                var permissionIds = GetPermissionsForRole(role.Key, allPermissions);
+
+                foreach (var permissionId in permissionIds)
+                {
+                    // جلوگیری از اضافه کردن تکراری
+                    bool exists = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permissionId);
+
+                    if (!exists)
+                    {
+                        await context.RolePermissions.AddAsync(new RolePermission
+                        {
+                            RoleId = roleId,
+                            PermissionId = permissionId
+                        });
+                    }
+                }
+            }
 
             await context.SaveChangesAsync();
         }
-        public static async Task AssignPermissionsToRoles(ApplicationDbContext context)
+
+        private static List<int> GetPermissionsForRole(string roleName, List<Permission> allPermissions)
         {
-            var ownerRole = await context.Roles.FirstAsync(r => r.Name == "Owner");
-
-            var permissions = await context.Permissions.ToListAsync();
-
-            foreach (var permission in permissions)
+            // اینجا بر اساس نام نقش، مجوزهای خاص خودش را برمی‌گردانیم
+            return roleName switch
             {
-                context.RolePermissions.Add(new RolePermission
-                {
-                    RoleId = ownerRole.Id,
-                    PermissionId = permission.Id
-                });
-            }
+                "Owner" => allPermissions.Select(p => p.Id).ToList(), // Owner همه چیز را دارد
+
+                "Admin" => allPermissions
+                    .Where(p => !p.Name.Contains("System")) // فرض: ادمین به بخش‌های System دسترسی ندارد
+                    .Select(p => p.Id).ToList(),
+
+                "User" => allPermissions
+                    .Where(p => p.Name.Contains("View") || p.Name.Contains("Create")) // فقط دیدن و ایجاد
+                    .Select(p => p.Id).ToList(),
+
+                "Customer" => allPermissions
+                    .Where(p => p.Name.StartsWith("Customer")) // فقط دسترسی‌های مشتری
+                    .Select(p => p.Id).ToList(),
+
+                _ => new List<int>()
+            };
         }
     }
 }

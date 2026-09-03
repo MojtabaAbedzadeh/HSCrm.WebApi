@@ -1,29 +1,64 @@
 ﻿using Framework.Authorization;
+using FluentValidation;
 using HSCrm.DataModel.Services;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
 using HSCrm.Framework.Extensions;
+using HSCrm.Framework.StandardApiResult;
 using HSCrm.Services.Tools.Interface;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.OpenApi.Models;
-using System.Reflection;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var configuration = builder.Configuration
-    .SetBasePath(Directory.GetCurrentDirectory())
-    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
-    .AddEnvironmentVariables()
-    .Build();
-
+// ۱. دسترسی به HttpContext
 builder.Services.AddHttpContextAccessor();
 
+// ۲. لود تنظیمات AppSettings
+var configuration = builder.Configuration
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile(FileNamesExtensions.AppSettingName)
+    .Build();
+
+// ۳. کنترلرها و ثبت FluentValidation
 builder.Services.AddControllers();
 
+// ثبت Validatorها به روش مدرن و استاندارد DI از اسمبلی جاری
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+
+// استانداردسازی خطاهای ModelState با ساختار ApiResponse پروژه
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var validationErrors = context.ModelState
+            .Where(x => x.Value is not null && x.Value.Errors.Count > 0)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Value!.Errors
+                    .Select(error => !string.IsNullOrWhiteSpace(error.ErrorMessage)
+                        ? error.ErrorMessage
+                        : "مقدار وارد شده معتبر نیست.")
+                    .ToList()
+            );
+
+        var apiResponse = new ApiResponse
+        {
+            Status = false,
+            StatusCode = ApiResultStatusCode.BadRequest,
+            Message = "اعتبارسنجی مقادیر ورودی با خطا مواجه شد.",
+            AdditionalData = validationErrors
+        };
+
+        return new BadRequestObjectResult(apiResponse);
+    };
+});
+
+// ۴. سرویس‌های اصلی پروژه (DbContext و Identity)
 builder.Services.AddDbContextService(configuration);
 builder.Services.AddIdentityService(configuration);
 
+// ۵. تزریق وابستگی‌ها (Dependency Injection)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
@@ -35,73 +70,35 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<ICurrentFiscalYearService, CurrentFiscalYearService>();
 builder.Services.AddScoped<IPaymentSettlementService, PaymentSettlementService>();
 
-builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+// ۶. مپ کردن پروفایل‌های AutoMapper
+builder.Services.AddAutoMapper(typeof(Program));
 
+// ۷. تنظیمات CORS بر اساس پیکربندی موجود در پروژه شما
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("_myAllowSpecificationOrigins", policy =>
     {
-        policy
-            .WithOrigins("https://localhost:7161")
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
+        policy.AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials()
+              .SetIsOriginAllowed(host => true);
     });
 });
 
-
+// ۸. مستندسازی Swagger
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Title = "HSCrm.WebApi",
-        Version = "v1"
-    });
-
-    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    if (File.Exists(xmlPath))
-    {
-        c.IncludeXmlComments(xmlPath);
-    }
-
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Description = "JWT Authorization header using the Bearer scheme.",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT"
-    });
-
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
-});
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+// ۹. مقداردهی اولیه و Seed کردن پایگاه داده
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     await DbInitializer.InitializeAsync(services);
 }
 
-// seed فقط یکبار
-
+// ۱۰. لوله‌های پردازش میان‌افزارها (Pipeline Middleware)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -110,11 +107,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseCors("_myAllowSpecificationOrigins");
 
 app.UseRouting();
-
-
-app.UseCors("_myAllowSpecificationOrigins");
 
 app.UseAuthentication();
 app.UseAuthorization();

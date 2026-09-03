@@ -1,5 +1,6 @@
 ﻿using Common.Permissions;
 using Framework.Authorization;
+using HSCrm.DataModel.Exceptions;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
@@ -22,14 +23,17 @@ namespace HSCrm.WebApi.Controllers
         private readonly IInventoryService _inventory;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly IPaymentSettlementService _paymentSettlementService;
+        private readonly ILogger<PurchaseInvoiceController> _logger;
 
-        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService, IPaymentSettlementService paymentSettlementService)
+        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService, IPaymentSettlementService paymentSettlementService, ILogger<PurchaseInvoiceController> logger)
         {
             _context = context;
             _inventory = inventory;
             _currentFiscalYearService = currentFiscalYearService;
             _paymentSettlementService = paymentSettlementService;
+            _logger = logger;
         }
+
 
         [HttpGet("SettlementSummary/{id}")]
         public IActionResult SettlementSummary(int id)
@@ -45,7 +49,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetPurchaseInvoices")]
         [Permission(Permissions.PurchaseInvoices.View)]
-        public ApiResponse<IEnumerable<PurchaseInvoiceModel>> Get(string supplierFullName = null, DateTime? fromDate = null, DateTime? toDate = null, decimal? minTotal = null,  decimal? maxTotal = null)
+        public ApiResponse<IEnumerable<PurchaseInvoiceModel>> Get(string supplierFullName = null, DateTime? fromDate = null, DateTime? toDate = null, decimal? minTotal = null, decimal? maxTotal = null)
         {
             var query = _context.purchaseInvoiceUW
                 .Get(null, true, x => x.Supplier, x => x.Tenant)
@@ -349,13 +353,20 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.LogError(
+                    ex,
+                    "Error creating purchase invoice. TenantId: {TenantId}, FiscalYearId: {FiscalYearId}",
+                    User.GetTenantId(),
+                    _currentFiscalYearService.FiscalYearId);
+
                 return new ApiResponse
                 {
                     Status = false,
-                    Message = ex.Message,
+                    Message = "خطا در ثبت فاکتور خرید.",
                     StatusCode = ApiResultStatusCode.ServerError
                 };
             }
+
         }
 
         [HttpPut("UpdateInvoice")]
@@ -392,37 +403,43 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                // 1. حذف آیتم‌های قدیمی (با استفاده از متد موجود در ریپازیتوری تو)
-                _context.purchaseInvoiceDetailUW.DeleteByRange(x => x.PurchaseInvoiceId == invoice.Id);
-
-                // 2. به‌روزرسانی اطلاعات اصلی هدر فاکتور
+                // 1. به‌روزرسانی هدر فاکتور
                 invoice.WarehouseId = model.WarehouseId;
                 invoice.SupplierId = model.SupplierId;
                 invoice.IssueDate = model.IssueDate;
-                invoice.Number = model.InvoiceNumber?.Trim(); // طبق مدل تو: InvoiceNumber
+                invoice.Number = model.InvoiceNumber?.Trim();
                 invoice.Status = model.Status;
-                invoice.PurchaserUserId = model.PurchaserId; // طبق مدل تو: PurchaserId
+                invoice.PurchaserUserId = User.GetUserId();
+
+                // 2. حذف کامل آیتم‌های قبلی از ChangeTracker و دیتابیس
+                if (invoice.Items != null && invoice.Items.Any())
+                {
+                    _context.purchaseInvoiceDetailUW.RemoveRange(invoice.Items);
+                    invoice.Items.Clear();
+                }
+                else
+                {
+                    invoice.Items = new List<PurchaseInvoiceItem>();
+                }
 
                 decimal subtotal = 0m;
-                var newItems = new List<PurchaseInvoiceItem>();
 
-                // 3. ایجاد آیتم‌های جدید و محاسبه مبالغ
+                // 3. افزودن آیتم‌های جدید مستقیماً به Navigation Collection
                 foreach (var item in model.Items)
                 {
                     var lineDiscount = item.Discount;
                     var lineTax = item.Tax;
-                    // در مدل تو UnitPrice است، در دیتابیس UnitPricePurchase
                     var lineTotal = (item.Quantity * item.UnitPrice) - lineDiscount + lineTax;
 
                     subtotal += (item.Quantity * item.UnitPrice);
 
-                    newItems.Add(new PurchaseInvoiceItem
+                    invoice.Items.Add(new PurchaseInvoiceItem
                     {
                         TenantId = invoice.TenantId,
                         PurchaseInvoiceId = invoice.Id,
                         ProductId = item.ProductId,
                         Quantity = item.Quantity,
-                        UnitPricePurchase = item.UnitPrice, // مپ کردن UnitPrice به UnitPricePurchase
+                        UnitPricePurchase = item.UnitPrice,
                         Discount = lineDiscount,
                         Tax = lineTax,
                         LineTotal = lineTotal,
@@ -431,22 +448,19 @@ namespace HSCrm.WebApi.Controllers
                     });
                 }
 
-                // انتساب مقادیر مالی کل فاکتور
+                // انتساب مبالغ کل
                 invoice.Subtotal = subtotal;
-                invoice.Tax = model.InvoiceTax; // طبق مدل تو: InvoiceTax
-                invoice.Discount = model.InvoiceDiscount; // طبق مدل تو: InvoiceDiscount
+                invoice.Tax = model.InvoiceTax;
+                invoice.Discount = model.InvoiceDiscount;
                 invoice.Total = subtotal - invoice.Discount + invoice.Tax;
 
-                // 4. درج در دیتابیس (با استفاده از متدهای صحیح شناسایی شده)
-                _context.purchaseInvoiceDetailUW.CreateRange(newItems);
+                // 4. آپدیت هدر و ذخیره تغییرات
                 _context.purchaseInvoiceUW.Update(invoice);
-
                 await _context.SaveAsync();
 
-                // 5. اعمال موجودی انبار در صورت نهایی شدن (Final)
+                // 5. اعمال در کاردکس انبار در صورت تایید نهایی
                 if (invoice.Status == InvoiceStatus.Final)
                 {
-                    invoice.Items = newItems; // پاس دادن لیست جدید برای پردازش موجودی
                     await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
                     await _context.SaveAsync();
                 }
@@ -463,256 +477,400 @@ namespace HSCrm.WebApi.Controllers
             catch (Exception ex)
             {
                 tx.Rollback();
+
+                _logger.LogError(
+                    ex,
+                    "Error updating purchase invoice. InvoiceId: {InvoiceId}, TenantId: {TenantId}, FiscalYearId: {FiscalYearId}",
+                    model.InvoiceId,
+                    User.GetTenantId(),
+                    _currentFiscalYearService.FiscalYearId);
+
                 return new ApiResponse
                 {
                     Status = false,
-                    Message = $"خطا در ویرایش فاکتور: {ex.Message}",
+                    Message = "خطا در ویرایش فاکتور.",
                     StatusCode = ApiResultStatusCode.ServerError
                 };
             }
         }
 
-        [HttpPost("ConfirmInvoice/{id:int}")]
+
+        [HttpPost("ConfirmInvoice/{id}")]
         public async Task<ApiResponse> ConfirmInvoice(int id)
         {
-            using (var tx = _context.BeginTransaction())
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue)
             {
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "شناسه شرکت معتبر نیست.",
+                    StatusCode = ApiResultStatusCode.Unauthorized
+                };
+            }
+
+            if (!fiscalYearId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "سال مالی فعال یافت نشد.",
+                    StatusCode = ApiResultStatusCode.NotFound
+                };
+            }
+
+            try
+            {
+                var invoice = await GetPurchaseInvoiceWithItemsAsync(
+                    id,
+                    tenantId.Value,
+                    fiscalYearId.Value);
+
+                if (invoice == null)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور یافت نشد.",
+                        StatusCode = ApiResultStatusCode.NotFound
+                    };
+                }
+
+                if (invoice.Status == InvoiceStatus.Final)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور قبلاً تایید نهایی شده است.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+                }
+
+                if (invoice.Status == InvoiceStatus.Cancelled ||
+                    invoice.Status == InvoiceStatus.Rejected)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور باطل یا رد شده قابل تایید نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+                }
+
+                if (invoice.Items == null || !invoice.Items.Any())
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور فاقد آیتم است و قابل تایید نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+                }
+
+                using var transaction = _context.BeginTransaction();
+
                 try
                 {
-                    // دریافت فاکتور همراه با اقلام و با فعال بودن Tracking
-                    var invoiceList = await _context.purchaseInvoiceUW.GetAsync(
-                        predicate: x => x.Id == id,
-                        asNoTracking: false,
-                        includes: x => x.Items
-                    );
-
-                    var invoice = invoiceList.FirstOrDefault();
-
-                    if (invoice == null)
-                    {
-                        return new ApiResponse
-                        {
-                            Status = false,
-                            Message = "فاکتور یافت نشد.",
-                            StatusCode = ApiResultStatusCode.NotFound
-                        };
-                    }
-
-                    if (invoice.Status == InvoiceStatus.Final)
-                    {
-                        return new ApiResponse
-                        {
-                            Status = false,
-                            Message = "فاکتور قبلاً تایید نهایی شده است.",
-                            StatusCode = ApiResultStatusCode.BadRequest
-                        };
-                    }
-
-                    if (invoice.Items == null || !invoice.Items.Any())
-                    {
-                        return new ApiResponse
-                        {
-                            Status = false,
-                            Message = "فاکتور فاقد هرگونه قلم کالا جهت ورود به انبار است.",
-                            StatusCode = ApiResultStatusCode.BadRequest
-                        };
-                    }
-
-                    // تغییر وضعیت فاکتور به تایید نهایی
                     invoice.Status = InvoiceStatus.Final;
-                    _context.purchaseInvoiceUW.Update(invoice);
 
-                    // اعمال در انبار و ثبت تراکنش‌های ورود کالا
                     await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
 
-                    // ذخیره تغییرات
+                    _context.purchaseInvoiceUW.Update(invoice);
+
                     await _context.SaveAsync();
 
-                    // ثبت قطعی تراکنش
-                    tx.Commit();
+                    transaction.Commit();
 
                     return new ApiResponse
                     {
                         Status = true,
-                        Message = "فاکتور با موفقیت تایید و موجودی انبار به‌روزرسانی شد.",
+                        Message = "فاکتور با موفقیت تایید شد.",
                         StatusCode = ApiResultStatusCode.Success
                     };
                 }
-                catch (Exception ex)
+                catch
                 {
-                    tx.Rollback();
-                    return new ApiResponse
-                    {
-                        Status = false,
-                        Message = ex.Message,
-                        StatusCode = ApiResultStatusCode.ServerError
-                    };
+                    transaction.Rollback();
+                    throw;
                 }
             }
-        }
-
-        [HttpPost("CancelInvoice/{id}")]
-        public async Task<ApiResponse> Cancel(int id, [FromBody] string? reason)
-        {
-            var invoice = await GetPurchaseInvoiceWithItemsAsync(id);
-
-            if (invoice == null)
+            catch (NotEnoughInventoryException)
             {
                 return new ApiResponse
                 {
                     Status = false,
-                    Message = "فاکتور خرید یافت نشد",
-                    StatusCode = ApiResultStatusCode.NotFound
-                };
-            }
-
-            if (invoice.Status == InvoiceStatus.Cancelled)
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    Message = "این فاکتور قبلاً باطل شده است",
-                    StatusCode = ApiResultStatusCode.BadRequest
-                };
-            }
-
-            if (invoice.Status == InvoiceStatus.Rejected)
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    Message = "این فاکتور قبلاً رد شده است",
-                    StatusCode = ApiResultStatusCode.BadRequest
-                };
-            }
-
-            using var transaction = _context.BeginTransaction();
-
-            try
-            {
-                if (invoice.Status == InvoiceStatus.Final)
-                {
-                    _inventory.RollbackInventoryForPurchaseInvoice(invoice);
-                }
-
-                invoice.Status = InvoiceStatus.Cancelled;
-
-                if (!string.IsNullOrWhiteSpace(reason))
-                {
-                    invoice.Description = string.IsNullOrWhiteSpace(invoice.Description)
-                        ? $"Cancel Reason: {reason}"
-                        : $"{invoice.Description}\nCancel Reason: {reason}";
-                }
-
-                _context.purchaseInvoiceUW.Update(invoice);
-                await _context.SaveAsync();
-
-                transaction.Commit();
-
-                return new ApiResponse
-                {
-                    Status = true,
-                    Message = "فاکتور خرید با موفقیت باطل شد",
-                    StatusCode = ApiResultStatusCode.Success
+                    Message = "موجودی کافی برای ثبت این فاکتور وجود ندارد.",
+                    StatusCode = ApiResultStatusCode.NotEnoughInventory
                 };
             }
             catch (Exception ex)
             {
-                transaction.Rollback();
+                _logger.LogError(
+                    ex,
+                    "Error confirming purchase invoice. InvoiceId: {InvoiceId}, TenantId: {TenantId}, FiscalYearId: {FiscalYearId}",
+                    id,
+                    tenantId,
+                    fiscalYearId);
 
                 return new ApiResponse
                 {
                     Status = false,
-                    Message = $"خطا در ابطال فاکتور: {ex.Message}",
+                    Message = "خطا در تایید فاکتور.",
                     StatusCode = ApiResultStatusCode.ServerError
                 };
             }
         }
 
-        [HttpPost("RejectInvoice/{id}")]
-        public async Task<ApiResponse> Reject(int id, [FromBody] string? reason)
-        {
-            var invoice = await GetPurchaseInvoiceWithItemsAsync(id);
 
-            if (invoice == null)
+        [HttpPost("CancelInvoice/{id}")]
+        public async Task<ApiResponse> Cancel(int id, [FromBody] string? reason)
+        {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue)
             {
                 return new ApiResponse
                 {
                     Status = false,
-                    Message = "فاکتور خرید یافت نشد",
+                    Message = "شناسه شرکت معتبر نیست.",
+                    StatusCode = ApiResultStatusCode.Unauthorized
+                };
+            }
+
+            if (!fiscalYearId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "سال مالی فعال یافت نشد.",
                     StatusCode = ApiResultStatusCode.NotFound
                 };
             }
 
-            if (invoice.Status == InvoiceStatus.Cancelled)
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    Message = "این فاکتور قبلاً باطل شده است",
-                    StatusCode = ApiResultStatusCode.BadRequest
-                };
-            }
-
-            if (invoice.Status == InvoiceStatus.Rejected)
-            {
-                return new ApiResponse
-                {
-                    Status = false,
-                    Message = "این فاکتور قبلاً رد شده است",
-                    StatusCode = ApiResultStatusCode.BadRequest
-                };
-            }
-
-            using var transaction = _context.BeginTransaction();
-
             try
             {
-                if (invoice.Status == InvoiceStatus.Final)
+                var invoice = await GetPurchaseInvoiceWithItemsAsync(
+                    id,
+                    tenantId.Value,
+                    fiscalYearId.Value);
+
+                if (invoice == null)
                 {
-                    _inventory.RollbackInventoryForPurchaseInvoice(invoice);
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور خرید یافت نشد",
+                        StatusCode = ApiResultStatusCode.NotFound
+                    };
                 }
 
-                invoice.Status = InvoiceStatus.Rejected;
-
-                if (!string.IsNullOrWhiteSpace(reason))
+                if (invoice.Status == InvoiceStatus.Cancelled)
                 {
-                    invoice.Description = string.IsNullOrWhiteSpace(invoice.Description)
-                        ? $"Reject Reason: {reason}"
-                        : $"{invoice.Description}\nReject Reason: {reason}";
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "این فاکتور قبلاً باطل شده است",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
                 }
 
-                _context.purchaseInvoiceUW.Update(invoice);
-                await _context.SaveAsync();
-
-                transaction.Commit();
-
-                return new ApiResponse
+                if (invoice.Status == InvoiceStatus.Rejected)
                 {
-                    Status = true,
-                    StatusCode = ApiResultStatusCode.Success,
-                    Message = "فاکتور خرید با موفقیت رد شد",
-                };
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "این فاکتور قبلاً رد شده است",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+                }
+
+                using var transaction = _context.BeginTransaction();
+
+                try
+                {
+                    if (invoice.Status == InvoiceStatus.Final)
+                    {
+                        _inventory.RollbackInventoryForPurchaseInvoice(invoice);
+                    }
+
+                    invoice.Status = InvoiceStatus.Cancelled;
+
+                    if (!string.IsNullOrWhiteSpace(reason))
+                    {
+                        invoice.Description = string.IsNullOrWhiteSpace(invoice.Description)
+                            ? $"Cancel Reason: {reason.Trim()}"
+                            : $"{invoice.Description}\nCancel Reason: {reason.Trim()}";
+                    }
+
+                    _context.purchaseInvoiceUW.Update(invoice);
+
+                    await _context.SaveAsync();
+
+                    transaction.Commit();
+
+                    return new ApiResponse
+                    {
+                        Status = true,
+                        Message = "فاکتور خرید با موفقیت باطل شد",
+                        StatusCode = ApiResultStatusCode.Success
+                    };
+                }
+                catch
+                {
+                    transaction.Rollback();
+                    throw;
+                }
             }
             catch (Exception ex)
             {
-                transaction.Rollback();
+                _logger.LogError(
+                    ex,
+                    "Error cancelling purchase invoice. InvoiceId: {InvoiceId}, TenantId: {TenantId}, FiscalYearId: {FiscalYearId}",
+                    id,
+                    tenantId,
+                    fiscalYearId);
 
                 return new ApiResponse
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
-                    Message = $"خطا در رد فاکتور: {ex.Message}",
+                    Message = "خطا در ابطال فاکتور.",
+                    StatusCode = ApiResultStatusCode.ServerError
                 };
             }
         }
 
-        private async Task<PurchaseInvoice?> GetPurchaseInvoiceWithItemsAsync(int id)
+
+        [HttpPost("RejectInvoice/{id}")]
+        public async Task<ApiResponse> Reject(int id, [FromBody] string? reason)
+        {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "شناسه شرکت معتبر نیست.",
+                    StatusCode = ApiResultStatusCode.Unauthorized
+                };
+            }
+
+            if (!fiscalYearId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "سال مالی فعال یافت نشد.",
+                    StatusCode = ApiResultStatusCode.NotFound
+                };
+            }
+
+            try
+            {
+                var invoice = await GetPurchaseInvoiceWithItemsAsync(
+                    id,
+                    tenantId.Value,
+                    fiscalYearId.Value);
+
+                if (invoice == null)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "فاکتور خرید یافت نشد",
+                        StatusCode = ApiResultStatusCode.NotFound
+                    };
+                }
+
+                if (invoice.Status == InvoiceStatus.Cancelled)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "این فاکتور قبلاً باطل شده است",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+                }
+
+                if (invoice.Status == InvoiceStatus.Rejected)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "این فاکتور قبلاً رد شده است",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+                }
+
+                using var transaction = _context.BeginTransaction();
+
+                try
+                {
+                    if (invoice.Status == InvoiceStatus.Final)
+                    {
+                        _inventory.RollbackInventoryForPurchaseInvoice(invoice);
+                    }
+
+                    invoice.Status = InvoiceStatus.Rejected;
+
+                    if (!string.IsNullOrWhiteSpace(reason))
+                    {
+                        invoice.Description = string.IsNullOrWhiteSpace(invoice.Description)
+                            ? $"Reject Reason: {reason.Trim()}"
+                            : $"{invoice.Description}\nReject Reason: {reason.Trim()}";
+                    }
+
+                    _context.purchaseInvoiceUW.Update(invoice);
+
+                    await _context.SaveAsync();
+
+                    transaction.Commit();
+
+                    return new ApiResponse
+                    {
+                        Status = true,
+                        Message = "فاکتور خرید با موفقیت رد شد",
+                        StatusCode = ApiResultStatusCode.Success
+                    };
+                }
+                catch
+                {
+                    transaction.Rollback();
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error rejecting purchase invoice. InvoiceId: {InvoiceId}, TenantId: {TenantId}, FiscalYearId: {FiscalYearId}",
+                    id,
+                    tenantId,
+                    fiscalYearId);
+
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "خطا در رد فاکتور.",
+                    StatusCode = ApiResultStatusCode.ServerError
+                };
+            }
+        }
+
+        private async Task<PurchaseInvoice?> GetPurchaseInvoiceWithItemsAsync(int id, int tenantId, int fiscalYearId)
         {
             return await _context.purchaseInvoiceUW
-                .Get(x => x.Id == id)
+                .Get(x =>
+                    x.Id == id &&
+                    x.TenantId == tenantId &&
+                    x.FiscalYearId == fiscalYearId)
                 .Include(x => x.Items)
                 .FirstOrDefaultAsync();
         }
+
     }
 }
