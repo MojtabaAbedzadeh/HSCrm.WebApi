@@ -14,7 +14,7 @@ namespace HSCrm.Entities.Models
     {
         [Required]
         public required string Name { get; set; }
-
+        public required string FaName { get; set; }
         public int TenantId { get; set; }
     }
 

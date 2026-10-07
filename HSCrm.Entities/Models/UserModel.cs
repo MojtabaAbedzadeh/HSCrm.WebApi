@@ -35,4 +35,10 @@ namespace HSCrm.Entities.Models
         public string? UserImageUrl { get; set; }
         public bool UserGender { get; set; }
     }
+
+    public class AssignRoleModel
+    {
+        public required string UserId { get; set; }
+        public required string RoleId { get; set; }
+    }
 }

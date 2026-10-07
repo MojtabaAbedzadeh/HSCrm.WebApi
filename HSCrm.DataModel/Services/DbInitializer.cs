@@ -33,6 +33,7 @@ namespace HSCrm.DataModel.Services
             await EnsureRoleExistsAsync(roleManager, "Admin");
             await EnsureRoleExistsAsync(roleManager, "Owner");
             await EnsureRoleExistsAsync(roleManager, "User");
+            await EnsureRoleExistsAsync(roleManager, "Customer");
 
             // 4) Seed role-permissions
             if (!await context.RolePermissions.AnyAsync())

@@ -15,16 +15,26 @@ namespace HSCrm.WebApi.Controllers
     [ApiController]
     public class AccountController : ControllerBase
     {
+        private const string DefaultAvatarPath = "/Upload/UserImage/defaultAvatar.png";
+
         private readonly RoleManager<ApplicationRole> _roleManager;
-        private readonly IJwtTokenGenerator _jwtTokenGenerator;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IJwtTokenGenerator _token;
         private readonly ApplicationDbContext _context;
         private readonly IUnitOfWork _iuwcontext;
         private readonly IPermissionService _permissionService;
+        private readonly ILogger<AccountController> _logger;
 
-        public AccountController(UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager, SignInManager<ApplicationUser> signInManager, IJwtTokenGenerator token, ApplicationDbContext context, IPermissionService permissionService, IJwtTokenGenerator jwtTokenGenerator, IUnitOfWork iuwcontext)
+        public AccountController(
+            UserManager<ApplicationUser> userManager,
+            RoleManager<ApplicationRole> roleManager,
+            SignInManager<ApplicationUser> signInManager,
+            IJwtTokenGenerator token,
+            ApplicationDbContext context,
+            IPermissionService permissionService,
+            IUnitOfWork iuwcontext,
+            ILogger<AccountController> logger)
         {
             _context = context;
             _userManager = userManager;
@@ -32,27 +42,26 @@ namespace HSCrm.WebApi.Controllers
             _signInManager = signInManager;
             _token = token;
             _permissionService = permissionService;
-            _jwtTokenGenerator = jwtTokenGenerator;
             _iuwcontext = iuwcontext;
+            _logger = logger;
         }
 
         [HttpPost("RegisterTenant")]
-        public async Task<IActionResult> RegisterTenant(RegisterTenantDto model)
+        public async Task<IActionResult> RegisterTenant(RegisterTenantDto model, CancellationToken ct)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var userExists = await _userManager.Users.AnyAsync(x => x.UserName == model.UserName || x.Email == model.Email);
+            var userExists = await _userManager.Users.AnyAsync(
+                x => x.UserName == model.UserName || x.Email == model.Email, ct);
 
             if (userExists)
                 return BadRequest("کاربری با این مشخصات قبلا ثبت شده است");
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            
+            await using var transaction = await _context.Database.BeginTransactionAsync(ct);
 
             try
             {
-                // ✅ 1. ساخت Tenant
                 var tenant = new Tenant
                 {
                     TenantTitle = model.CompanyName,
@@ -64,9 +73,8 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 _context.Tenants.Add(tenant);
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync(ct);
 
-                // ✅ 2. ساخت خودکار سال مالی (FiscalYear) داینامیک
                 var persianCalendar = new System.Globalization.PersianCalendar();
                 int currentYear = persianCalendar.GetYear(DateTime.Now);
                 int lastDayOfEsfand = persianCalendar.GetDaysInMonth(currentYear, 12);
@@ -75,9 +83,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     TenantId = tenant.Id,
                     Title = $"سال مالی {currentYear}",
-                    // آغاز سال: اول فروردین همان سال
                     StartDate = persianCalendar.ToDateTime(currentYear, 1, 1, 0, 0, 0, 0),
-                    // پایان سال: آخر اسفند همان سال (با در نظر گرفتن سال کبیسه یا عادی)
                     EndDate = persianCalendar.ToDateTime(currentYear, 12, lastDayOfEsfand, 23, 59, 59, 0),
                     IsCurrent = true,
                     IsClosed = false,
@@ -85,10 +91,8 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 _context.FiscalYears.Add(defaultFiscalYear);
-                await _context.SaveChangesAsync(); // ذخیره سال مالی در همان تراکنش
+                await _context.SaveChangesAsync(ct);
 
-
-                // ✅ 3. ساخت Owner User
                 var user = new ApplicationUser
                 {
                     UserName = model.UserName,
@@ -97,52 +101,51 @@ namespace HSCrm.WebApi.Controllers
                     UserFirstName = model.FirstName,
                     UserLastName = model.LastName,
                     TenantId = tenant.Id,
-                    UserImageUrl = "https://localhost:7001/Upload/UserImage/defaultAvatar.png",
+                    UserImageUrl = BuildDefaultAvatarUrl(),
                     IsTenantOwner = true,
                     UserStatus = true,
                     UserType = 4,
-                    EmailConfirmed = true
+                    EmailConfirmed = false,
+                    LockoutEnabled = true
                 };
 
                 var result = await _userManager.CreateAsync(user, model.Password);
-
                 if (!result.Succeeded)
                 {
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(ct);
                     return BadRequest(result.Errors);
                 }
 
-
-                // ✅ 4. دادن رول ثابت Owner
-                var roleExists = await _roleManager.RoleExistsAsync("Owner");
-
-                if (!roleExists)
+                if (!await _roleManager.RoleExistsAsync("Owner"))
                 {
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(ct);
                     return BadRequest("Role 'Owner' در سیستم وجود ندارد. Seeder اجرا نشده است.");
                 }
 
-                await _userManager.AddToRoleAsync(user, "Owner");
+                var roleResult = await _userManager.AddToRoleAsync(user, "Owner");
+                if (!roleResult.Succeeded)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return BadRequest(roleResult.Errors);
+                }
 
+                await transaction.CommitAsync(ct);
 
-                // ✅ 5. Commit Transaction
-                await transaction.CommitAsync();
-
-
-                // ✅ 6. تولید توکن
-                var token = await _jwtTokenGenerator.GenerateTokenAsync(user);
+                var token = await _token.GenerateTokenAsync(user, defaultFiscalYear.Id, ct);
 
                 return Ok(new
                 {
                     Token = token,
                     TenantId = tenant.Id,
-                    TenantCode = tenant.TenantCode
+                    TenantCode = tenant.TenantCode,
+                    FiscalYearId = defaultFiscalYear.Id
                 });
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                return StatusCode(500, ex.Message);
+                await transaction.RollbackAsync(ct);
+                _logger.LogError(ex, "Error registering tenant for user {UserName}", model.UserName);
+                return StatusCode(500, "Internal server error.");
             }
         }
 
@@ -153,22 +156,19 @@ namespace HSCrm.WebApi.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            // ۱. پیدا کردن کاربر
-            var user = await _userManager.Users.SingleOrDefaultAsync(u => u.UserName == model.UserName, ct);
-            if (user == null)
-                return Unauthorized("Invalid Login Info.");
+            var user = await _userManager.Users
+                .Include(u => u.Tenant)
+                .SingleOrDefaultAsync(u => u.UserName == model.UserName, ct);
 
-            // ۲. بررسی کلمه عبور
-            var result = await _signInManager.CheckPasswordSignInAsync(user, model.Password, false);
-            if (!result.Succeeded)
-                return Unauthorized("Invalid Login Info.");
+            var authError = await ValidateCredentialsAsync(user, model.Password);
+            if (authError != null)
+                return authError;
 
-            // ۳. واکشی سال‌های مالی
-            var allFiscalYears = _iuwcontext.fiscalYearUW
-                .Get(f => f.TenantId == user.TenantId)
+            var allFiscalYears = await _iuwcontext.fiscalYearUW
+                .Get(f => f.TenantId == user!.TenantId)
                 .IgnoreQueryFilters()
                 .OrderByDescending(f => f.Id)
-                .ToList();
+                .ToListAsync(ct);
 
             var fiscalYears = allFiscalYears.Select(f => new
             {
@@ -177,33 +177,14 @@ namespace HSCrm.WebApi.Controllers
             }).ToList();
 
             var currentFiscalYear = allFiscalYears.FirstOrDefault(f => f.IsCurrent);
-            byte fiscalYearStatus = 10;
+            var fiscalYearStatus = ResolveFiscalYearStatus(currentFiscalYear);
 
-            if (currentFiscalYear != null)
-            {
-                var today = DateTime.Today;
-                var endDate = currentFiscalYear.EndDate.Date;
+            var roles = await _userManager.GetRolesAsync(user!);
+            var permissions = await _permissionService.GetUserPermissionsAsync(user!.Id);
 
-                if (currentFiscalYear.IsCurrent && endDate >= today)
-                    fiscalYearStatus = 0; // جاری و معتبر
-                else if (currentFiscalYear.IsCurrent && endDate < today)
-                    fiscalYearStatus = 1; // جاری اما منقضی شده
-                else
-                    fiscalYearStatus = 2; // غیرفعال
-            }
-            else
-            {
-                fiscalYearStatus = 2;
-            }
+            // Pre-login token: no FiscalYear claim until Login selects a valid year
+            var token = await _token.GenerateTokenAsync(user, null, ct);
 
-            // ۴. دریافت نقش‌ها و دسترسی‌ها
-            var roles = await _userManager.GetRolesAsync(user);
-            var permissions = await _permissionService.GetUserPermissionsAsync(user.Id);
-
-            // ۵. تولید توکن JWT
-            var token = await _token.GenerateTokenAsync(user, model.FiscalYearId, ct);
-
-            // ۶. بازگرداندن پاسخ با فرمت استاندارد و هماهنگ با UserLoginDto داشبورد
             return Ok(new
             {
                 Token = token,
@@ -215,6 +196,8 @@ namespace HSCrm.WebApi.Controllers
                 Email = user.Email,
                 PhoneNumber = user.PhoneNumber,
                 UserImageUrl = user.UserImageUrl,
+                UserStatus = user.UserStatus,
+                UserType = user.UserType,
                 FiscalYearStatus = fiscalYearStatus,
                 Roles = roles,
                 Permissions = permissions,
@@ -222,7 +205,6 @@ namespace HSCrm.WebApi.Controllers
                 Success = true
             });
         }
-
 
         [Route("login")]
         [HttpPost]
@@ -233,40 +215,31 @@ namespace HSCrm.WebApi.Controllers
                 if (!ModelState.IsValid)
                     return BadRequest(ModelState);
 
-                var user = await _userManager.Users.SingleOrDefaultAsync(u => u.UserName == model.UserName);
-
-                if (user == null)
-                    return Unauthorized("Invalid Login Info.");
-
-                var result = await _signInManager
-                    .CheckPasswordSignInAsync(user, model.Password, false);
-
-                if (!result.Succeeded)
-                    return Unauthorized("Invalid Login Info.");
-
-                // ✅ بررسی اینکه حتما FiscalYear ارسال شده باشد
-                if (model.FiscalYearId == 0)
+                if (model.FiscalYearId <= 0)
                     return BadRequest("Fiscal Year is required.");
 
-                // ✅ حتما باید مربوط به همان Tenant باشد (خیلی مهم امنیتی)
-                var fiscalYear = _iuwcontext.fiscalYearUW
-                    .Get(f => f.Id == model.FiscalYearId && f.TenantId == user.TenantId)
-                    .SingleOrDefault();
+                var user = await _userManager.Users
+                    .Include(u => u.Tenant)
+                    .SingleOrDefaultAsync(u => u.UserName == model.UserName, ct);
+
+                var authError = await ValidateCredentialsAsync(user, model.Password);
+                if (authError != null)
+                    return authError;
+
+                var fiscalYear = await _iuwcontext.fiscalYearUW
+                    .Get(f => f.Id == model.FiscalYearId && f.TenantId == user!.TenantId)
+                    .IgnoreQueryFilters()
+                    .SingleOrDefaultAsync(ct);
 
                 if (fiscalYear == null)
                     return BadRequest("Invalid Fiscal Year.");
 
-                byte fiscalYearStatus = 10;
+                if (fiscalYear.IsClosed)
+                    return BadRequest("Fiscal Year is closed.");
 
-                if (fiscalYear.IsCurrent && fiscalYear.EndDate.Date >= DateTime.Now)
-                    fiscalYearStatus = 0;
-                else if (fiscalYear.IsCurrent && fiscalYear.EndDate.Date < DateTime.Now)
-                    fiscalYearStatus = 1;
-                else
-                    fiscalYearStatus = 2;
-
-                var roles = await _userManager.GetRolesAsync(user);
-                var permissions = await _permissionService.GetUserPermissionsAsync(user.Id);
+                var fiscalYearStatus = ResolveFiscalYearStatus(fiscalYear);
+                var roles = await _userManager.GetRolesAsync(user!);
+                var permissions = await _permissionService.GetUserPermissionsAsync(user!.Id);
 
                 var userToken = new UserJwtToken
                 {
@@ -280,15 +253,67 @@ namespace HSCrm.WebApi.Controllers
                     Roles = roles,
                     Email = user.Email,
                     Permissions = permissions,
-                    FiscalYearStatus = fiscalYearStatus
+                    FiscalYearStatus = fiscalYearStatus,
+                    UserStatus = user.UserStatus,
+                    UserType = user.UserType,
+                    FiscalYear = fiscalYear.Title
                 };
 
                 return Ok(userToken);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Internal server error: {ex.Message}");
+                _logger.LogError(ex, "Error during login for user {UserName}", model.UserName);
+                return StatusCode(500, "Internal server error.");
             }
+        }
+
+        private async Task<IActionResult?> ValidateCredentialsAsync(ApplicationUser? user, string password)
+        {
+            if (user == null)
+                return Unauthorized("Invalid Login Info.");
+
+            if (!user.UserStatus)
+                return Unauthorized("User account is inactive.");
+
+            if (user.Tenant == null || !user.Tenant.IsActive)
+                return Unauthorized("Tenant is inactive.");
+
+            var result = await _signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
+
+            if (result.IsLockedOut)
+                return StatusCode(StatusCodes.Status423Locked, "Account is temporarily locked due to failed login attempts.");
+
+            if (!result.Succeeded)
+                return Unauthorized("Invalid Login Info.");
+
+            return null;
+        }
+
+        private static byte ResolveFiscalYearStatus(FiscalYear? fiscalYear)
+        {
+            if (fiscalYear == null)
+                return 2;
+
+            if (fiscalYear.IsClosed)
+                return 2;
+
+            var today = DateTime.Today;
+            var endDate = fiscalYear.EndDate.Date;
+
+            if (fiscalYear.IsCurrent && endDate >= today)
+                return 0; // جاری و معتبر
+
+            if (fiscalYear.IsCurrent && endDate < today)
+                return 1; // جاری اما منقضی شده
+
+            return 2; // غیرفعال / غیرجاری
+        }
+
+        private string BuildDefaultAvatarUrl()
+        {
+            var baseUrl = $"{Request.Scheme}://{Request.Host.Value}";
+            return $"{baseUrl}{DefaultAvatarPath}";
         }
     }
 }

@@ -18,19 +18,25 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly RoleManager<ApplicationRole> _roleManager;
         private readonly ApplicationDbContext _dbContext;
+        private readonly ICurrentUserService _userService;
 
-        public RoleController(RoleManager<ApplicationRole> roleManager, ApplicationDbContext dbContext)
+        public RoleController(RoleManager<ApplicationRole> roleManager, ApplicationDbContext dbContext, ICurrentUserService userService)
         {
             _roleManager = roleManager;
             _dbContext = dbContext;
+            _userService = userService;
         }
 
         [HttpGet("GetRoles")]
         [Permission(Permissions.Roles.View)]
         public async Task<ApiResponse<List<RoleListModel>>> GetRoles(CancellationToken ct)
         {
+            var currentTenantId = _userService.TenantId;
+
             var roles = await _dbContext.Roles
                 .AsNoTracking()
+                // فقط نقش‌های تننت جاری به همراه نقش Owner از سیستم
+                .Where(x => x.TenantId == currentTenantId || (x.TenantId == 1 && x.Name == "Owner"))
                 .Select(x => new RoleListModel
                 {
                     Id = x.Id,
@@ -46,6 +52,30 @@ namespace HSCrm.WebApi.Controllers
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                 Data = roles
+            };
+        }
+
+        [HttpGet("GetUserRole")]
+        [Permission(Permissions.Roles.View)]
+        public async Task<ApiResponse<UserRole>> GetUserRole(string userId)
+        {
+            var currentTenantId = _userService.TenantId;
+
+            var role = _dbContext.UserRoles
+                .AsNoTracking()
+                .Where(x => x.UserId == userId)
+                .Select(x => new UserRole
+                {
+                    RoleId = x.RoleId,
+                    UserId = x.UserId,
+                }).FirstOrDefault();
+
+            return new ApiResponse<UserRole>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = role
             };
         }
 
@@ -88,25 +118,25 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.Create)]
         public async Task<ApiResponse<RoleListModel>> CreateRole([FromBody] RoleCreateModel model)
         {
-            if (!ModelState.IsValid)
+            if (!ModelState.IsValid) return new ApiResponse<RoleListModel>
             {
-                return new ApiResponse<RoleListModel>
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = null
-                };
-            }
+                Status = false,
+                StatusCode = ApiResultStatusCode.BadRequest,
+                Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name),
+                Data = null
+            };
 
-            var exists = await _roleManager.RoleExistsAsync(model.Name);
-            if (exists)
+            var currentTenantId = _userService.TenantId;
+
+            var existsInTenant = await _dbContext.Roles.AnyAsync(r => r.TenantId == currentTenantId && r.Name == model.Name);
+
+            if (existsInTenant)
             {
                 return new ApiResponse<RoleListModel>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "نقش تکراری است",
+                    Message = "این نقش قبلاً در این مجموعه ثبت شده است.",
                     Data = null
                 };
             }
@@ -116,21 +146,19 @@ namespace HSCrm.WebApi.Controllers
                 Id = Guid.NewGuid().ToString(),
                 Name = model.Name,
                 NormalizedName = model.Name.ToUpperInvariant(),
+                RoleFaName = model.FaName,
                 TenantId = User.GetTenantId().Value
             };
 
             var result = await _roleManager.CreateAsync(role);
 
-            if (!result.Succeeded)
+            if (!result.Succeeded) return new ApiResponse<RoleListModel>
             {
-                return new ApiResponse<RoleListModel>
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
-                    Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
-                    Data = null
-                };
-            }
+                Status = false,
+                StatusCode = ApiResultStatusCode.ServerError,
+                Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
+                Data = null
+            };
 
             return new ApiResponse<RoleListModel>
             {

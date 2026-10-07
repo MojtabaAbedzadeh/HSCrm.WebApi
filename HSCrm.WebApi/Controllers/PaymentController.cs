@@ -9,8 +9,6 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SinaPharm.Common;
-using System.Globalization;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -127,7 +125,7 @@ namespace HSCrm.WebApi.Controllers
                 ? "all"
                 : referenceType.Trim();
 
-            if (term.Length < 2)
+            if (term.Length < 1)
             {
                 return new ApiResponse<IEnumerable<PaymentReferenceDto>>
                 {
@@ -235,7 +233,6 @@ namespace HSCrm.WebApi.Controllers
         //        Message = "پرداخت با موفقیت ثبت شد."
         //    };
         //}
-
 
         [HttpPost("Create")]
         [Permission(Permissions.Payments.Create)]
@@ -354,7 +351,6 @@ namespace HSCrm.WebApi.Controllers
             _context.Save();
         }
 
-
         [HttpPost("RegisterPurchasePayment")]
         public ApiResponse RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
         {
@@ -455,7 +451,5 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
         }
-
-
     }
 }

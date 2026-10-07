@@ -1,6 +1,7 @@
 ﻿using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace HSCrm.DataModel.Services.Repository
@@ -8,10 +9,14 @@ namespace HSCrm.DataModel.Services.Repository
     public class RoleService : IRoleService
     {
         private readonly ApplicationDbContext _context;
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly RoleManager<ApplicationRole> _roleManager;
 
-        public RoleService(ApplicationDbContext context)
+        public RoleService(ApplicationDbContext context, UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager)
         {
             _context = context;
+            _userManager = userManager;
+            _roleManager = roleManager;
         }
 
         public async Task<List<ApplicationRole>> GetRolesAsync()
@@ -135,11 +140,18 @@ namespace HSCrm.DataModel.Services.Repository
             if (!roleExists)
                 throw new InvalidOperationException("Role not found.");
 
-            var exists = await _context.UserRoles
-                .AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId);
+            var exists = await _context.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId);
 
             if (exists)
                 return;
+
+            var user = await _userManager.FindByIdAsync(userId);
+            var currentUserRoles = await _userManager.GetRolesAsync(user);
+
+            if (currentUserRoles.Any())
+            {
+                await _userManager.RemoveFromRolesAsync(user, currentUserRoles);
+            }
 
             _context.UserRoles.Add(new UserRole
             {

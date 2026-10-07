@@ -275,12 +275,49 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-        [HttpGet("AssignRole")]
+        [HttpPost("AssignRole")]
         [Permission(Permissions.Users.Create)]
-        public async Task<IActionResult> AssignRole(string userId, string roleId)
+        public async Task<ApiResponse> AssignRole(AssignRoleModel model)
         {
-            await _roleService.AssignRoleToUserAsync(userId, roleId);
-            return Ok();
+            try
+            {
+                await _roleService.AssignRoleToUserAsync(model.UserId, model.RoleId);
+
+                return new ApiResponse<object> 
+                {
+                    Status = true,
+                    Message = "نقش کاربر با موفقیت ثبت شد.",
+                    StatusCode = ApiResultStatusCode.Success
+                };
+            }
+            catch (ArgumentException argEx)
+            {
+                return new ApiResponse<object>
+                {
+                    Status = false,
+                    Message = $"خطای ورودی: {argEx.Message}",
+                    StatusCode = ApiResultStatusCode.BadRequest, 
+                    AdditionalData = null
+                };
+            }
+            catch (InvalidOperationException invalidOpEx)
+            {
+                return new ApiResponse<object>
+                {
+                    Status = false,
+                    Message = $"خطای عملیاتی: {invalidOpEx.Message}",
+                    StatusCode = ApiResultStatusCode.NotFound                                 
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse<object>
+                {
+                    Status = false,
+                    Message = $"یک خطای غیرمنتظره رخ داد: {ex.Message}",
+                    StatusCode = ApiResultStatusCode.ServerError 
+                };
+            }
         }
     }
 }
