@@ -619,5 +619,355 @@ namespace HSCrm.DataModel.Services.Repository
                 ExpenseAccounts = costsAndExpenses
             };
         }
+
+        /// <summary>
+        /// عملیات کامل بستن سال مالی (بستن حساب‌های موقت، انتقال سود/زیان به سرمایه، صدور سند اختتامیه و صدور سند افتتاحیه سال جدید)
+        /// </summary>
+        public async Task<CloseFiscalYearResultDto> CloseFiscalYearAndGenerateOpeningAsync(CloseFiscalYearRequestModel model, CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var sourceFiscalYearId = model.SourceFiscalYearId ?? _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی مبدأ مشخص نشده است.");
+
+            var sourceFiscalYear = await _context.FiscalYears
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(f => f.Id == sourceFiscalYearId && f.TenantId == tenantId && !f.IsDeleted, ct);
+
+            if (sourceFiscalYear == null)
+                throw new InvalidOperationException("سال مالی مورد نظر یافت نشد.");
+
+            if (sourceFiscalYear.IsClosed)
+                throw new InvalidOperationException($"سال مالی {sourceFiscalYear.Title} قبلاً بسته شده است.");
+
+            var nextStartDate = ConvertDate.ConvertShamsiToMiladi(model.NextStartDateShamsi);
+            var nextEndDate = ConvertDate.ConvertShamsiToMiladi(model.NextEndDateShamsi);
+
+            using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
+            try
+            {
+                await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
+                var accEquity = await GetSystemAccountAsync(tenantId, ACC_EQUITY, ct);
+
+                // ۱. استخراج تمام آرتیکل‌های قطعی در سال مالی مبدأ (بدون تداخل Global Query Filter)
+                var allPostedItems = await _context.JournalVoucherItems
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .Include(x => x.Account)
+                    .Include(x => x.JournalVoucher)
+                    .Where(x => x.TenantId == tenantId
+                             && !x.IsDeleted
+                             && x.JournalVoucher.FiscalYearId == sourceFiscalYearId
+                             && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                             && !x.JournalVoucher.IsDeleted)
+                    .ToListAsync(ct);
+
+                // ۲. گروه‌بندی حساب‌های موقت (درآمد: Revenue و هزینه: Expense)
+                var tempBalances = allPostedItems
+                    .Where(x => x.Account.Category == AccountCategory.Revenue || x.Account.Category == AccountCategory.Expense)
+                    .GroupBy(x => new { x.AccountId, x.Account.Code, x.Account.Title })
+                    .Select(g => new
+                    {
+                        g.Key.AccountId,
+                        g.Key.Code,
+                        g.Key.Title,
+                        NetBalance = g.Sum(i => i.Debit - i.Credit) // مثبت یعنی مانده بدهکار، منفی یعنی مانده بستانکار
+                    })
+                    .Where(x => x.NetBalance != 0)
+                    .ToList();
+
+                int? pnlVoucherNumber = null;
+                decimal netProfitOrLoss = 0m;
+
+                // ۳. صدور سند بستن حساب‌های موقت (درآمد و هزینه) به حساب سرمایه و سود انباشته (3101)
+                if (tempBalances.Any())
+                {
+                    var pnlItems = new List<JournalVoucherItem>();
+                    int row = 1;
+
+                    foreach (var tb in tempBalances)
+                    {
+                        if (tb.NetBalance < 0)
+                        {
+                            // حساب دارای مانده بستانکار است (مثل فروش 4101) -> برای بستن باید بدهکار شود
+                            pnlItems.Add(new JournalVoucherItem
+                            {
+                                TenantId = tenantId,
+                                RowNumber = row++,
+                                AccountId = tb.AccountId,
+                                Description = $"بستن حساب موقت ({tb.Title}) در پایان سال مالی {sourceFiscalYear.Title}",
+                                Debit = Math.Abs(tb.NetBalance),
+                                Credit = 0
+                            });
+                        }
+                        else if (tb.NetBalance > 0)
+                        {
+                            // حساب دارای مانده بدهکار است (مثل خرید 5101 یا هزینه پروژه 5201) -> برای بستن باید بستانکار شود
+                            pnlItems.Add(new JournalVoucherItem
+                            {
+                                TenantId = tenantId,
+                                RowNumber = row++,
+                                AccountId = tb.AccountId,
+                                Description = $"بستن حساب موقت ({tb.Title}) در پایان سال مالی {sourceFiscalYear.Title}",
+                                Debit = 0,
+                                Credit = tb.NetBalance
+                            });
+                        }
+                    }
+
+                    var sumDebit = pnlItems.Sum(x => x.Debit);
+                    var sumCredit = pnlItems.Sum(x => x.Credit);
+                    netProfitOrLoss = sumDebit - sumCredit; // اگر مثبت باشد یعنی درآمدها بیشتر بوده (سود خالص)، اگر منفی یعنی زیان
+
+                    if (netProfitOrLoss > 0)
+                    {
+                        // سود خالص دوره -> بستانکار شدن حساب سرمایه و سود انباشته (3101)
+                        pnlItems.Add(new JournalVoucherItem
+                        {
+                            TenantId = tenantId,
+                            RowNumber = row++,
+                            AccountId = accEquity.Id,
+                            Description = $"انتقال سود خالص سال مالی {sourceFiscalYear.Title} به سود انباشته",
+                            Debit = 0,
+                            Credit = netProfitOrLoss
+                        });
+                    }
+                    else if (netProfitOrLoss < 0)
+                    {
+                        // زیان خالص دوره -> بدهکار شدن حساب سرمایه و سود انباشته (3101)
+                        pnlItems.Add(new JournalVoucherItem
+                        {
+                            TenantId = tenantId,
+                            RowNumber = row++,
+                            AccountId = accEquity.Id,
+                            Description = $"انتقال زیان خالص سال مالی {sourceFiscalYear.Title} به سود انباشته",
+                            Debit = Math.Abs(netProfitOrLoss),
+                            Credit = 0
+                        });
+                    }
+
+                    pnlVoucherNumber = await GetNextVoucherNumberAsync(tenantId, sourceFiscalYearId, ct);
+                    var pnlVoucher = new JournalVoucher
+                    {
+                        TenantId = tenantId,
+                        FiscalYearId = sourceFiscalYearId,
+                        VoucherNumber = pnlVoucherNumber.Value,
+                        VoucherDate = sourceFiscalYear.EndDate,
+                        Description = $"سند بستن حساب‌های موقت (سود و زیان) سال مالی {sourceFiscalYear.Title}",
+                        Status = JournalVoucherStatus.Posted,
+                        ReferenceType = AccountingReferenceType.ClosingBalance,
+                        TotalDebit = pnlItems.Sum(x => x.Debit),
+                        TotalCredit = pnlItems.Sum(x => x.Credit),
+                        Items = pnlItems
+                    };
+
+                    await _context.JournalVouchers.AddAsync(pnlVoucher, ct);
+                    await _context.SaveChangesAsync(ct);
+                }
+
+                // ۴. محاسبه مانده حساب‌های دائم (دارایی، بدهی، سرمایه) به تفکیک تفصیلی‌های شناور (Customer, Supplier, Project, Warehouse)
+                // شامل سود/زیانی که در مرحله ۳ به حساب 3101 منتقل شد
+                var permanentItemsAfterPnl = await _context.JournalVoucherItems
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .Include(x => x.Account)
+                    .Include(x => x.JournalVoucher)
+                    .Where(x => x.TenantId == tenantId
+                             && !x.IsDeleted
+                             && x.JournalVoucher.FiscalYearId == sourceFiscalYearId
+                             && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                             && !x.JournalVoucher.IsDeleted
+                             && (x.Account.Category == AccountCategory.Asset
+                              || x.Account.Category == AccountCategory.Liability
+                              || x.Account.Category == AccountCategory.Equity))
+                    .ToListAsync(ct);
+
+                var permanentBalances = permanentItemsAfterPnl
+                    .GroupBy(x => new
+                    {
+                        x.AccountId,
+                        x.Account.Title,
+                        x.CustomerId,
+                        x.SupplierId,
+                        x.ProjectId,
+                        x.WarehouseId
+                    })
+                    .Select(g => new
+                    {
+                        g.Key.AccountId,
+                        g.Key.Title,
+                        g.Key.CustomerId,
+                        g.Key.SupplierId,
+                        g.Key.ProjectId,
+                        g.Key.WarehouseId,
+                        NetBalance = g.Sum(i => i.Debit - i.Credit)
+                    })
+                    .Where(x => x.NetBalance != 0)
+                    .ToList();
+
+                // ۵. ایجاد یا بازیابی سال مالی جدید
+                var nextFiscalYear = await _context.FiscalYears
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(f => f.TenantId == tenantId && f.Title == model.NextFiscalYearTitle.Trim() && !f.IsDeleted, ct);
+
+                if (nextFiscalYear == null)
+                {
+                    nextFiscalYear = new FiscalYear
+                    {
+                        TenantId = tenantId,
+                        Title = model.NextFiscalYearTitle.Trim(),
+                        StartDate = nextStartDate,
+                        EndDate = nextEndDate,
+                        IsClosed = false,
+                        IsCurrent = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedById = _currentUser.UserId
+                    };
+                    await _context.FiscalYears.AddAsync(nextFiscalYear, ct);
+                    await _context.SaveChangesAsync(ct);
+                }
+
+                int? closingVoucherNumber = null;
+                int? openingVoucherNumber = null;
+                decimal totalPermanentBalance = 0m;
+
+                // ۶. صدور سند اختتامیه در سال قدیم و سند افتتاحیه در سال جدید
+                if (permanentBalances.Any())
+                {
+                    var closingItems = new List<JournalVoucherItem>();
+                    var openingItems = new List<JournalVoucherItem>();
+                    int closeRow = 1;
+                    int openRow = 1;
+
+                    foreach (var pb in permanentBalances)
+                    {
+                        if (pb.NetBalance > 0)
+                        {
+                            // حساب دارای مانده بدهکار است (مثل بانک یا حساب دریافتنی مشتری):
+                            // در سند اختتامیه بستانکار می‌شود و در سند افتتاحیه سال جدید بدهکار می‌شود
+                            closingItems.Add(new JournalVoucherItem
+                            {
+                                TenantId = tenantId,
+                                RowNumber = closeRow++,
+                                AccountId = pb.AccountId,
+                                Description = $"سند اختتامیه حساب ({pb.Title}) - انتقال به سال {nextFiscalYear.Title}",
+                                Debit = 0,
+                                Credit = pb.NetBalance,
+                                CustomerId = pb.CustomerId,
+                                SupplierId = pb.SupplierId,
+                                ProjectId = pb.ProjectId,
+                                WarehouseId = pb.WarehouseId
+                            });
+
+                            openingItems.Add(new JournalVoucherItem
+                            {
+                                TenantId = tenantId,
+                                RowNumber = openRow++,
+                                AccountId = pb.AccountId,
+                                Description = $"سند افتتاحیه حساب ({pb.Title}) - انتقالی از سال {sourceFiscalYear.Title}",
+                                Debit = pb.NetBalance,
+                                Credit = 0,
+                                CustomerId = pb.CustomerId,
+                                SupplierId = pb.SupplierId,
+                                ProjectId = pb.ProjectId,
+                                WarehouseId = pb.WarehouseId
+                            });
+                        }
+                        else if (pb.NetBalance < 0)
+                        {
+                            var absBal = Math.Abs(pb.NetBalance);
+                            // حساب دارای مانده بستانکار است (مثل حساب پرداختنی تأمین‌کننده یا سرمایه):
+                            // در سند اختتامیه بدهکار می‌شود و در سند افتتاحیه سال جدید بستانکار می‌شود
+                            closingItems.Add(new JournalVoucherItem
+                            {
+                                TenantId = tenantId,
+                                RowNumber = closeRow++,
+                                AccountId = pb.AccountId,
+                                Description = $"سند اختتامیه حساب ({pb.Title}) - انتقال به سال {nextFiscalYear.Title}",
+                                Debit = absBal,
+                                Credit = 0,
+                                CustomerId = pb.CustomerId,
+                                SupplierId = pb.SupplierId,
+                                ProjectId = pb.ProjectId,
+                                WarehouseId = pb.WarehouseId
+                            });
+
+                            openingItems.Add(new JournalVoucherItem
+                            {
+                                TenantId = tenantId,
+                                RowNumber = openRow++,
+                                AccountId = pb.AccountId,
+                                Description = $"سند افتتاحیه حساب ({pb.Title}) - انتقالی از سال {sourceFiscalYear.Title}",
+                                Debit = 0,
+                                Credit = absBal,
+                                CustomerId = pb.CustomerId,
+                                SupplierId = pb.SupplierId,
+                                ProjectId = pb.ProjectId,
+                                WarehouseId = pb.WarehouseId
+                            });
+                        }
+                    }
+
+                    totalPermanentBalance = openingItems.Sum(x => x.Debit);
+
+                    closingVoucherNumber = await GetNextVoucherNumberAsync(tenantId, sourceFiscalYearId, ct);
+                    var closingVoucher = new JournalVoucher
+                    {
+                        TenantId = tenantId,
+                        FiscalYearId = sourceFiscalYearId,
+                        VoucherNumber = closingVoucherNumber.Value,
+                        VoucherDate = sourceFiscalYear.EndDate,
+                        Description = $"سند اختتامیه سال مالی {sourceFiscalYear.Title}",
+                        Status = JournalVoucherStatus.Posted,
+                        ReferenceType = AccountingReferenceType.ClosingBalance,
+                        TotalDebit = closingItems.Sum(x => x.Debit),
+                        TotalCredit = closingItems.Sum(x => x.Credit),
+                        Items = closingItems
+                    };
+
+                    openingVoucherNumber = await GetNextVoucherNumberAsync(tenantId, nextFiscalYear.Id, ct);
+                    var openingVoucher = new JournalVoucher
+                    {
+                        TenantId = tenantId,
+                        FiscalYearId = nextFiscalYear.Id,
+                        VoucherNumber = openingVoucherNumber.Value,
+                        VoucherDate = nextFiscalYear.StartDate,
+                        Description = $"سند افتتاحیه سال مالی {nextFiscalYear.Title} (انتقالی از سال {sourceFiscalYear.Title})",
+                        Status = JournalVoucherStatus.Posted,
+                        ReferenceType = AccountingReferenceType.OpeningBalance,
+                        TotalDebit = openingItems.Sum(x => x.Debit),
+                        TotalCredit = openingItems.Sum(x => x.Credit),
+                        Items = openingItems
+                    };
+
+                    await _context.JournalVouchers.AddRangeAsync(new[] { closingVoucher, openingVoucher }, ct);
+                }
+
+                // ۷. بستن سال مالی قدیم و فعال کردن سال مالی جدید
+                sourceFiscalYear.IsClosed = true;
+                sourceFiscalYear.IsCurrent = false;
+                nextFiscalYear.IsCurrent = true;
+
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return new CloseFiscalYearResultDto
+                {
+                    ClosedFiscalYearId = sourceFiscalYear.Id,
+                    ClosedFiscalYearTitle = sourceFiscalYear.Title,
+                    NewFiscalYearId = nextFiscalYear.Id,
+                    NewFiscalYearTitle = nextFiscalYear.Title,
+                    NetProfitOrLossTransferred = netProfitOrLoss,
+                    ProfitLossClosingVoucherNumber = pnlVoucherNumber,
+                    ClosingVoucherNumber = closingVoucherNumber,
+                    OpeningVoucherNumberInNewYear = openingVoucherNumber,
+                    TotalPermanentBalanceTransferred = totalPermanentBalance
+                };
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        }
     }
 }

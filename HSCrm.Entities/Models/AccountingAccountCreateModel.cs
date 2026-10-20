@@ -83,4 +83,46 @@ namespace HSCrm.Entities.Models
         public List<TrialBalanceRowDto> RevenueAccounts { get; set; } = new();
         public List<TrialBalanceRowDto> ExpenseAccounts { get; set; } = new();
     }
+
+    /// <summary>
+    /// ورودی عملیات بستن سال مالی و صدور خودکار سند اختتامیه و افتتاحیه
+    /// </summary>
+    public class CloseFiscalYearRequestModel
+    {
+        /// <summary>
+        /// شناسه سال مالی که قصد بستن آن را داریم (در صورت خالی بودن، سال مالی جاری بسته می‌شود)
+        /// </summary>
+        public int? SourceFiscalYearId { get; set; }
+
+        /// <summary>
+        /// عنوان سال مالی جدید برای انتقال مانده‌ها (مثال: 1405). اگر وجود نداشته باشد خودکار ساخته می‌شود
+        /// </summary>
+        public required string NextFiscalYearTitle { get; set; }
+
+        /// <summary>
+        /// تاریخ شروع سال مالی جدید به شمسی (مثال: 1405/01/01)
+        /// </summary>
+        public required string NextStartDateShamsi { get; set; }
+
+        /// <summary>
+        /// تاریخ پایان سال مالی جدید به شمسی (مثال: 1405/12/29)
+        /// </summary>
+        public required string NextEndDateShamsi { get; set; }
+    }
+
+    /// <summary>
+    /// خروجی عملیات بستن سال مالی (شماره اسناد صادرشده و سود/زیان منتقل‌شده)
+    /// </summary>
+    public class CloseFiscalYearResultDto
+    {
+        public int ClosedFiscalYearId { get; set; }
+        public string ClosedFiscalYearTitle { get; set; } = default!;
+        public int NewFiscalYearId { get; set; }
+        public string NewFiscalYearTitle { get; set; } = default!;
+        public decimal NetProfitOrLossTransferred { get; set; }
+        public int? ProfitLossClosingVoucherNumber { get; set; }
+        public int? ClosingVoucherNumber { get; set; }
+        public int? OpeningVoucherNumberInNewYear { get; set; }
+        public decimal TotalPermanentBalanceTransferred { get; set; }
+    }
 }

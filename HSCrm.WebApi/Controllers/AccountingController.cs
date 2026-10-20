@@ -189,5 +189,33 @@ namespace HSCrm.WebApi.Controllers
                 Data = data
             });
         }
+
+        [HttpPost("CloseFiscalYear")]
+        [Permission(Permissions.JournalVouchers.Approve)]
+        public async Task<ActionResult<ApiResponse<CloseFiscalYearResultDto>>> CloseFiscalYear(
+            [FromBody] CloseFiscalYearRequestModel model,
+            CancellationToken ct)
+        {
+            try
+            {
+                var result = await _accountingService.CloseFiscalYearAndGenerateOpeningAsync(model, ct);
+                return Ok(new ApiResponse<CloseFiscalYearResultDto>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = $"سال مالی {result.ClosedFiscalYearTitle} با موفقیت بسته شد و سند افتتاحیه در سال مالی {result.NewFiscalYearTitle} صادر گردید.",
+                    Data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+            }
+        }
     }
 }

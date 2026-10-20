@@ -67,5 +67,11 @@ namespace HSCrm.DataModel.Services.Interface
         /// گزارش صورت سود و زیان (Profit & Loss)
         /// </summary>
         Task<ProfitAndLossReportDto> GetProfitAndLossAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default);
+
+        /// <summary>
+        /// بستن حساب‌های موقت (درآمد و هزینه)، انتقال سود و زیان به سرمایه/سود انباشته،
+        /// صدور سند اختتامیه در سال مالی جاری و صدور خودکار سند افتتاحیه در سال مالی جدید
+        /// </summary>
+        Task<CloseFiscalYearResultDto> CloseFiscalYearAndGenerateOpeningAsync(CloseFiscalYearRequestModel model, CancellationToken ct = default);
     }
 }
