@@ -17,17 +17,20 @@ namespace HSCrm.WebApi.Controllers
         private readonly IMapper _mapper;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IAccountingService _accountingService;
 
         public ReceiptController(
             IUnitOfWork context,
             IMapper mapper,
             ICurrentFiscalYearService currentFiscalYearService,
-            ICurrentUserService currentUserService)
+            ICurrentUserService currentUserService,
+            IAccountingService accountingService)
         {
             _context = context;
             _mapper = mapper;
             _currentFiscalYearService = currentFiscalYearService;
             _currentUserService = currentUserService;
+            _accountingService = accountingService;
         }
 
         [HttpGet]
@@ -86,8 +89,21 @@ namespace HSCrm.WebApi.Controllers
             receipt.CreatedAt = DateTime.Now;
             receipt.CreatedById = model.UserId;
 
-            await _context.receiptUW.CreateAsync(receipt, cancellationToken);
-            await _context.SaveAsync();
+            using var transaction = _context.BeginTransaction();
+            try
+            {
+                await _context.receiptUW.CreateAsync(receipt, cancellationToken);
+                await _context.SaveAsync();
+
+                await _accountingService.CreateVoucherForReceiptAsync(receipt, cancellationToken);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
 
             var result = _mapper.Map<ReceiptModel>(receipt);
 
@@ -153,6 +169,11 @@ namespace HSCrm.WebApi.Controllers
             }
 
             _context.receiptUW.Delete(receipt, cancellationToken);
+            await _accountingService.CancelVoucherByReferenceAsync(
+                HSCrm.Common.PublicTools.Enums.AccountingReferenceType.Receipt,
+                receipt.Id,
+                "حذف سند دریافت",
+                cancellationToken);
             await _context.SaveAsync();
 
             return Ok(new ApiResponse<bool>

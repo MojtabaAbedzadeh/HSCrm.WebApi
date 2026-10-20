@@ -1,0 +1,412 @@
+diff --git a/HSCrm.DataModel/Services/DbInitializer.cs b/HSCrm.DataModel/Services/DbInitializer.cs
+index eef04d8..16669f5 100644
+--- a/HSCrm.DataModel/Services/DbInitializer.cs
++++ b/HSCrm.DataModel/Services/DbInitializer.cs
+@@ -21,7 +21,10 @@ namespace HSCrm.DataModel.Services
+             await PermissionSeeder.SeedAsync(context);
+ 
+             // 2) Seed roles
+-            await RoleSeeder.SeedRolesAsync(context);
++            if (!await context.Roles.AnyAsync())
++            {
++                await RoleSeeder.SeedRolesAsync(context);
++            }
+ 
+             // 3) Make sure required roles exist even if Roles table was partially seeded
+             await EnsureRoleExistsAsync(roleManager, "Admin");
+@@ -29,11 +32,8 @@ namespace HSCrm.DataModel.Services
+             await EnsureRoleExistsAsync(roleManager, "User");
+             await EnsureRoleExistsAsync(roleManager, "Customer");
+ 
+-            // 4) Seed role-permissions
+-            if (!await context.RolePermissions.AnyAsync())
+-            {
+-                await RoleSeeder.AssignPermissionsToRoles(context);
+-            }
++            // 4) Seed new role-permissions incrementally for Owner and Admin
++            await RoleSeeder.AssignPermissionsToRoles(context);
+ 
+             // 5) If there is a tenant, seed fiscal year safely
+             const string adminUserId = "28dfc395-0464-4b47-8aae-c73953a9d153";
+diff --git a/HSCrm.DataModel/Services/RoleSeeder.cs b/HSCrm.DataModel/Services/RoleSeeder.cs
+index a021ea3..9d0ea9b 100644
+--- a/HSCrm.DataModel/Services/RoleSeeder.cs
++++ b/HSCrm.DataModel/Services/RoleSeeder.cs
+@@ -50,17 +50,27 @@ namespace HSCrm.DataModel.Services
+         }
+         public static async Task AssignPermissionsToRoles(ApplicationDbContext context)
+         {
+-            var ownerRole = await context.Roles.FirstAsync(r => r.Name == "Owner");
++            var targetRoles = await context.Roles
++                .Where(r => r.Name == "Owner" || r.Name == "Admin")
++                .ToListAsync();
+ 
+             var permissions = await context.Permissions.ToListAsync();
++            var existingRolePermissions = await context.RolePermissions.ToListAsync();
+ 
+-            foreach (var permission in permissions)
++            foreach (var role in targetRoles)
+             {
+-                context.RolePermissions.Add(new RolePermission
++                foreach (var permission in permissions)
+                 {
+-                    RoleId = ownerRole.Id,
+-                    PermissionId = permission.Id
+-                });
++                    var exists = existingRolePermissions.Any(rp => rp.RoleId == role.Id && rp.PermissionId == permission.Id);
++                    if (!exists)
++                    {
++                        context.RolePermissions.Add(new RolePermission
++                        {
++                            RoleId = role.Id,
++                            PermissionId = permission.Id
++                        });
++                    }
++                }
+             }
+         }
+     }
+diff --git a/HSCrm.WebApi/Controllers/ExpenseController.cs b/HSCrm.WebApi/Controllers/ExpenseController.cs
+index 4115c46..2c7f091 100644
+--- a/HSCrm.WebApi/Controllers/ExpenseController.cs
++++ b/HSCrm.WebApi/Controllers/ExpenseController.cs
+@@ -18,12 +18,18 @@ namespace HSCrm.WebApi.Controllers
+         private readonly IUnitOfWork _context;
+         private readonly IPaymentSettlementService _paymentSettlementService;
+         private readonly ICurrentFiscalYearService _currentFiscalYearService;
++        private readonly IAccountingService _accountingService;
+ 
+-        public ExpenseController(IUnitOfWork context, IPaymentSettlementService paymentSettlementService, ICurrentFiscalYearService currentFiscalYearService)
++        public ExpenseController(
++            IUnitOfWork context,
++            IPaymentSettlementService paymentSettlementService,
++            ICurrentFiscalYearService currentFiscalYearService,
++            IAccountingService accountingService)
+         {
+             _context = context;
+             _paymentSettlementService = paymentSettlementService;
+             _currentFiscalYearService = currentFiscalYearService;
++            _accountingService = accountingService;
+         }
+ 
+         [HttpGet("SettlementSummary/{id:int}")]
+@@ -107,7 +113,7 @@ namespace HSCrm.WebApi.Controllers
+ 
+         [HttpPost("CreateExpense")]
+         [Permission(Permissions.Expenses.Create)]
+-        public ApiResponse Create([FromForm] ExpenseCreateModel model)
++        public async Task<ApiResponse> Create([FromForm] ExpenseCreateModel model)
+         {
+             if (model == null || !ModelState.IsValid)
+                 return new ApiResponse { Status = false, Message = "اطلاعات ورودی نامعتبر است" };
+@@ -154,7 +160,10 @@ namespace HSCrm.WebApi.Controllers
+                 };
+ 
+                 _context.expenseUW.Create(expense);
+-                _context.Save();
++                await _context.SaveAsync();
++
++                // صدور خودکار سند شناسایی هزینه پروژه
++                await _accountingService.CreateVoucherForExpenseAsync(expense);
+ 
+                 // منطق ثبت پرداخت خودکار بر اساس وضعیت
+                 var actualPaidAmount = model.PaymentStatus switch
+@@ -179,7 +188,10 @@ namespace HSCrm.WebApi.Controllers
+                         CreatedById = userId
+                     };
+                     _context.paymentUW.Create(payment);
+-                    _context.Save();
++                    await _context.SaveAsync();
++
++                    // صدور خودکار سند پرداخت خزانه بابت هزینه
++                    await _accountingService.CreateVoucherForPaymentAsync(payment);
+                 }
+ 
+                 transaction.Commit();
+diff --git a/HSCrm.WebApi/Controllers/PaymentController.cs b/HSCrm.WebApi/Controllers/PaymentController.cs
+index 078dab6..60857da 100644
+--- a/HSCrm.WebApi/Controllers/PaymentController.cs
++++ b/HSCrm.WebApi/Controllers/PaymentController.cs
+@@ -22,12 +22,18 @@ namespace HSCrm.WebApi.Controllers
+         private readonly IUnitOfWork _context;
+         private readonly ICurrentUserService _currentUserService;
+         private readonly ICurrentFiscalYearService _currentFiscalYearService;
++        private readonly IAccountingService _accountingService;
+ 
+-        public PaymentController(IUnitOfWork context, ICurrentUserService currentUserService, ICurrentFiscalYearService currentFiscalYearService)
++        public PaymentController(
++            IUnitOfWork context,
++            ICurrentUserService currentUserService,
++            ICurrentFiscalYearService currentFiscalYearService,
++            IAccountingService accountingService)
+         {
+             _context = context;
+             _currentUserService = currentUserService;
+             _currentFiscalYearService = currentFiscalYearService;
++            _accountingService = accountingService;
+         }
+ 
+         //[HttpGet("GetPayments")]
+@@ -236,7 +242,7 @@ namespace HSCrm.WebApi.Controllers
+ 
+         [HttpPost("Create")]
+         [Permission(Permissions.Payments.Create)]
+-        public ApiResponse Create([FromBody] PaymentModel model)
++        public async Task<ApiResponse> Create([FromBody] PaymentModel model)
+         {
+             // 1. اعتبارسنجی ورودی: فقط یکی از فاکتور خرید یا هزینه باید مقدار داشته باشد
+             if (model.PurchaseInvoiceId.HasValue == model.ExpenseId.HasValue)
+@@ -271,7 +277,10 @@ namespace HSCrm.WebApi.Controllers
+                 };
+ 
+                 _context.paymentUW.Create(entity);
+-                _context.Save();
++                await _context.SaveAsync();
++
++                // صدور خودکار سند پرداخت خزانه
++                await _accountingService.CreateVoucherForPaymentAsync(entity);
+ 
+                 // 3. به‌روزرسانی موجودیت مرتبط (فاکتور خرید یا هزینه)
+                 if (model.PurchaseInvoiceId.HasValue)
+@@ -352,7 +361,7 @@ namespace HSCrm.WebApi.Controllers
+         }
+ 
+         [HttpPost("RegisterPurchasePayment")]
+-        public ApiResponse RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
++        public async Task<ApiResponse> RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
+         {
+             try
+             {
+@@ -416,7 +425,9 @@ namespace HSCrm.WebApi.Controllers
+                 };
+ 
+                 _context.paymentUW.Create(payment);
+-                _context.SaveAsync();
++                await _context.SaveAsync();
++
++                await _accountingService.CreateVoucherForPaymentAsync(payment);
+ 
+                 var totalPaid = _context.paymentUW
+                     .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+@@ -430,7 +441,7 @@ namespace HSCrm.WebApi.Controllers
+                         : SettlementStatus.Paid;
+ 
+                 _context.purchaseInvoiceUW.Update(invoice);
+-                _context.SaveAsync();
++                await _context.SaveAsync();
+ 
+                 return new ApiResponse
+                 {
+diff --git a/HSCrm.WebApi/Controllers/PurchaseInvoiceController.cs b/HSCrm.WebApi/Controllers/PurchaseInvoiceController.cs
+index 52188ac..24b8438 100644
+--- a/HSCrm.WebApi/Controllers/PurchaseInvoiceController.cs
++++ b/HSCrm.WebApi/Controllers/PurchaseInvoiceController.cs
+@@ -462,10 +462,11 @@ namespace HSCrm.WebApi.Controllers
+                 _context.purchaseInvoiceUW.Update(invoice);
+                 await _context.SaveAsync();
+ 
+-                // 5. اعمال در کاردکس انبار در صورت تایید نهایی
++                // 5. اعمال در کاردکس انبار و صدور سند حسابداری در صورت تایید نهایی
+                 if (invoice.Status == InvoiceStatus.Final)
+                 {
+                     await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
++                    await _accountingService.CreateVoucherForPurchaseInvoiceAsync(invoice);
+                     await _context.SaveAsync();
+                 }
+ 
+@@ -580,6 +581,7 @@ namespace HSCrm.WebApi.Controllers
+                     invoice.Status = InvoiceStatus.Final;
+ 
+                     await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
++                    await _accountingService.CreateVoucherForPurchaseInvoiceAsync(invoice);
+ 
+                     _context.purchaseInvoiceUW.Update(invoice);
+ 
+@@ -698,6 +700,10 @@ namespace HSCrm.WebApi.Controllers
+                     if (invoice.Status == InvoiceStatus.Final)
+                     {
+                         _inventory.RollbackInventoryForPurchaseInvoice(invoice);
++                        await _accountingService.CancelVoucherByReferenceAsync(
++                            AccountingReferenceType.PurchaseInvoice,
++                            invoice.Id,
++                            reason);
+                     }
+ 
+                     invoice.Status = InvoiceStatus.Cancelled;
+@@ -817,6 +823,10 @@ namespace HSCrm.WebApi.Controllers
+                     if (invoice.Status == InvoiceStatus.Final)
+                     {
+                         _inventory.RollbackInventoryForPurchaseInvoice(invoice);
++                        await _accountingService.CancelVoucherByReferenceAsync(
++                            AccountingReferenceType.PurchaseInvoice,
++                            invoice.Id,
++                            reason);
+                     }
+ 
+                     invoice.Status = InvoiceStatus.Rejected;
+diff --git a/HSCrm.WebApi/Controllers/ReceiptController.cs b/HSCrm.WebApi/Controllers/ReceiptController.cs
+index 70293db..7ba3cbb 100644
+--- a/HSCrm.WebApi/Controllers/ReceiptController.cs
++++ b/HSCrm.WebApi/Controllers/ReceiptController.cs
+@@ -17,17 +17,20 @@ namespace HSCrm.WebApi.Controllers
+         private readonly IMapper _mapper;
+         private readonly ICurrentFiscalYearService _currentFiscalYearService;
+         private readonly ICurrentUserService _currentUserService;
++        private readonly IAccountingService _accountingService;
+ 
+         public ReceiptController(
+             IUnitOfWork context,
+             IMapper mapper,
+             ICurrentFiscalYearService currentFiscalYearService,
+-            ICurrentUserService currentUserService)
++            ICurrentUserService currentUserService,
++            IAccountingService accountingService)
+         {
+             _context = context;
+             _mapper = mapper;
+             _currentFiscalYearService = currentFiscalYearService;
+             _currentUserService = currentUserService;
++            _accountingService = accountingService;
+         }
+ 
+         [HttpGet]
+@@ -86,8 +89,21 @@ namespace HSCrm.WebApi.Controllers
+             receipt.CreatedAt = DateTime.Now;
+             receipt.CreatedById = model.UserId;
+ 
+-            await _context.receiptUW.CreateAsync(receipt, cancellationToken);
+-            await _context.SaveAsync();
++            using var transaction = _context.BeginTransaction();
++            try
++            {
++                await _context.receiptUW.CreateAsync(receipt, cancellationToken);
++                await _context.SaveAsync();
++
++                await _accountingService.CreateVoucherForReceiptAsync(receipt, cancellationToken);
++
++                transaction.Commit();
++            }
++            catch
++            {
++                transaction.Rollback();
++                throw;
++            }
+ 
+             var result = _mapper.Map<ReceiptModel>(receipt);
+ 
+@@ -153,6 +169,11 @@ namespace HSCrm.WebApi.Controllers
+             }
+ 
+             _context.receiptUW.Delete(receipt, cancellationToken);
++            await _accountingService.CancelVoucherByReferenceAsync(
++                HSCrm.Common.PublicTools.Enums.AccountingReferenceType.Receipt,
++                receipt.Id,
++                "حذف سند دریافت",
++                cancellationToken);
+             await _context.SaveAsync();
+ 
+             return Ok(new ApiResponse<bool>
+diff --git a/HSCrm.WebApi/Controllers/SalesInvoiceController.cs b/HSCrm.WebApi/Controllers/SalesInvoiceController.cs
+index be69056..44e792a 100644
+--- a/HSCrm.WebApi/Controllers/SalesInvoiceController.cs
++++ b/HSCrm.WebApi/Controllers/SalesInvoiceController.cs
+@@ -87,7 +87,7 @@ namespace HSCrm.WebApi.Controllers
+ 
+         [HttpPost("CreateSalesInvoice")]
+         [Permission(Permissions.SalesInvoices.Create)]
+-        public ApiResponse CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model)
++        public async Task<ApiResponse> CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model)
+         {
+             if (model.Items == null || model.Items.Count == 0) return new ApiResponse
+             {
+@@ -114,6 +114,7 @@ namespace HSCrm.WebApi.Controllers
+                     };
+                 }
+ 
++                decimal subtotal = model.Items.Sum(i => i.Quantity * i.UnitPrice);
+                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
+ 
+                 decimal finalTotal = itemsTotal - model.InvoiceDiscount + model.InvoiceTax;
+@@ -129,6 +130,7 @@ namespace HSCrm.WebApi.Controllers
+                     Number = model.InvoiceNumber,
+                     IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
+                     Status = model.Status,
++                    Subtotal = subtotal,
+                     Discount = model.InvoiceDiscount,
+                     Tax = model.InvoiceTax,
+                     Total = finalTotal,
+@@ -155,13 +157,13 @@ namespace HSCrm.WebApi.Controllers
+                 }
+ 
+                 _context.salesInvoiceUW.Create(invoice);
+-                _context.Save();
++                await _context.SaveAsync();
+ 
+                 if (invoice.Status == InvoiceStatus.Final)
+                 {
+                     _inventory.ApplyInventoryForSalesInvoice(invoice);
+-                    _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
+-                    _context.Save();
++                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
++                    await _context.SaveAsync();
+                 }
+ 
+                 transaction.Commit();
+@@ -244,7 +246,7 @@ namespace HSCrm.WebApi.Controllers
+ 
+         [HttpPut("UpdateInvoice")]
+         [Permission(Permissions.SalesInvoices.Edit)]
+-        public ApiResponse Update([FromBody] SalesInvoiceEditModel model)
++        public async Task<ApiResponse> Update([FromBody] SalesInvoiceEditModel model)
+         {
+             using var tr = _context.BeginTransaction();
+             try
+@@ -266,13 +268,19 @@ namespace HSCrm.WebApi.Controllers
+                 if (oldStatus == InvoiceStatus.Final)
+                 {
+                     _inventory.RollbackInventory(invoice);
++                    await _accountingService.CancelVoucherByReferenceAsync(
++                        AccountingReferenceType.SalesInvoice,
++                        invoice.Id,
++                        "ویرایش فاکتور فروش");
+                 }
+ 
+                 _context.salesInvoiceItemUW.DeleteByRange(x => x.SalesInvoiceId == invoice.Id);
+                 invoice.Items.Clear();
+ 
++                decimal subtotal = 0m;
+                 foreach (var item in model.Items)
+                 {
++                    subtotal += item.UnitPrice * item.Quantity;
+                     invoice.Items.Add(new SalesInvoiceItem
+                     {
+                         ProductId = item.ProductId,
+@@ -285,15 +293,18 @@ namespace HSCrm.WebApi.Controllers
+                     });
+                 }
+ 
++                invoice.Subtotal = subtotal;
++                invoice.Total = subtotal - invoice.Discount + invoice.Tax;
+                 invoice.Status = newStatus;
+                 invoice.IssueDate = model.IssueDate;
+ 
+-                _context.Save();
++                await _context.SaveAsync();
+ 
+                 if (newStatus == InvoiceStatus.Final)
+                 {
+                     _inventory.ApplyInventoryForSalesInvoice(invoice);
+-                    _context.Save();
++                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
++                    await _context.SaveAsync();
+                 }
+ 
+                 tr.Commit();
+@@ -377,6 +388,7 @@ namespace HSCrm.WebApi.Controllers
+ 
+                 invoice.Status = InvoiceStatus.Final;
+ 
++                await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
+                 await _context.SaveAsync();
+                 tran.Commit();
+ 

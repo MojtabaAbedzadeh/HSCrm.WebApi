@@ -462,10 +462,11 @@ namespace HSCrm.WebApi.Controllers
                 _context.purchaseInvoiceUW.Update(invoice);
                 await _context.SaveAsync();
 
-                // 5. اعمال در کاردکس انبار در صورت تایید نهایی
+                // 5. اعمال در کاردکس انبار و صدور سند حسابداری در صورت تایید نهایی
                 if (invoice.Status == InvoiceStatus.Final)
                 {
                     await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
+                    await _accountingService.CreateVoucherForPurchaseInvoiceAsync(invoice);
                     await _context.SaveAsync();
                 }
 
@@ -580,6 +581,7 @@ namespace HSCrm.WebApi.Controllers
                     invoice.Status = InvoiceStatus.Final;
 
                     await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
+                    await _accountingService.CreateVoucherForPurchaseInvoiceAsync(invoice);
 
                     _context.purchaseInvoiceUW.Update(invoice);
 
@@ -698,6 +700,10 @@ namespace HSCrm.WebApi.Controllers
                     if (invoice.Status == InvoiceStatus.Final)
                     {
                         _inventory.RollbackInventoryForPurchaseInvoice(invoice);
+                        await _accountingService.CancelVoucherByReferenceAsync(
+                            AccountingReferenceType.PurchaseInvoice,
+                            invoice.Id,
+                            reason);
                     }
 
                     invoice.Status = InvoiceStatus.Cancelled;
@@ -817,6 +823,10 @@ namespace HSCrm.WebApi.Controllers
                     if (invoice.Status == InvoiceStatus.Final)
                     {
                         _inventory.RollbackInventoryForPurchaseInvoice(invoice);
+                        await _accountingService.CancelVoucherByReferenceAsync(
+                            AccountingReferenceType.PurchaseInvoice,
+                            invoice.Id,
+                            reason);
                     }
 
                     invoice.Status = InvoiceStatus.Rejected;

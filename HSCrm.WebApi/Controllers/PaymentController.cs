@@ -22,12 +22,18 @@ namespace HSCrm.WebApi.Controllers
         private readonly IUnitOfWork _context;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
+        private readonly IAccountingService _accountingService;
 
-        public PaymentController(IUnitOfWork context, ICurrentUserService currentUserService, ICurrentFiscalYearService currentFiscalYearService)
+        public PaymentController(
+            IUnitOfWork context,
+            ICurrentUserService currentUserService,
+            ICurrentFiscalYearService currentFiscalYearService,
+            IAccountingService accountingService)
         {
             _context = context;
             _currentUserService = currentUserService;
             _currentFiscalYearService = currentFiscalYearService;
+            _accountingService = accountingService;
         }
 
         //[HttpGet("GetPayments")]
@@ -236,7 +242,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("Create")]
         [Permission(Permissions.Payments.Create)]
-        public ApiResponse Create([FromBody] PaymentModel model)
+        public async Task<ApiResponse> Create([FromBody] PaymentModel model)
         {
             // 1. اعتبارسنجی ورودی: فقط یکی از فاکتور خرید یا هزینه باید مقدار داشته باشد
             if (model.PurchaseInvoiceId.HasValue == model.ExpenseId.HasValue)
@@ -271,7 +277,10 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 _context.paymentUW.Create(entity);
-                _context.Save();
+                await _context.SaveAsync();
+
+                // صدور خودکار سند پرداخت خزانه
+                await _accountingService.CreateVoucherForPaymentAsync(entity);
 
                 // 3. به‌روزرسانی موجودیت مرتبط (فاکتور خرید یا هزینه)
                 if (model.PurchaseInvoiceId.HasValue)
@@ -352,7 +361,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("RegisterPurchasePayment")]
-        public ApiResponse RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
+        public async Task<ApiResponse> RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
         {
             try
             {
@@ -416,7 +425,9 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 _context.paymentUW.Create(payment);
-                _context.SaveAsync();
+                await _context.SaveAsync();
+
+                await _accountingService.CreateVoucherForPaymentAsync(payment);
 
                 var totalPaid = _context.paymentUW
                     .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
@@ -430,7 +441,7 @@ namespace HSCrm.WebApi.Controllers
                         : SettlementStatus.Paid;
 
                 _context.purchaseInvoiceUW.Update(invoice);
-                _context.SaveAsync();
+                await _context.SaveAsync();
 
                 return new ApiResponse
                 {

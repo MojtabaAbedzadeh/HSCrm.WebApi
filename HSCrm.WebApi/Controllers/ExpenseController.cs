@@ -18,12 +18,18 @@ namespace HSCrm.WebApi.Controllers
         private readonly IUnitOfWork _context;
         private readonly IPaymentSettlementService _paymentSettlementService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
+        private readonly IAccountingService _accountingService;
 
-        public ExpenseController(IUnitOfWork context, IPaymentSettlementService paymentSettlementService, ICurrentFiscalYearService currentFiscalYearService)
+        public ExpenseController(
+            IUnitOfWork context,
+            IPaymentSettlementService paymentSettlementService,
+            ICurrentFiscalYearService currentFiscalYearService,
+            IAccountingService accountingService)
         {
             _context = context;
             _paymentSettlementService = paymentSettlementService;
             _currentFiscalYearService = currentFiscalYearService;
+            _accountingService = accountingService;
         }
 
         [HttpGet("SettlementSummary/{id:int}")]
@@ -107,7 +113,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("CreateExpense")]
         [Permission(Permissions.Expenses.Create)]
-        public ApiResponse Create([FromForm] ExpenseCreateModel model)
+        public async Task<ApiResponse> Create([FromForm] ExpenseCreateModel model)
         {
             if (model == null || !ModelState.IsValid)
                 return new ApiResponse { Status = false, Message = "اطلاعات ورودی نامعتبر است" };
@@ -154,7 +160,10 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 _context.expenseUW.Create(expense);
-                _context.Save();
+                await _context.SaveAsync();
+
+                // صدور خودکار سند شناسایی هزینه پروژه
+                await _accountingService.CreateVoucherForExpenseAsync(expense);
 
                 // منطق ثبت پرداخت خودکار بر اساس وضعیت
                 var actualPaidAmount = model.PaymentStatus switch
@@ -179,7 +188,10 @@ namespace HSCrm.WebApi.Controllers
                         CreatedById = userId
                     };
                     _context.paymentUW.Create(payment);
-                    _context.Save();
+                    await _context.SaveAsync();
+
+                    // صدور خودکار سند پرداخت خزانه بابت هزینه
+                    await _accountingService.CreateVoucherForPaymentAsync(payment);
                 }
 
                 transaction.Commit();

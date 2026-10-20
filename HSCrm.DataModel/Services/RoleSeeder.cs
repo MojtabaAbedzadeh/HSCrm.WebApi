@@ -50,17 +50,27 @@ namespace HSCrm.DataModel.Services
         }
         public static async Task AssignPermissionsToRoles(ApplicationDbContext context)
         {
-            var ownerRole = await context.Roles.FirstAsync(r => r.Name == "Owner");
+            var targetRoles = await context.Roles
+                .Where(r => r.Name == "Owner" || r.Name == "Admin")
+                .ToListAsync();
 
             var permissions = await context.Permissions.ToListAsync();
+            var existingRolePermissions = await context.RolePermissions.ToListAsync();
 
-            foreach (var permission in permissions)
+            foreach (var role in targetRoles)
             {
-                context.RolePermissions.Add(new RolePermission
+                foreach (var permission in permissions)
                 {
-                    RoleId = ownerRole.Id,
-                    PermissionId = permission.Id
-                });
+                    var exists = existingRolePermissions.Any(rp => rp.RoleId == role.Id && rp.PermissionId == permission.Id);
+                    if (!exists)
+                    {
+                        context.RolePermissions.Add(new RolePermission
+                        {
+                            RoleId = role.Id,
+                            PermissionId = permission.Id
+                        });
+                    }
+                }
             }
         }
     }

@@ -87,7 +87,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("CreateSalesInvoice")]
         [Permission(Permissions.SalesInvoices.Create)]
-        public ApiResponse CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model)
+        public async Task<ApiResponse> CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model)
         {
             if (model.Items == null || model.Items.Count == 0) return new ApiResponse
             {
@@ -114,6 +114,7 @@ namespace HSCrm.WebApi.Controllers
                     };
                 }
 
+                decimal subtotal = model.Items.Sum(i => i.Quantity * i.UnitPrice);
                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
 
                 decimal finalTotal = itemsTotal - model.InvoiceDiscount + model.InvoiceTax;
@@ -129,6 +130,7 @@ namespace HSCrm.WebApi.Controllers
                     Number = model.InvoiceNumber,
                     IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
                     Status = model.Status,
+                    Subtotal = subtotal,
                     Discount = model.InvoiceDiscount,
                     Tax = model.InvoiceTax,
                     Total = finalTotal,
@@ -155,13 +157,13 @@ namespace HSCrm.WebApi.Controllers
                 }
 
                 _context.salesInvoiceUW.Create(invoice);
-                _context.Save();
+                await _context.SaveAsync();
 
                 if (invoice.Status == InvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForSalesInvoice(invoice);
-                    _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
-                    _context.Save();
+                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
+                    await _context.SaveAsync();
                 }
 
                 transaction.Commit();
@@ -244,7 +246,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPut("UpdateInvoice")]
         [Permission(Permissions.SalesInvoices.Edit)]
-        public ApiResponse Update([FromBody] SalesInvoiceEditModel model)
+        public async Task<ApiResponse> Update([FromBody] SalesInvoiceEditModel model)
         {
             using var tr = _context.BeginTransaction();
             try
@@ -266,13 +268,19 @@ namespace HSCrm.WebApi.Controllers
                 if (oldStatus == InvoiceStatus.Final)
                 {
                     _inventory.RollbackInventory(invoice);
+                    await _accountingService.CancelVoucherByReferenceAsync(
+                        AccountingReferenceType.SalesInvoice,
+                        invoice.Id,
+                        "ویرایش فاکتور فروش");
                 }
 
                 _context.salesInvoiceItemUW.DeleteByRange(x => x.SalesInvoiceId == invoice.Id);
                 invoice.Items.Clear();
 
+                decimal subtotal = 0m;
                 foreach (var item in model.Items)
                 {
+                    subtotal += item.UnitPrice * item.Quantity;
                     invoice.Items.Add(new SalesInvoiceItem
                     {
                         ProductId = item.ProductId,
@@ -285,15 +293,18 @@ namespace HSCrm.WebApi.Controllers
                     });
                 }
 
+                invoice.Subtotal = subtotal;
+                invoice.Total = subtotal - invoice.Discount + invoice.Tax;
                 invoice.Status = newStatus;
                 invoice.IssueDate = model.IssueDate;
 
-                _context.Save();
+                await _context.SaveAsync();
 
                 if (newStatus == InvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForSalesInvoice(invoice);
-                    _context.Save();
+                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
+                    await _context.SaveAsync();
                 }
 
                 tr.Commit();
@@ -377,6 +388,7 @@ namespace HSCrm.WebApi.Controllers
 
                 invoice.Status = InvoiceStatus.Final;
 
+                await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
                 await _context.SaveAsync();
                 tran.Commit();
 

@@ -21,7 +21,10 @@ namespace HSCrm.DataModel.Services
             await PermissionSeeder.SeedAsync(context);
 
             // 2) Seed roles
-            await RoleSeeder.SeedRolesAsync(context);
+            if (!await context.Roles.AnyAsync())
+            {
+                await RoleSeeder.SeedRolesAsync(context);
+            }
 
             // 3) Make sure required roles exist even if Roles table was partially seeded
             await EnsureRoleExistsAsync(roleManager, "Admin");
@@ -29,11 +32,8 @@ namespace HSCrm.DataModel.Services
             await EnsureRoleExistsAsync(roleManager, "User");
             await EnsureRoleExistsAsync(roleManager, "Customer");
 
-            // 4) Seed role-permissions
-            if (!await context.RolePermissions.AnyAsync())
-            {
-                await RoleSeeder.AssignPermissionsToRoles(context);
-            }
+            // 4) Seed new role-permissions incrementally for Owner and Admin
+            await RoleSeeder.AssignPermissionsToRoles(context);
 
             // 5) If there is a tenant, seed fiscal year safely
             const string adminUserId = "28dfc395-0464-4b47-8aae-c73953a9d153";
