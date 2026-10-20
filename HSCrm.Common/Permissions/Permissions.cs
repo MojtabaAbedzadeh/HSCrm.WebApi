@@ -166,4 +166,26 @@ public static class Permissions
         public const string Edit = "Permissions.Receipt.Edit";
         public const string Delete = "Permissions.Receipt.Delete";
     }
+
+    public static class AccountingAccounts
+    {
+        public const string View = "Permissions.AccountingAccounts.View";
+        public const string Create = "Permissions.AccountingAccounts.Create";
+        public const string Edit = "Permissions.AccountingAccounts.Edit";
+        public const string Delete = "Permissions.AccountingAccounts.Delete";
+    }
+
+    public static class JournalVouchers
+    {
+        public const string View = "Permissions.JournalVouchers.View";
+        public const string Create = "Permissions.JournalVouchers.Create";
+        public const string Edit = "Permissions.JournalVouchers.Edit";
+        public const string Delete = "Permissions.JournalVouchers.Delete";
+        public const string Approve = "Permissions.JournalVouchers.Approve"; // قطعی‌سازی سند
+    }
+
+    public static class AccountingReports
+    {
+        public const string View = "Permissions.AccountingReports.View";
+    }
 }

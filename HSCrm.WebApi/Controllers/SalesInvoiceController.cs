@@ -20,13 +20,15 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly IInventoryService _inventory;
+        private readonly IAccountingService _accountingService;
         private readonly IPaymentSettlementService _paymentSettlementService;
 
-        public SalesInvoiceController(IUnitOfWork context, IInventoryService inventory, IPaymentSettlementService paymentSettlementService)
+        public SalesInvoiceController(IUnitOfWork context, IInventoryService inventory, IPaymentSettlementService paymentSettlementService, IAccountingService accountingService)
         {
             _context = context;
             _inventory = inventory;
             _paymentSettlementService = paymentSettlementService;
+            _accountingService = accountingService;
         }
 
         [HttpGet("SettlementSummary/{id}")]
@@ -158,6 +160,7 @@ namespace HSCrm.WebApi.Controllers
                 if (invoice.Status == InvoiceStatus.Final)
                 {
                     _inventory.ApplyInventoryForSalesInvoice(invoice);
+                    _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
                     _context.Save();
                 }
 

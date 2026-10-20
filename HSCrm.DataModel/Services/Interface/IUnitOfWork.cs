@@ -27,6 +27,9 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<UserRole> userRoleUW{ get; }
         GenericCRUDClass<Permission> permissionUW{ get; }
         GenericCRUDClass<RolePermission> rolePermissionUW{ get; }
+        GenericCRUDClass<AccountingAccount> accountingAccountUW { get; }
+        GenericCRUDClass<JournalVoucher> journalVoucherUW { get; }
+        GenericCRUDClass<JournalVoucherItem> journalVoucherItemUW { get; }
 
         IEntityTransaction BeginTransaction();
         Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default);

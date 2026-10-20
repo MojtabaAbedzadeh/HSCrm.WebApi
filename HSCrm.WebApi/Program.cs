@@ -69,6 +69,8 @@ builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<ICurrentFiscalYearService, CurrentFiscalYearService>();
 builder.Services.AddScoped<IPaymentSettlementService, PaymentSettlementService>();
+builder.Services.AddScoped<IAccountingService, AccountingService>();
+
 
 // ۶. مپ کردن پروفایل‌های AutoMapper
 builder.Services.AddAutoMapper(typeof(Program));

@@ -2,6 +2,7 @@
 using Framework.Authorization;
 using HSCrm.DataModel.Exceptions;
 using HSCrm.DataModel.Services.Interface;
+using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.Extensions;
@@ -21,17 +22,19 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly IInventoryService _inventory;
+        private readonly IAccountingService _accountingService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly IPaymentSettlementService _paymentSettlementService;
         private readonly ILogger<PurchaseInvoiceController> _logger;
 
-        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService, IPaymentSettlementService paymentSettlementService, ILogger<PurchaseInvoiceController> logger)
+        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService, IPaymentSettlementService paymentSettlementService, ILogger<PurchaseInvoiceController> logger, IAccountingService accountingService)
         {
             _context = context;
             _inventory = inventory;
             _currentFiscalYearService = currentFiscalYearService;
             _paymentSettlementService = paymentSettlementService;
             _logger = logger;
+            _accountingService = accountingService;
         }
 
 
@@ -332,6 +335,7 @@ namespace HSCrm.WebApi.Controllers
                     if (invoice.Status == InvoiceStatus.Final)
                     {
                         await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
+                        await _accountingService.CreateVoucherForPurchaseInvoiceAsync(invoice);
                         await _context.SaveAsync();
                     }
 

@@ -18,16 +18,10 @@ namespace HSCrm.DataModel.Services
             await context.Database.MigrateAsync();
 
             // 1) Seed permissions
-            if (!await context.Permissions.AnyAsync())
-            {
-                await PermissionSeeder.SeedAsync(context);
-            }
+            await PermissionSeeder.SeedAsync(context);
 
             // 2) Seed roles
-            if (!await context.Roles.AnyAsync())
-            {
-                await RoleSeeder.SeedRolesAsync(context);
-            }
+            await RoleSeeder.SeedRolesAsync(context);
 
             // 3) Make sure required roles exist even if Roles table was partially seeded
             await EnsureRoleExistsAsync(roleManager, "Admin");

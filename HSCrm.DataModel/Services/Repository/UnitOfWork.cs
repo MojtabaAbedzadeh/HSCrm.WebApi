@@ -36,6 +36,9 @@ namespace HSCrm.DataModel.Services.Repository
         private GenericCRUDClass<UserRole>? _userRole;
         private GenericCRUDClass<Permission>? _permission;
         private GenericCRUDClass<RolePermission>? _rolePermission;
+        private GenericCRUDClass<AccountingAccount>? _accountingAccount;
+        private GenericCRUDClass<JournalVoucher>? _journalVoucher;
+        private GenericCRUDClass<JournalVoucherItem>? _journalVoucherItem;
 
         public GenericCRUDClass<ApplicationUser> userManagerUW => _userManager ??= new GenericCRUDClass<ApplicationUser>(_context);
         public GenericCRUDClass<ApplicationRole> roleManagerUW => _roleManager ??= new GenericCRUDClass<ApplicationRole>(_context);
@@ -59,6 +62,9 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<UserRole> userRoleUW => _userRole??= new GenericCRUDClass<UserRole>(_context);
         public GenericCRUDClass<Permission> permissionUW => _permission ??= new GenericCRUDClass<Permission>(_context);
         public GenericCRUDClass<RolePermission> rolePermissionUW => _rolePermission ??= new GenericCRUDClass<RolePermission>(_context);
+        public GenericCRUDClass<AccountingAccount> accountingAccountUW => _accountingAccount ??= new GenericCRUDClass<AccountingAccount>(_context);
+        public GenericCRUDClass<JournalVoucher> journalVoucherUW => _journalVoucher ??= new GenericCRUDClass<JournalVoucher>(_context);
+        public GenericCRUDClass<JournalVoucherItem> journalVoucherItemUW => _journalVoucherItem ??= new GenericCRUDClass<JournalVoucherItem>(_context);
 
 
         public IEntityTransaction BeginTransaction()

@@ -41,6 +41,9 @@ namespace HSCrm.DataModel.Context
         public DbSet<Permission> Permissions { get; set; }
         public DbSet<RolePermission> RolePermissions { get; set; }
         public DbSet<UserRole> UserRoles { get; set; }
+        public DbSet<AccountingAccount> AccountingAccounts { get; set; }
+        public DbSet<JournalVoucher> JournalVouchers { get; set; }
+        public DbSet<JournalVoucherItem> JournalVoucherItems { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -226,6 +229,9 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<Inventory>(builder);
             ConfigureAuditedEntity<InventoryTransaction>(builder);
             ConfigureAuditedEntity<Permission>(builder);
+            ConfigureAuditedEntity<AccountingAccount>(builder);
+            ConfigureAuditedEntity<JournalVoucher>(builder);
+            ConfigureAuditedEntity<JournalVoucherItem>(builder);
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>(e =>
@@ -570,6 +576,68 @@ namespace HSCrm.DataModel.Context
                       .WithMany()
                       .HasForeignKey(x => x.FiscalYearId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<AccountingAccount>(entity =>
+            {
+                entity.Property(x => x.Code).HasMaxLength(30).IsRequired();
+                entity.Property(x => x.Title).HasMaxLength(200).IsRequired();
+
+                // کد حساب در هر شرکت (Tenant) باید یکتا باشد
+                entity.HasIndex(x => new { x.TenantId, x.Code }).IsUnique();
+
+                entity.HasOne(x => x.Parent)
+                      .WithMany(x => x.Children)
+                      .HasForeignKey(x => x.ParentId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(x => x.Tenant)
+                      .WithMany()
+                      .HasForeignKey(x => x.TenantId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<JournalVoucher>(entity =>
+            {
+                entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+                entity.Property(x => x.TotalDebit).HasPrecision(18, 2);
+                entity.Property(x => x.TotalCredit).HasPrecision(18, 2);
+
+                // شماره سند در هر شرکت و هر سال مالی یکتا است
+                entity.HasIndex(x => new { x.TenantId, x.FiscalYearId, x.VoucherNumber }).IsUnique();
+
+                entity.HasOne(x => x.FiscalYear)
+                      .WithMany()
+                      .HasForeignKey(x => x.FiscalYearId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(x => x.Tenant)
+                      .WithMany()
+                      .HasForeignKey(x => x.TenantId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<JournalVoucherItem>(entity =>
+            {
+                entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+                entity.Property(x => x.Debit).HasPrecision(18, 2);
+                entity.Property(x => x.Credit).HasPrecision(18, 2);
+
+                entity.HasOne(x => x.JournalVoucher)
+                      .WithMany(v => v.Items)
+                      .HasForeignKey(x => x.JournalVoucherId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(x => x.Account)
+                      .WithMany(a => a.VoucherItems)
+                      .HasForeignKey(x => x.AccountId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             });
         }
         private void ApplyFilters(ModelBuilder modelBuilder)

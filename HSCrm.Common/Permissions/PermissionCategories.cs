@@ -18,7 +18,10 @@
             new() { Key="PurchaseInvoices", TitleFa="فاکتورهای خرید", Icon="mdi mdi-file-document", Order=12 },
             new() { Key="SalesInvoices", TitleFa="فاکتورهای فروش", Icon="mdi mdi-file-document-outline", Order=13 },
             new() { Key="FiscalYears", TitleFa="سال‌های مالی", Icon="mdi mdi-calendar", Order=14 },
-            new() { Key="Tenants", TitleFa="شرکت‌ها", Icon="mdi mdi-domain", Order=15 }
+            new() { Key="Tenants", TitleFa="شرکت‌ها", Icon="mdi mdi-domain", Order=15 },
+            new() { Key="AccountingAccounts", TitleFa="کدینگ حسابداری", Icon="mdi mdi-domain", Order=16 },
+            new() { Key="JournalVouchers", TitleFa="اسناد حسابداری", Icon="mdi mdi-domain", Order=17 },
+            new() { Key="AccountingReports", TitleFa="گزارشات مالی و دفاتر", Icon="mdi mdi-domain", Order=18 }
         };
 
         public static PermissionCategory Get(string key)
