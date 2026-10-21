@@ -458,6 +458,130 @@ namespace HSCrm.DataModel.Migrations
                     b.ToTable("BankAccounts", (string)null);
                 });
 
+            modelBuilder.Entity("HSCrm.Entities.Entities.Cheque", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("BankAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("BranchName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("ChequeNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedById")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeletedById")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("DrawerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("EndorsedToSupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FiscalYearId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("IssueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedById")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SayadiId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTime?>("StatusChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("int");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("tinyint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BankAccountId");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("EndorsedToSupplierId");
+
+                    b.HasIndex("FiscalYearId");
+
+                    b.HasIndex("ModifiedById");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.HasIndex("TenantId", "Type", "Status", "DueDate");
+
+                    b.ToTable("Cheques", (string)null);
+                });
+
             modelBuilder.Entity("HSCrm.Entities.Entities.Customer", b =>
                 {
                     b.Property<int>("Id")
@@ -2306,6 +2430,74 @@ namespace HSCrm.DataModel.Migrations
                     b.Navigation("CreatedBy");
 
                     b.Navigation("ModifiedBy");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("HSCrm.Entities.Entities.Cheque", b =>
+                {
+                    b.HasOne("HSCrm.Entities.Entities.BankAccount", "BankAccount")
+                        .WithMany()
+                        .HasForeignKey("BankAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.Supplier", "EndorsedToSupplier")
+                        .WithMany()
+                        .HasForeignKey("EndorsedToSupplierId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.FiscalYear", "FiscalYear")
+                        .WithMany()
+                        .HasForeignKey("FiscalYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HSCrm.Entities.Entities.ApplicationUser", "ModifiedBy")
+                        .WithMany()
+                        .HasForeignKey("ModifiedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HSCrm.Entities.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BankAccount");
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("EndorsedToSupplier");
+
+                    b.Navigation("FiscalYear");
+
+                    b.Navigation("ModifiedBy");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Supplier");
 
                     b.Navigation("Tenant");
                 });

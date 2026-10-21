@@ -235,6 +235,8 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<JournalVoucher>(builder);
             ConfigureAuditedEntity<JournalVoucherItem>(builder);
             ConfigureAuditedEntity<BankAccount>(builder);
+            ConfigureAuditedEntity<Cheque>(builder);
+
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>(e =>

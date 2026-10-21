@@ -69,6 +69,7 @@ namespace HSCrm.DataModel.Seeders
                 "Delete" => "حذف",
                 "Approve" => "تأیید",
                 "Reject" => "رد",
+                "ChangeStatus" => "تغییر وضعیت",
                 _ => action
             };
 
