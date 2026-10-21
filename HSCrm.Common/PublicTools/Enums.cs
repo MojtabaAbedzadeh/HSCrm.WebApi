@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 
 namespace HSCrm.Common.PublicTools
@@ -20,9 +20,11 @@ namespace HSCrm.Common.PublicTools
         {
             PurchaseInvoice = 0,
             PurchaseInvoiceItem = 1,
-            SalesInvoice= 2,
+            SalesInvoice = 2,
             SalesInvoiceItem = 3,
-            Adjustment = 4
+            Adjustment = 4,
+            SalesReturnInvoice = 5,
+            PurchaseReturnInvoice = 6
         }
         public enum InvoiceStatus : byte
         {
@@ -113,9 +115,6 @@ namespace HSCrm.Common.PublicTools
         }
 
         /// <summary>
-        /// منشأ صدور سند حسابداری (دستی یا خودکار از زیرسیستم‌های HSCrm)
-        /// </summary>
-        /// <summary>
         /// روش قیمت‌گذاری موجودی انبار و محاسبه بهای تمام‌شده کالای فروش‌رفته (COGS)
         /// </summary>
         public enum InventoryCostingMethod : byte
@@ -163,6 +162,9 @@ namespace HSCrm.Common.PublicTools
             Returned = 6
         }
 
+        /// <summary>
+        /// منشأ صدور سند حسابداری (دستی یا خودکار از زیرسیستم‌های HSCrm)
+        /// </summary>
         public enum AccountingReferenceType : byte
         {
             [Display(Name = "سند دستی")]
@@ -190,7 +192,13 @@ namespace HSCrm.Common.PublicTools
             ClosingBalance = 8,
 
             [Display(Name = "عملیات چک و اسناد تجاری")]
-            ChequeOperation = 9
+            ChequeOperation = 9,
+
+            [Display(Name = "فاکتور برگشت از فروش")]
+            SalesReturnInvoice = 10,
+
+            [Display(Name = "فاکتور برگشت از خرید")]
+            PurchaseReturnInvoice = 11
         }
     }
 }

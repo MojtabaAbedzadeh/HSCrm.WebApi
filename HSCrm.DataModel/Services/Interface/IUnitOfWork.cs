@@ -1,4 +1,4 @@
-﻿using HSCrm.DataModel.Services.Repository;
+using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
 
 namespace HSCrm.DataModel.Services.Interface
@@ -32,6 +32,10 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<JournalVoucherItem> journalVoucherItemUW { get; }
         GenericCRUDClass<BankAccount> bankAccountUW { get; }
         GenericCRUDClass<Cheque> chequeUW { get; }
+        GenericCRUDClass<SalesReturnInvoice> salesReturnInvoiceUW { get; }
+        GenericCRUDClass<SalesReturnInvoiceItem> salesReturnInvoiceItemUW { get; }
+        GenericCRUDClass<PurchaseReturnInvoice> purchaseReturnInvoiceUW { get; }
+        GenericCRUDClass<PurchaseReturnInvoiceItem> purchaseReturnInvoiceItemUW { get; }
 
         IEntityTransaction BeginTransaction();
         Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default);

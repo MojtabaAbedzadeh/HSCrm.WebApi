@@ -1,4 +1,4 @@
-﻿using HSCrm.DataModel.Context;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 
@@ -41,6 +41,10 @@ namespace HSCrm.DataModel.Services.Repository
         private GenericCRUDClass<JournalVoucherItem>? _journalVoucherItem;
         private GenericCRUDClass<BankAccount>? _bankAccount;
         private GenericCRUDClass<Cheque>? _cheque;
+        private GenericCRUDClass<SalesReturnInvoice>? _salesReturnInvoice;
+        private GenericCRUDClass<SalesReturnInvoiceItem>? _salesReturnInvoiceItem;
+        private GenericCRUDClass<PurchaseReturnInvoice>? _purchaseReturnInvoice;
+        private GenericCRUDClass<PurchaseReturnInvoiceItem>? _purchaseReturnInvoiceItem;
 
         public GenericCRUDClass<ApplicationUser> userManagerUW => _userManager ??= new GenericCRUDClass<ApplicationUser>(_context);
         public GenericCRUDClass<ApplicationRole> roleManagerUW => _roleManager ??= new GenericCRUDClass<ApplicationRole>(_context);
@@ -69,6 +73,10 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<JournalVoucherItem> journalVoucherItemUW => _journalVoucherItem ??= new GenericCRUDClass<JournalVoucherItem>(_context);
         public GenericCRUDClass<BankAccount> bankAccountUW => _bankAccount ??= new GenericCRUDClass<BankAccount>(_context);
         public GenericCRUDClass<Cheque> chequeUW => _cheque ??= new GenericCRUDClass<Cheque>(_context);
+        public GenericCRUDClass<SalesReturnInvoice> salesReturnInvoiceUW => _salesReturnInvoice ??= new GenericCRUDClass<SalesReturnInvoice>(_context);
+        public GenericCRUDClass<SalesReturnInvoiceItem> salesReturnInvoiceItemUW => _salesReturnInvoiceItem ??= new GenericCRUDClass<SalesReturnInvoiceItem>(_context);
+        public GenericCRUDClass<PurchaseReturnInvoice> purchaseReturnInvoiceUW => _purchaseReturnInvoice ??= new GenericCRUDClass<PurchaseReturnInvoice>(_context);
+        public GenericCRUDClass<PurchaseReturnInvoiceItem> purchaseReturnInvoiceItemUW => _purchaseReturnInvoiceItem ??= new GenericCRUDClass<PurchaseReturnInvoiceItem>(_context);
 
 
         public IEntityTransaction BeginTransaction()

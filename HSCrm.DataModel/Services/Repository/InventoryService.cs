@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -207,6 +207,9 @@ namespace HSCrm.DataModel.Services.Repository
         /// <summary>
         /// ورود کالا به انبار بابت فاکتور خرید + بروزرسانی خودکار نرخ میانگین موزون متحرک و ثبت لایه FIFO
         /// </summary>
+        public Task ApplyPurchaseInvoice(PurchaseInvoice invoice)
+            => ApplyInventoryForPurchaseInvoice(invoice);
+
         public async Task ApplyInventoryForPurchaseInvoice(PurchaseInvoice invoice)
         {
             if (invoice == null || invoice.Items == null || !invoice.Items.Any())
@@ -275,6 +278,283 @@ namespace HSCrm.DataModel.Services.Repository
                     TransactionType = InventoryTransactionType.Purchase,
                     ReferenceId = invoice.Id,
                     ReferenceType = InventoryReferenceType.PurchaseInvoice
+                });
+            }
+        }
+
+        /// <summary>
+        /// ورود مجدد کالا به انبار بابت فاکتور برگشت از فروش + بازنگری میانگین موزون و لایه FIFO + ثبت بهای تمام‌شده برگشتی
+        /// </summary>
+        public async Task ApplyInventoryForSalesReturnAsync(SalesReturnInvoice returnInvoice, CancellationToken ct = default)
+        {
+            if (returnInvoice == null || returnInvoice.Items == null || !returnInvoice.Items.Any())
+                return;
+
+            if (returnInvoice.Status != InvoiceStatus.Final)
+                return;
+
+            List<SalesInvoiceItem> originalSaleItems = new();
+            if (returnInvoice.SalesInvoiceId.HasValue && returnInvoice.SalesInvoiceId.Value > 0)
+            {
+                originalSaleItems = await _context.SalesInvoiceItems
+                    .AsNoTracking()
+                    .Where(x => x.SalesInvoiceId == returnInvoice.SalesInvoiceId.Value && !x.IsDeleted)
+                    .ToListAsync(ct);
+            }
+
+            foreach (var item in returnInvoice.Items)
+            {
+                var inventory = await _context.Inventories.FirstOrDefaultAsync(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == returnInvoice.TenantId &&
+                    x.WarehouseId == returnInvoice.WarehouseId, ct);
+
+                if (inventory == null)
+                {
+                    inventory = new Inventory
+                    {
+                        ProductId = item.ProductId,
+                        TenantId = returnInvoice.TenantId,
+                        WarehouseId = returnInvoice.WarehouseId,
+                        CreatedAt = DateTime.UtcNow,
+                        Quantity = 0,
+                        AverageUnitCost = 0
+                    };
+                    await _context.Inventories.AddAsync(inventory, ct);
+                }
+
+                // تعیین نرخ بهای تمام‌شده کالای برگشتی از فروش:
+                // ۱. اگر فاکتور فروش مرجع انتخاب شده و بهای تمام‌شده (UnitCost) دارد، دقیقاً با همان نرخ به انبار برمی‌گردد
+                // ۲. در غیر این صورت از نرخ میانگین موزون فعلی انبار (یا نرخ ارسالی) استفاده می‌شود
+                var matchedOriginal = originalSaleItems.FirstOrDefault(x => x.ProductId == item.ProductId && x.UnitCost > 0);
+                decimal returnUnitCost = matchedOriginal != null
+                    ? matchedOriginal.UnitCost
+                    : (item.UnitCost > 0 ? item.UnitCost : (inventory.AverageUnitCost > 0 ? inventory.AverageUnitCost : item.UnitPriceReturn));
+
+                decimal returnTotalCost = Math.Round(item.Quantity * returnUnitCost, 2);
+
+                item.UnitCost = returnUnitCost;
+                item.TotalCost = returnTotalCost;
+
+                decimal existingVal = Math.Max(0m, inventory.Quantity) * inventory.AverageUnitCost;
+                decimal newQty = inventory.Quantity + item.Quantity;
+
+                if (newQty > 0)
+                {
+                    inventory.AverageUnitCost = Math.Round((existingVal + returnTotalCost) / newQty, 2);
+                }
+                else
+                {
+                    inventory.AverageUnitCost = returnUnitCost;
+                }
+
+                inventory.Quantity = newQty;
+
+                await _context.InventoryTransactions.AddAsync(new InventoryTransaction
+                {
+                    FiscalYearId = returnInvoice.FiscalYearId,
+                    WarehouseId = returnInvoice.WarehouseId,
+                    TenantId = returnInvoice.TenantId,
+                    ProductId = item.ProductId,
+                    CreatedAt = DateTime.UtcNow,
+                    QuantityChange = item.Quantity,
+                    UnitCost = returnUnitCost,
+                    TotalCost = returnTotalCost,
+                    RemainingFifoQuantity = item.Quantity,
+                    Description = $"ورود مجدد به انبار بابت فاکتور برگشت از فروش شماره {returnInvoice.Number}",
+                    TransactionType = InventoryTransactionType.ReturnSale,
+                    ReferenceId = returnInvoice.Id,
+                    ReferenceType = InventoryReferenceType.SalesReturnInvoice
+                }, ct);
+            }
+        }
+
+        /// <summary>
+        /// ابطال فاکتور برگشت از فروش (کسر مجدد کالا از انبار)
+        /// </summary>
+        public void RollbackInventoryForSalesReturn(SalesReturnInvoice returnInvoice)
+        {
+            if (returnInvoice == null || returnInvoice.Items == null || !returnInvoice.Items.Any())
+                return;
+
+            if (returnInvoice.Status != InvoiceStatus.Final)
+                return;
+
+            foreach (var item in returnInvoice.Items)
+            {
+                var inventory = _context.Inventories.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == returnInvoice.TenantId &&
+                    x.WarehouseId == returnInvoice.WarehouseId);
+
+                if (inventory == null || inventory.Quantity < item.Quantity)
+                    throw new InvalidOperationException("موجودی انبار برای ابطال فاکتور برگشت از فروش کافی نیست.");
+
+                decimal unitCost = item.UnitCost > 0 ? item.UnitCost : inventory.AverageUnitCost;
+                decimal totalCost = item.TotalCost > 0 ? item.TotalCost : Math.Round(item.Quantity * unitCost, 2);
+
+                decimal existingVal = inventory.Quantity * inventory.AverageUnitCost;
+                decimal newQty = inventory.Quantity - item.Quantity;
+                if (newQty > 0)
+                {
+                    decimal remVal = Math.Max(0m, existingVal - totalCost);
+                    inventory.AverageUnitCost = Math.Round(remVal / newQty, 2);
+                }
+
+                inventory.Quantity = newQty;
+
+                _context.InventoryTransactions.Add(new InventoryTransaction
+                {
+                    FiscalYearId = returnInvoice.FiscalYearId,
+                    WarehouseId = returnInvoice.WarehouseId,
+                    TenantId = returnInvoice.TenantId,
+                    ProductId = item.ProductId,
+                    CreatedAt = DateTime.UtcNow,
+                    QuantityChange = -item.Quantity,
+                    UnitCost = unitCost,
+                    TotalCost = totalCost,
+                    RemainingFifoQuantity = 0,
+                    Description = $"خروج از انبار بابت ابطال فاکتور برگشت از فروش شماره {returnInvoice.Number}",
+                    TransactionType = InventoryTransactionType.Sale,
+                    ReferenceId = returnInvoice.Id,
+                    ReferenceType = InventoryReferenceType.SalesReturnInvoice
+                });
+            }
+        }
+
+        /// <summary>
+        /// خروج کالا از انبار بابت فاکتور برگشت از خرید (عودت کالا به تأمین‌کننده) + اصلاح میانگین موزون و لایه‌های FIFO
+        /// </summary>
+        public async Task ApplyInventoryForPurchaseReturnAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct = default)
+        {
+            if (returnInvoice == null || returnInvoice.Items == null || !returnInvoice.Items.Any())
+                return;
+
+            if (returnInvoice.Status != InvoiceStatus.Final)
+                return;
+
+            foreach (var item in returnInvoice.Items)
+            {
+                var inventory = await _context.Inventories.FirstOrDefaultAsync(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == returnInvoice.TenantId &&
+                    x.WarehouseId == returnInvoice.WarehouseId, ct);
+
+                if (inventory == null || inventory.Quantity < item.Quantity)
+                    throw new InvalidOperationException("موجودی انبار برای ثبت فاکتور برگشت از خرید کافی نیست.");
+
+                decimal grossReturn = item.Quantity * item.UnitPriceReturn;
+                decimal netLineReturn = Math.Max(0m, grossReturn - (item.Discount ?? 0m));
+                decimal returnUnitCost = item.Quantity > 0
+                    ? Math.Round(netLineReturn / item.Quantity, 2)
+                    : item.UnitPriceReturn;
+
+                decimal existingVal = inventory.Quantity * inventory.AverageUnitCost;
+                decimal newQty = inventory.Quantity - item.Quantity;
+
+                if (newQty > 0)
+                {
+                    decimal remainingVal = Math.Max(0m, existingVal - netLineReturn);
+                    inventory.AverageUnitCost = Math.Round(remainingVal / newQty, 2);
+                }
+
+                inventory.Quantity = newQty;
+
+                // کسر از لایه‌های باز FIFO (ابتدا لایه فاکتور خرید مرجع در صورت وجود، سپس قدیمی‌ترین لایه‌ها)
+                var openLayers = await _context.InventoryTransactions
+                    .Where(x => x.TenantId == returnInvoice.TenantId
+                             && x.WarehouseId == returnInvoice.WarehouseId
+                             && x.ProductId == item.ProductId
+                             && x.QuantityChange > 0
+                             && x.RemainingFifoQuantity > 0
+                             && !x.IsDeleted)
+                    .OrderByDescending(x => returnInvoice.PurchaseInvoiceId.HasValue
+                                         && x.ReferenceType == InventoryReferenceType.PurchaseInvoice
+                                         && x.ReferenceId == returnInvoice.PurchaseInvoiceId.Value)
+                    .ThenBy(x => x.CreatedAt)
+                    .ThenBy(x => x.Id)
+                    .ToListAsync(ct);
+
+                decimal remToReduce = item.Quantity;
+                foreach (var layer in openLayers)
+                {
+                    if (remToReduce <= 0) break;
+                    decimal take = Math.Min(remToReduce, layer.RemainingFifoQuantity);
+                    layer.RemainingFifoQuantity -= take;
+                    remToReduce -= take;
+                }
+
+                await _context.InventoryTransactions.AddAsync(new InventoryTransaction
+                {
+                    FiscalYearId = returnInvoice.FiscalYearId,
+                    WarehouseId = returnInvoice.WarehouseId,
+                    TenantId = returnInvoice.TenantId,
+                    ProductId = item.ProductId,
+                    CreatedAt = DateTime.UtcNow,
+                    QuantityChange = -item.Quantity,
+                    UnitCost = returnUnitCost,
+                    TotalCost = netLineReturn,
+                    RemainingFifoQuantity = 0,
+                    Description = $"خروج از انبار بابت فاکتور برگشت از خرید شماره {returnInvoice.Number}",
+                    TransactionType = InventoryTransactionType.ReturnPurchase,
+                    ReferenceId = returnInvoice.Id,
+                    ReferenceType = InventoryReferenceType.PurchaseReturnInvoice
+                }, ct);
+            }
+        }
+
+        /// <summary>
+        /// ابطال فاکتور برگشت از خرید (ورود مجدد کالا به انبار)
+        /// </summary>
+        public void RollbackInventoryForPurchaseReturn(PurchaseReturnInvoice returnInvoice)
+        {
+            if (returnInvoice == null || returnInvoice.Items == null || !returnInvoice.Items.Any())
+                return;
+
+            if (returnInvoice.Status != InvoiceStatus.Final)
+                return;
+
+            foreach (var item in returnInvoice.Items)
+            {
+                var inventory = _context.Inventories.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == returnInvoice.TenantId &&
+                    x.WarehouseId == returnInvoice.WarehouseId);
+
+                if (inventory == null)
+                    throw new InvalidOperationException("رکورد موجودی انبار برای ابطال برگشت از خرید یافت نشد.");
+
+                decimal grossReturn = item.Quantity * item.UnitPriceReturn;
+                decimal netLineReturn = Math.Max(0m, grossReturn - (item.Discount ?? 0m));
+                decimal returnUnitCost = item.Quantity > 0
+                    ? Math.Round(netLineReturn / item.Quantity, 2)
+                    : item.UnitPriceReturn;
+
+                decimal existingVal = Math.Max(0m, inventory.Quantity) * inventory.AverageUnitCost;
+                decimal newQty = inventory.Quantity + item.Quantity;
+
+                if (newQty > 0)
+                {
+                    inventory.AverageUnitCost = Math.Round((existingVal + netLineReturn) / newQty, 2);
+                }
+
+                inventory.Quantity = newQty;
+
+                _context.InventoryTransactions.Add(new InventoryTransaction
+                {
+                    FiscalYearId = returnInvoice.FiscalYearId,
+                    WarehouseId = returnInvoice.WarehouseId,
+                    TenantId = returnInvoice.TenantId,
+                    ProductId = item.ProductId,
+                    CreatedAt = DateTime.UtcNow,
+                    QuantityChange = item.Quantity,
+                    UnitCost = returnUnitCost,
+                    TotalCost = netLineReturn,
+                    RemainingFifoQuantity = item.Quantity,
+                    Description = $"ورود مجدد به انبار بابت ابطال فاکتور برگشت از خرید شماره {returnInvoice.Number}",
+                    TransactionType = InventoryTransactionType.Purchase,
+                    ReferenceId = returnInvoice.Id,
+                    ReferenceType = InventoryReferenceType.PurchaseReturnInvoice
                 });
             }
         }

@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;
@@ -46,6 +46,10 @@ namespace HSCrm.DataModel.Context
         public DbSet<JournalVoucherItem> JournalVoucherItems { get; set; }
         public DbSet<BankAccount> BankAccounts { get; set; }
         public DbSet<Cheque> Cheques { get; set; }
+        public DbSet<SalesReturnInvoice> SalesReturnInvoices { get; set; }
+        public DbSet<SalesReturnInvoiceItem> SalesReturnInvoiceItems { get; set; }
+        public DbSet<PurchaseReturnInvoice> PurchaseReturnInvoices { get; set; }
+        public DbSet<PurchaseReturnInvoiceItem> PurchaseReturnInvoiceItems { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -236,7 +240,10 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<JournalVoucherItem>(builder);
             ConfigureAuditedEntity<BankAccount>(builder);
             ConfigureAuditedEntity<Cheque>(builder);
-
+            ConfigureAuditedEntity<SalesReturnInvoice>(builder);
+            ConfigureAuditedEntity<SalesReturnInvoiceItem>(builder);
+            ConfigureAuditedEntity<PurchaseReturnInvoice>(builder);
+            ConfigureAuditedEntity<PurchaseReturnInvoiceItem>(builder);
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>(e =>
@@ -697,6 +704,152 @@ namespace HSCrm.DataModel.Context
                 entity.HasOne(x => x.BankAccount).WithMany().HasForeignKey(x => x.BankAccountId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(x => x.EndorsedToSupplier).WithMany().HasForeignKey(x => x.EndorsedToSupplierId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ========= SalesReturnInvoice =========
+            builder.Entity<SalesReturnInvoice>(e =>
+            {
+                e.ToTable("SalesReturnInvoices");
+
+                e.Property(x => x.Number).IsRequired().HasMaxLength(64);
+                e.Property(x => x.Subtotal).HasPrecision(18, 2);
+                e.Property(x => x.Tax).HasPrecision(18, 2);
+                e.Property(x => x.Discount).HasPrecision(18, 2);
+                e.Property(x => x.Total).HasPrecision(18, 2);
+                e.Property(x => x.Status).HasConversion<byte>().HasDefaultValue(InvoiceStatus.Proforma);
+
+                e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+
+                e.HasOne(x => x.SalesInvoice)
+                 .WithMany()
+                 .HasForeignKey(x => x.SalesInvoiceId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Project)
+                 .WithMany()
+                 .HasForeignKey(x => x.ProjectId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Warehouse)
+                 .WithMany()
+                 .HasForeignKey(x => x.WarehouseId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.User)
+                 .WithMany()
+                 .HasForeignKey(x => x.SellerUserId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.FiscalYear)
+                 .WithMany()
+                 .HasForeignKey(x => x.FiscalYearId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ========= SalesReturnInvoiceItem =========
+            builder.Entity<SalesReturnInvoiceItem>(e =>
+            {
+                e.ToTable("SalesReturnInvoiceItems");
+
+                e.HasOne(d => d.SalesReturnInvoice)
+                 .WithMany(f => f.Items)
+                 .HasForeignKey(d => d.SalesReturnInvoiceId)
+                 .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasOne(d => d.Product)
+                 .WithMany()
+                 .HasForeignKey(d => d.ProductId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(d => d.Tenant)
+                 .WithMany()
+                 .HasForeignKey(d => d.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.Property(d => d.Quantity).HasPrecision(18, 3);
+                e.Property(d => d.UnitPriceReturn).HasPrecision(18, 2);
+                e.Property(d => d.Discount).HasPrecision(18, 2);
+                e.Property(d => d.Tax).HasPrecision(18, 2);
+                e.Property(d => d.LineTotal).HasPrecision(18, 2);
+                e.Property(d => d.UnitCost).HasPrecision(18, 2);
+                e.Property(d => d.TotalCost).HasPrecision(18, 2);
+            });
+
+            // ========= PurchaseReturnInvoice =========
+            builder.Entity<PurchaseReturnInvoice>(e =>
+            {
+                e.ToTable("PurchaseReturnInvoices");
+
+                e.Property(x => x.Number).IsRequired().HasMaxLength(64);
+                e.Property(x => x.Subtotal).HasPrecision(18, 2);
+                e.Property(x => x.Tax).HasPrecision(18, 2);
+                e.Property(x => x.Discount).HasPrecision(18, 2);
+                e.Property(x => x.Total).HasPrecision(18, 2);
+                e.Property(x => x.Status).HasConversion<byte>().HasDefaultValue(InvoiceStatus.Proforma);
+
+                e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+
+                e.HasOne(x => x.PurchaseInvoice)
+                 .WithMany()
+                 .HasForeignKey(x => x.PurchaseInvoiceId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Supplier)
+                 .WithMany()
+                 .HasForeignKey(x => x.SupplierId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Warehouse)
+                 .WithMany()
+                 .HasForeignKey(x => x.WarehouseId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.User)
+                 .WithMany()
+                 .HasForeignKey(x => x.PurchaserUserId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.FiscalYear)
+                 .WithMany()
+                 .HasForeignKey(x => x.FiscalYearId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ========= PurchaseReturnInvoiceItem =========
+            builder.Entity<PurchaseReturnInvoiceItem>(e =>
+            {
+                e.ToTable("PurchaseReturnInvoiceItems");
+
+                e.HasOne(d => d.PurchaseReturnInvoice)
+                 .WithMany(f => f.Items)
+                 .HasForeignKey(d => d.PurchaseReturnInvoiceId)
+                 .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasOne(d => d.Product)
+                 .WithMany()
+                 .HasForeignKey(d => d.ProductId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(d => d.Tenant)
+                 .WithMany()
+                 .HasForeignKey(d => d.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.Property(d => d.Quantity).HasPrecision(18, 3);
+                e.Property(d => d.UnitPriceReturn).HasPrecision(18, 2);
+                e.Property(d => d.Discount).HasPrecision(18, 2);
+                e.Property(d => d.Tax).HasPrecision(18, 2);
+                e.Property(d => d.LineTotal).HasPrecision(18, 2);
             });
         }
         private void ApplyFilters(ModelBuilder modelBuilder)

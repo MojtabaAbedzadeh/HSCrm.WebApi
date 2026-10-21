@@ -1,4 +1,4 @@
-﻿using HSCrm.Entities.Entities;
+using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using static HSCrm.Common.PublicTools.Enums;
 
@@ -99,5 +99,15 @@ namespace HSCrm.DataModel.Services.Interface
         /// موتور محاسبه راس‌گیری چک‌های دریافتنی و پرداختنی (میانگین موزون زمانی و ریالی سررسید چک‌ها + تاریخ راس دقیق به شمسی)
         /// </summary>
         Task<ChequeRasGiriResultDto> CalculateChequesRasGiriAsync(ChequeRasGiriRequestModel model, CancellationToken ct = default);
+
+        /// <summary>
+        /// صدور خودکار سند حسابداری دوبل برای فاکتور برگشت از فروش (شامل معکوس کردن درآمد فروش، کاهش بدهی مشتری، ورود مجدد به انبار 1105 و کاهش بهای تمام‌شده 5101)
+        /// </summary>
+        Task<JournalVoucher> CreateVoucherForSalesReturnAsync(SalesReturnInvoice returnInvoice, CancellationToken ct = default);
+
+        /// <summary>
+        /// صدور خودکار سند حسابداری دوبل برای فاکتور برگشت از خرید (کاهش بدهی به تأمین‌کننده 2101 و کسر از موجودی انبار 1105)
+        /// </summary>
+        Task<JournalVoucher> CreateVoucherForPurchaseReturnAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct = default);
     }
 }

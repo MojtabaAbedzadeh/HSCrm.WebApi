@@ -1,4 +1,4 @@
-﻿using static HSCrm.Common.PublicTools.Enums;
+using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Entities.Models
 {

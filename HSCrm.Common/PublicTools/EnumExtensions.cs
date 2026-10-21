@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Common.PublicTools
@@ -34,6 +34,9 @@ namespace HSCrm.Common.PublicTools
                 InventoryReferenceType.PurchaseInvoiceItem => "ردیف فاکتور خرید",
                 InventoryReferenceType.SalesInvoice => "فاکتور فروش",
                 InventoryReferenceType.SalesInvoiceItem => "ردیف فاکتور فروش",
+                InventoryReferenceType.Adjustment => "تعدیل موجودی انبار",
+                InventoryReferenceType.SalesReturnInvoice => "فاکتور برگشت از فروش",
+                InventoryReferenceType.PurchaseReturnInvoice => "فاکتور برگشت از خرید",
                 _ => "نامشخص"
             };
         }

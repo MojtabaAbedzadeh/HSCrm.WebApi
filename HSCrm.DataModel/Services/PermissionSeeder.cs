@@ -1,4 +1,4 @@
-﻿using Common.Permissions;
+using Common.Permissions;
 using HSCrm.Common.Permissions;
 using HSCrm.DataModel.Context;
 using HSCrm.Entities.Entities;
@@ -69,7 +69,6 @@ namespace HSCrm.DataModel.Seeders
                 "Delete" => "حذف",
                 "Approve" => "تأیید",
                 "Reject" => "رد",
-                "ChangeStatus" => "تغییر وضعیت",
                 _ => action
             };
 

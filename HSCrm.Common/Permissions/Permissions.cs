@@ -1,4 +1,4 @@
-﻿namespace Common.Permissions;
+namespace Common.Permissions;
 
 public static class Permissions
 {
@@ -203,5 +203,25 @@ public static class Permissions
         public const string Create = "Permissions.Cheques.Create";
         public const string ChangeStatus = "Permissions.Cheques.ChangeStatus";
         public const string Delete = "Permissions.Cheques.Delete";
+    }
+
+    public static class SalesReturnInvoices
+    {
+        public const string View = "Permissions.SalesReturnInvoices.View";
+        public const string Create = "Permissions.SalesReturnInvoices.Create";
+        public const string Edit = "Permissions.SalesReturnInvoices.Edit";
+        public const string Delete = "Permissions.SalesReturnInvoices.Delete";
+        public const string Approve = "Permissions.SalesReturnInvoices.Approve";
+        public const string Cancel = "Permissions.SalesReturnInvoices.Cancel";
+    }
+
+    public static class PurchaseReturnInvoices
+    {
+        public const string View = "Permissions.PurchaseReturnInvoices.View";
+        public const string Create = "Permissions.PurchaseReturnInvoices.Create";
+        public const string Edit = "Permissions.PurchaseReturnInvoices.Edit";
+        public const string Delete = "Permissions.PurchaseReturnInvoices.Delete";
+        public const string Approve = "Permissions.PurchaseReturnInvoices.Approve";
+        public const string Cancel = "Permissions.PurchaseReturnInvoices.Cancel";
     }
 }

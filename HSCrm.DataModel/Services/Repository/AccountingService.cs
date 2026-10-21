@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -29,6 +29,7 @@ namespace HSCrm.DataModel.Services.Repository
         public const string ACC_EQUITY = "3101";             // سرمایه اولیه
         public const string ACC_SALES_REVENUE = "4101";      // درآمد فروش کالا و خدمات
         public const string ACC_SALES_DISCOUNT = "4102";     // تخفیفات فروش
+        public const string ACC_SALES_RETURN = "4103";       // برگشت از فروش کالا و خدمات
         public const string ACC_PURCHASE_COST = "5101";      // خرید کالا / بهای تمام‌شده
         public const string ACC_PURCHASE_DISCOUNT = "5102";  // تخفیفات خرید
         public const string ACC_PROJECT_EXPENSE = "5201";    // هزینه‌های اجرایی و عملیاتی پروژه
@@ -67,6 +68,7 @@ namespace HSCrm.DataModel.Services.Repository
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_EQUITY, Title = "سرمایه و سود انباشته", Level = AccountLevel.Subsidiary, Category = AccountCategory.Equity, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_SALES_REVENUE, Title = "درآمد فروش کالا و خدمات پروژه", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_SALES_DISCOUNT, Title = "تخفیفات فروش", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_SALES_RETURN, Title = "برگشت از فروش کالا و خدمات", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PURCHASE_COST, Title = "خرید کالا و بهای تمام‌شده", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PURCHASE_DISCOUNT, Title = "تخفیفات خرید", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PROJECT_EXPENSE, Title = "هزینه‌های اجرایی، پرسنلی و عمومی پروژه", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true }
@@ -94,6 +96,25 @@ namespace HSCrm.DataModel.Services.Repository
 
             if (account == null)
             {
+                if (code == ACC_SALES_RETURN)
+                {
+                    account = new AccountingAccount
+                    {
+                        CreatedAt = DateTime.UtcNow,
+                        TenantId = tenantId,
+                        Code = ACC_SALES_RETURN,
+                        Title = "برگشت از فروش کالا و خدمات",
+                        Level = AccountLevel.Subsidiary,
+                        Category = AccountCategory.Revenue,
+                        Nature = AccountNature.DebitOnly,
+                        IsSystemAccount = true,
+                        IsActive = true
+                    };
+                    await _context.AccountingAccounts.AddAsync(account, ct);
+                    await _context.SaveChangesAsync(ct);
+                    return account;
+                }
+
                 if (code == ACC_NOTES_RECEIVABLE || code == ACC_NOTES_IN_COLLECTION || code == ACC_NOTES_PAYABLE)
                 {
                     account = new AccountingAccount
@@ -1702,6 +1723,264 @@ namespace HSCrm.DataModel.Services.Repository
                 EstimatedDiscountAmount = estimatedDiscount,
                 Items = items
             };
+        }
+
+        /// <summary>
+        /// صدور خودکار سند حسابداری دوطرفه برای فاکتور برگشت از فروش (Sales Return)
+        /// بخش اول: بدهکار برگشت از فروش (4103) و مالیات فروش (2102) / بستانکار حساب دریافتنی مشتری (1103) و تخفیفات فروش (4102)
+        /// بخش دوم (معکوس کردن COGS): بدهکار موجودی کالا و انبار (1105) / بستانکار بهای تمام‌شده کالای فروش‌رفته (5101)
+        /// </summary>
+        public async Task<JournalVoucher> CreateVoucherForSalesReturnAsync(SalesReturnInvoice returnInvoice, CancellationToken ct = default)
+        {
+            var accReceivable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_RECEIVABLE, ct);
+            var accSalesReturn = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_SALES_RETURN, ct);
+            var accSalesDiscount = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_SALES_DISCOUNT, ct);
+            var accVatPayable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_VAT_PAYABLE, ct);
+            var accInventory = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_INVENTORY, ct);
+            var accCogs = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_PURCHASE_COST, ct);
+
+            int? customerId = returnInvoice.Project?.CustomerId;
+            if (!customerId.HasValue && returnInvoice.ProjectId > 0)
+            {
+                customerId = await _context.Projects
+                    .Where(p => p.Id == returnInvoice.ProjectId)
+                    .Select(p => (int?)p.CustomerId)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            var items = new List<JournalVoucherItem>();
+            int row = 1;
+
+            // ۱. بدهکار: حساب برگشت از فروش (4103) به مبلغ ناخالص برگشتی
+            items.Add(new JournalVoucherItem
+            {
+                TenantId = returnInvoice.TenantId,
+                RowNumber = row++,
+                AccountId = accSalesReturn.Id,
+                CreatedAt = DateTime.UtcNow,
+                Description = $"برگشت از فروش کالا طبق فاکتور برگشتی شماره {returnInvoice.Number}",
+                Debit = returnInvoice.Subtotal,
+                Credit = 0,
+                CustomerId = customerId,
+                ProjectId = returnInvoice.ProjectId,
+                WarehouseId = returnInvoice.WarehouseId
+            });
+
+            // ۲. بدهکار: برگشت مالیات بر ارزش افزوده فروش (2102)
+            if (returnInvoice.Tax > 0)
+            {
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = returnInvoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accVatPayable.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"کاهش مالیات بر ارزش افزوده فروش بابت برگشت از فروش شماره {returnInvoice.Number}",
+                    Debit = returnInvoice.Tax,
+                    Credit = 0,
+                    CustomerId = customerId,
+                    ProjectId = returnInvoice.ProjectId
+                });
+            }
+
+            // ۳. بستانکار: حساب دریافتنی تجاری مشتری (1103) - کسر از بدهی مشتری
+            items.Add(new JournalVoucherItem
+            {
+                TenantId = returnInvoice.TenantId,
+                RowNumber = row++,
+                AccountId = accReceivable.Id,
+                CreatedAt = DateTime.UtcNow,
+                Description = $"کسر از بدهی مشتری بابت فاکتور برگشت از فروش شماره {returnInvoice.Number}",
+                Debit = 0,
+                Credit = returnInvoice.Total,
+                CustomerId = customerId,
+                ProjectId = returnInvoice.ProjectId
+            });
+
+            // ۴. بستانکار: اصلاح تخفیفات فروش (4102) در صورت وجود تخفیف
+            if (returnInvoice.Discount > 0)
+            {
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = returnInvoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accSalesDiscount.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"برگشت تخفیف فروش بابت فاکتور برگشتی شماره {returnInvoice.Number}",
+                    Debit = 0,
+                    Credit = returnInvoice.Discount,
+                    CustomerId = customerId,
+                    ProjectId = returnInvoice.ProjectId
+                });
+            }
+
+            // ۵ و ۶. ثبت معکوس بهای تمام‌شده (COGS Reversal): ورود مجدد کالا به دارایی انبار (1105) و کاهش بهای تمام‌شده (5101)
+            decimal totalReturnCogs = 0m;
+            if (returnInvoice.Items != null && returnInvoice.Items.Any())
+            {
+                totalReturnCogs = Math.Round(returnInvoice.Items.Sum(x => x.TotalCost), 2);
+            }
+
+            if (totalReturnCogs <= 0)
+            {
+                totalReturnCogs = await _context.InventoryTransactions
+                    .AsNoTracking()
+                    .Where(x => x.TenantId == returnInvoice.TenantId
+                             && x.ReferenceType == InventoryReferenceType.SalesReturnInvoice
+                             && x.ReferenceId == returnInvoice.Id
+                             && x.TransactionType == InventoryTransactionType.ReturnSale
+                             && !x.IsDeleted)
+                    .SumAsync(x => (decimal?)x.TotalCost, ct) ?? 0m;
+                totalReturnCogs = Math.Round(totalReturnCogs, 2);
+            }
+
+            if (totalReturnCogs > 0)
+            {
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = returnInvoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accInventory.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"افزایش ارزش موجودی انبار بابت عودت کالای فاکتور برگشت از فروش {returnInvoice.Number}",
+                    Debit = totalReturnCogs,
+                    Credit = 0,
+                    ProjectId = returnInvoice.ProjectId,
+                    WarehouseId = returnInvoice.WarehouseId
+                });
+
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = returnInvoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accCogs.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"کاهش بهای تمام‌شده کالای فروش‌رفته (COGS) بابت فاکتور برگشت از فروش {returnInvoice.Number}",
+                    Debit = 0,
+                    Credit = totalReturnCogs,
+                    ProjectId = returnInvoice.ProjectId,
+                    WarehouseId = returnInvoice.WarehouseId
+                });
+            }
+
+            var nextNumber = await GetNextVoucherNumberAsync(returnInvoice.TenantId, returnInvoice.FiscalYearId, ct);
+
+            var voucher = new JournalVoucher
+            {
+                TenantId = returnInvoice.TenantId,
+                FiscalYearId = returnInvoice.FiscalYearId,
+                CreatedAt = DateTime.UtcNow,
+                VoucherNumber = nextNumber,
+                VoucherDate = returnInvoice.IssueDate,
+                Description = $"سند خودکار فاکتور برگشت از فروش و اصلاح بهای تمام‌شده شماره {returnInvoice.Number}",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.SalesReturnInvoice,
+                ReferenceId = returnInvoice.Id,
+                TotalDebit = items.Sum(x => x.Debit),
+                TotalCredit = items.Sum(x => x.Credit),
+                Items = items
+            };
+
+            await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
+            await _unitOfWork.SaveAsync();
+            return voucher;
+        }
+
+        /// <summary>
+        /// صدور خودکار سند حسابداری دوطرفه برای فاکتور برگشت از خرید (Purchase Return)
+        /// بدهکار: حساب پرداختنی تجاری تأمین‌کننده (2101) و تخفیفات خرید (5102)
+        /// بستانکار: موجودی کالا و انبار (1105) و مالیات بر ارزش افزوده خرید (1106)
+        /// </summary>
+        public async Task<JournalVoucher> CreateVoucherForPurchaseReturnAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct = default)
+        {
+            var accInventory = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_INVENTORY, ct);
+            var accVatRec = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_VAT_RECEIVABLE, ct);
+            var accPayable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_PAYABLE, ct);
+            var accDiscount = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_PURCHASE_DISCOUNT, ct);
+
+            var items = new List<JournalVoucherItem>();
+            int row = 1;
+
+            // ۱. بدهکار: کاهش بدهی به تأمین‌کننده (2101)
+            items.Add(new JournalVoucherItem
+            {
+                TenantId = returnInvoice.TenantId,
+                RowNumber = row++,
+                AccountId = accPayable.Id,
+                CreatedAt = DateTime.UtcNow,
+                Description = $"کسر از بدهی به تأمین‌کننده بابت فاکتور برگشت از خرید شماره {returnInvoice.Number}",
+                Debit = returnInvoice.Total,
+                Credit = 0,
+                SupplierId = returnInvoice.SupplierId
+            });
+
+            // ۲. بدهکار: برگشت تخفیف خرید (5102) در صورت وجود
+            if (returnInvoice.Discount > 0)
+            {
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = returnInvoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accDiscount.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"اصلاح تخفیف خرید بابت فاکتور برگشت از خرید شماره {returnInvoice.Number}",
+                    Debit = returnInvoice.Discount,
+                    Credit = 0,
+                    SupplierId = returnInvoice.SupplierId
+                });
+            }
+
+            // ۳. بستانکار: خروج کالا از دارایی موجودی انبار (1105)
+            items.Add(new JournalVoucherItem
+            {
+                TenantId = returnInvoice.TenantId,
+                RowNumber = row++,
+                AccountId = accInventory.Id,
+                CreatedAt = DateTime.UtcNow,
+                Description = $"خروج کالا از انبار بابت فاکتور برگشت از خرید شماره {returnInvoice.Number}",
+                Debit = 0,
+                Credit = returnInvoice.Subtotal,
+                SupplierId = returnInvoice.SupplierId,
+                WarehouseId = returnInvoice.WarehouseId
+            });
+
+            // ۴. بستانکار: کاهش پیش‌پرداخت مالیات ارزش افزوده خرید (1106)
+            if (returnInvoice.Tax > 0)
+            {
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = returnInvoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accVatRec.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"کاهش مالیات ارزش افزوده خرید بابت فاکتور برگشت از خرید شماره {returnInvoice.Number}",
+                    Debit = 0,
+                    Credit = returnInvoice.Tax,
+                    SupplierId = returnInvoice.SupplierId
+                });
+            }
+
+            var nextNumber = await GetNextVoucherNumberAsync(returnInvoice.TenantId, returnInvoice.FiscalYearId, ct);
+
+            var voucher = new JournalVoucher
+            {
+                TenantId = returnInvoice.TenantId,
+                FiscalYearId = returnInvoice.FiscalYearId,
+                CreatedAt = DateTime.UtcNow,
+                VoucherNumber = nextNumber,
+                VoucherDate = returnInvoice.IssueDate,
+                Description = $"سند خودکار فاکتور برگشت از خرید شماره {returnInvoice.Number}",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.PurchaseReturnInvoice,
+                ReferenceId = returnInvoice.Id,
+                TotalDebit = items.Sum(x => x.Debit),
+                TotalCredit = items.Sum(x => x.Credit),
+                Items = items
+            };
+
+            await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
+            await _unitOfWork.SaveAsync();
+            return voucher;
         }
     }
 }
