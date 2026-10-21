@@ -84,5 +84,20 @@ namespace HSCrm.DataModel.Services.Interface
         /// صدور سند اختتامیه در سال مالی جاری و صدور خودکار سند افتتاحیه در سال مالی جدید
         /// </summary>
         Task<CloseFiscalYearResultDto> CloseFiscalYearAndGenerateOpeningAsync(CloseFiscalYearRequestModel model, CancellationToken ct = default);
+
+        /// <summary>
+        /// صدور خودکار سند حسابداری هنگام ثبت اولیه چک دریافتنی (از مشتری) یا چک پرداختنی (به تأمین‌کننده)
+        /// </summary>
+        Task<JournalVoucher> CreateVoucherForChequeRegistrationAsync(Cheque cheque, CancellationToken ct = default);
+
+        /// <summary>
+        /// تغییر وضعیت چک (واگذاری به بانک، وصول/پاس شدن، برگشت چک، خرج چک به تأمین‌کننده) و صدور خودکار سند حسابداری مرحله‌ای
+        /// </summary>
+        Task<JournalVoucher> ChangeChequeStatusAndCreateVoucherAsync(ChequeStatusChangeModel model, CancellationToken ct = default);
+
+        /// <summary>
+        /// موتور محاسبه راس‌گیری چک‌های دریافتنی و پرداختنی (میانگین موزون زمانی و ریالی سررسید چک‌ها + تاریخ راس دقیق به شمسی)
+        /// </summary>
+        Task<ChequeRasGiriResultDto> CalculateChequesRasGiriAsync(ChequeRasGiriRequestModel model, CancellationToken ct = default);
     }
 }

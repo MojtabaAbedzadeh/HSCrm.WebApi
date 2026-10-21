@@ -42,7 +42,8 @@ namespace HSCrm.Common.PublicTools
             Cash = 1,
             CardToCard = 2,
             POS = 3,
-            BankTransfer = 4
+            BankTransfer = 4,
+            Cheque = 5
         }
 
         /// <summary>
@@ -126,6 +127,42 @@ namespace HSCrm.Common.PublicTools
             FIFO = 2
         }
 
+        /// <summary>
+        /// نوع چک تجاری (دریافتنی از مشتری یا پرداختنی به تأمین‌کننده/هزینه)
+        /// </summary>
+        public enum ChequeType : byte
+        {
+            [Display(Name = "چک دریافتنی (اسناد دریافتنی)")]
+            Receivable = 1,
+
+            [Display(Name = "چک پرداختنی (اسناد پرداختنی)")]
+            Payable = 2
+        }
+
+        /// <summary>
+        /// وضعیت چرخه حیات چک در خزانه‌داری
+        /// </summary>
+        public enum ChequeStatus : byte
+        {
+            [Display(Name = "نزد صندوق / در جریان")]
+            InSafe = 1,
+
+            [Display(Name = "واگذار شده به بانک (در جریان وصول)")]
+            InBankForCollection = 2,
+
+            [Display(Name = "وصول شده / پاس شده")]
+            Cleared = 3,
+
+            [Display(Name = "برگشت خورده (واخواست)")]
+            Bounced = 4,
+
+            [Display(Name = "خرج شده به تأمین‌کننده")]
+            EndorsedToSupplier = 5,
+
+            [Display(Name = "عودت داده شده / باطل شده")]
+            Returned = 6
+        }
+
         public enum AccountingReferenceType : byte
         {
             [Display(Name = "سند دستی")]
@@ -150,7 +187,10 @@ namespace HSCrm.Common.PublicTools
             OpeningBalance = 7,
 
             [Display(Name = "سند اختتامیه")]
-            ClosingBalance = 8
+            ClosingBalance = 8,
+
+            [Display(Name = "عملیات چک و اسناد تجاری")]
+            ChequeOperation = 9
         }
     }
 }

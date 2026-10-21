@@ -196,4 +196,12 @@ public static class Permissions
         public const string Edit = "Permissions.BankAccounts.Edit";
         public const string Delete = "Permissions.BankAccounts.Delete";
     }
+
+    public static class Cheques
+    {
+        public const string View = "Permissions.Cheques.View";
+        public const string Create = "Permissions.Cheques.Create";
+        public const string ChangeStatus = "Permissions.Cheques.ChangeStatus";
+        public const string Delete = "Permissions.Cheques.Delete";
+    }
 }

@@ -45,6 +45,7 @@ namespace HSCrm.DataModel.Context
         public DbSet<JournalVoucher> JournalVouchers { get; set; }
         public DbSet<JournalVoucherItem> JournalVoucherItems { get; set; }
         public DbSet<BankAccount> BankAccounts { get; set; }
+        public DbSet<Cheque> Cheques { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -672,6 +673,28 @@ namespace HSCrm.DataModel.Context
                       .WithMany()
                       .HasForeignKey(x => x.TenantId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<Cheque>(entity =>
+            {
+                entity.ToTable("Cheques");
+                entity.Property(x => x.ChequeNumber).HasMaxLength(50).IsRequired();
+                entity.Property(x => x.SayadiId).HasMaxLength(30);
+                entity.Property(x => x.BankName).HasMaxLength(150).IsRequired();
+                entity.Property(x => x.BranchName).HasMaxLength(150);
+                entity.Property(x => x.DrawerName).HasMaxLength(200);
+                entity.Property(x => x.Amount).HasPrecision(18, 2);
+                entity.Property(x => x.Description).HasMaxLength(500);
+
+                entity.HasIndex(x => new { x.TenantId, x.Type, x.Status, x.DueDate });
+
+                entity.HasOne(x => x.FiscalYear).WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.BankAccount).WithMany().HasForeignKey(x => x.BankAccountId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.EndorsedToSupplier).WithMany().HasForeignKey(x => x.EndorsedToSupplierId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             });
         }
         private void ApplyFilters(ModelBuilder modelBuilder)

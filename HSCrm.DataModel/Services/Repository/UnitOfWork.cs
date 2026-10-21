@@ -40,6 +40,7 @@ namespace HSCrm.DataModel.Services.Repository
         private GenericCRUDClass<JournalVoucher>? _journalVoucher;
         private GenericCRUDClass<JournalVoucherItem>? _journalVoucherItem;
         private GenericCRUDClass<BankAccount>? _bankAccount;
+        private GenericCRUDClass<Cheque>? _cheque;
 
         public GenericCRUDClass<ApplicationUser> userManagerUW => _userManager ??= new GenericCRUDClass<ApplicationUser>(_context);
         public GenericCRUDClass<ApplicationRole> roleManagerUW => _roleManager ??= new GenericCRUDClass<ApplicationRole>(_context);
@@ -67,6 +68,7 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<JournalVoucher> journalVoucherUW => _journalVoucher ??= new GenericCRUDClass<JournalVoucher>(_context);
         public GenericCRUDClass<JournalVoucherItem> journalVoucherItemUW => _journalVoucherItem ??= new GenericCRUDClass<JournalVoucherItem>(_context);
         public GenericCRUDClass<BankAccount> bankAccountUW => _bankAccount ??= new GenericCRUDClass<BankAccount>(_context);
+        public GenericCRUDClass<Cheque> chequeUW => _cheque ??= new GenericCRUDClass<Cheque>(_context);
 
 
         public IEntityTransaction BeginTransaction()

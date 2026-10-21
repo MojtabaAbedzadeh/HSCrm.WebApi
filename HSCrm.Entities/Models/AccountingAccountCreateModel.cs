@@ -169,4 +169,122 @@ namespace HSCrm.Entities.Models
         public decimal TotalWithdrawals { get; set; }
         public decimal CurrentBalance => TotalDeposits - TotalWithdrawals;
     }
+
+    /// <summary>
+    /// مدل ثبت اولیه چک دریافتنی (از مشتری) یا چک پرداختنی (صادره شرکت به تأمین‌کننده)
+    /// </summary>
+    public class ChequeCreateModel
+    {
+        public ChequeType Type { get; set; }
+        public required string ChequeNumber { get; set; }
+        public string? SayadiId { get; set; }
+        public decimal Amount { get; set; }
+        public required string IssueDateShamsi { get; set; }
+        public required string DueDateShamsi { get; set; }
+        public required string BankName { get; set; }
+        public string? BranchName { get; set; }
+        public string? DrawerName { get; set; }
+        public int? CustomerId { get; set; }
+        public int? SupplierId { get; set; }
+        public int? ProjectId { get; set; }
+        public int? BankAccountId { get; set; }
+        public string? Description { get; set; }
+    }
+
+    /// <summary>
+    /// مدل تغییر وضعیت چک (واگذاری به بانک، وصول/پاس شدن، برگشت چک، خرج چک به تأمین‌کننده)
+    /// </summary>
+    public class ChequeStatusChangeModel
+    {
+        public int ChequeId { get; set; }
+        public ChequeStatus NewStatus { get; set; }
+        public string? ActionDateShamsi { get; set; }
+        /// <summary>
+        /// حساب بانکی شرکت جهت واگذاری چک دریافتنی به بانک یا وصول چک
+        /// </summary>
+        public int? TargetBankAccountId { get; set; }
+        /// <summary>
+        /// تأمین‌کننده مقصد در صورت خرج کردن چک دریافتنی (EndorsedToSupplier)
+        /// </summary>
+        public int? EndorsedToSupplierId { get; set; }
+        public string? Description { get; set; }
+    }
+
+    /// <summary>
+    /// ورودی محاسبه راس‌گیری چک‌ها (میانگین موزون زمانی و ریالی سررسید چک‌ها)
+    /// </summary>
+    public class ChequeRasGiriRequestModel
+    {
+        /// <summary>
+        /// لیست شناسه چک‌های انتخابی (در صورت خالی بودن، بر اساس فیلتر نوع/مشتری/تأمین‌کننده محاسبه می‌شود)
+        /// </summary>
+        public List<int>? ChequeIds { get; set; }
+        public ChequeType? Type { get; set; }
+        public int? CustomerId { get; set; }
+        public int? SupplierId { get; set; }
+        /// <summary>
+        /// تاریخ مبنای راس‌گیری به شمسی (در صورت خالی بودن، تاریخ روز مبنا قرار می‌گیرد)
+        /// </summary>
+        public string? BaseDateShamsi { get; set; }
+        /// <summary>
+        /// نرخ سود / تنزیل ماهانه به درصد (مثلاً 2.5 درصد در ماه) جهت محاسبه ارزش فعلی و هزینه فرجه
+        /// </summary>
+        public decimal MonthlyDiscountRatePercent { get; set; } = 0m;
+    }
+
+    public class ChequeRasGiriItemDto
+    {
+        public int ChequeId { get; set; }
+        public string ChequeNumber { get; set; } = default!;
+        public string? SayadiId { get; set; }
+        public string BankName { get; set; } = default!;
+        public decimal Amount { get; set; }
+        public DateTime DueDate { get; set; }
+        public string DueDateShamsi { get; set; } = default!;
+        /// <summary>
+        /// فاصله روز سررسید چک تا تاریخ مبنا (مثبت = بعد از تاریخ مبنا، منفی = قبل از تاریخ مبنا)
+        /// </summary>
+        public int DaysFromBaseDate { get; set; }
+        /// <summary>
+        /// حاصل‌ضرب مبلغ چک در فاصله روز (Amount * DaysFromBaseDate)
+        /// </summary>
+        public decimal WeightedAmountDays { get; set; }
+    }
+
+    /// <summary>
+    /// خروجی کامل موتور راس‌گیری چک‌ها (Weighted Average Maturity / Ras-Giri)
+    /// </summary>
+    public class ChequeRasGiriResultDto
+    {
+        public int ChequeCount { get; set; }
+        public decimal TotalAmount { get; set; }
+        public DateTime BaseDate { get; set; }
+        public string BaseDateShamsi { get; set; } = default!;
+        /// <summary>
+        /// جمع کل (مبلغ × تعداد روز)
+        /// </summary>
+        public decimal TotalWeightedAmountDays { get; set; }
+        /// <summary>
+        /// راس چک‌ها به روز (میانگین موزون فاصله سررسیدها از تاریخ مبنا)
+        /// </summary>
+        public decimal WeightedAverageDays { get; set; }
+        /// <summary>
+        /// تاریخ دقیق راس چک‌ها (میلادی)
+        /// </summary>
+        public DateTime ExactRasDate { get; set; }
+        /// <summary>
+        /// تاریخ دقیق راس چک‌ها (شمسی)
+        /// </summary>
+        public string ExactRasDateShamsi { get; set; } = default!;
+        public decimal MonthlyDiscountRatePercent { get; set; }
+        /// <summary>
+        /// مبلغ بهره / تنزیل دوره فرجه بر اساس تاریخ راس
+        /// </summary>
+        public decimal EstimatedDiscountAmount { get; set; }
+        /// <summary>
+        /// ارزش فعلی خالص چک‌ها در تاریخ مبنا پس از کسر تنزیل
+        /// </summary>
+        public decimal NetPresentValue => TotalAmount - EstimatedDiscountAmount;
+        public List<ChequeRasGiriItemDto> Items { get; set; } = new();
+    }
 }

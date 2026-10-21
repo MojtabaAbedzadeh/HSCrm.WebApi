@@ -1,4 +1,4 @@
-namespace HSCrm.Entities.Entities
+﻿namespace HSCrm.Entities.Entities
 {
     public class SalesInvoiceItem : TenantScopedEntity
     {

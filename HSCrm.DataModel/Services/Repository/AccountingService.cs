@@ -18,11 +18,14 @@ namespace HSCrm.DataModel.Services.Repository
 
         // کدهای استاندارد حساب‌های معین سیستمی
         public const string ACC_CASH_BANK = "1101";          // موجودی نقد و بانک
+        public const string ACC_NOTES_RECEIVABLE = "1102";   // اسناد دریافتنی نزد صندوق (چک‌های دریافتنی از مشتریان)
+        public const string ACC_NOTES_IN_COLLECTION = "1107";// اسناد دریافتنی در جریان وصول (واگذار شده به بانک)
         public const string ACC_RECEIVABLE = "1103";         // حساب‌های دریافتنی تجاری (مشتریان)
         public const string ACC_INVENTORY = "1105";          // موجودی مواد و کالا (انبار)
         public const string ACC_VAT_RECEIVABLE = "1106";     // مالیات بر ارزش افزوده خرید
         public const string ACC_PAYABLE = "2101";            // حساب‌های پرداختنی تجاری (تأمین‌کنندگان)
         public const string ACC_VAT_PAYABLE = "2102";        // مالیات بر ارزش افزوده فروش
+        public const string ACC_NOTES_PAYABLE = "2103";      // اسناد پرداختنی تجاری (چک‌های صادره شرکت)
         public const string ACC_EQUITY = "3101";             // سرمایه اولیه
         public const string ACC_SALES_REVENUE = "4101";      // درآمد فروش کالا و خدمات
         public const string ACC_SALES_DISCOUNT = "4102";     // تخفیفات فروش
@@ -53,11 +56,14 @@ namespace HSCrm.DataModel.Services.Repository
             var defaultAccounts = new List<AccountingAccount>
             {
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_CASH_BANK, Title = "موجودی نقد و بانک (خزانه)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Asset, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_NOTES_RECEIVABLE, Title = "اسناد دریافتنی نزد صندوق (چک‌های دریافتنی)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Asset, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_NOTES_IN_COLLECTION, Title = "اسناد دریافتنی در جریان وصول (واگذار شده به بانک)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Asset, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_RECEIVABLE, Title = "حساب‌های دریافتنی تجاری (مشتریان و پروژه‌ها)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Asset, Nature = AccountNature.Both, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_INVENTORY, Title = "موجودی کالا و انبار", Level = AccountLevel.Subsidiary, Category = AccountCategory.Asset, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_VAT_RECEIVABLE, Title = "پیش‌پرداخت مالیات ارزش افزوده (خرید)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Asset, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PAYABLE, Title = "حساب‌های پرداختنی تجاری (تأمین‌کنندگان و هزینه‌ها)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Liability, Nature = AccountNature.Both, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_VAT_PAYABLE, Title = "مالیات بر ارزش افزوده فروش (پرداختنی)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Liability, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_NOTES_PAYABLE, Title = "اسناد پرداختنی تجاری (چک‌های پرداختنی شرکت)", Level = AccountLevel.Subsidiary, Category = AccountCategory.Liability, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_EQUITY, Title = "سرمایه و سود انباشته", Level = AccountLevel.Subsidiary, Category = AccountCategory.Equity, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_SALES_REVENUE, Title = "درآمد فروش کالا و خدمات پروژه", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_SALES_DISCOUNT, Title = "تخفیفات فروش", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
@@ -87,7 +93,32 @@ namespace HSCrm.DataModel.Services.Repository
                 .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Code == code && !x.IsDeleted, ct);
 
             if (account == null)
+            {
+                if (code == ACC_NOTES_RECEIVABLE || code == ACC_NOTES_IN_COLLECTION || code == ACC_NOTES_PAYABLE)
+                {
+                    account = new AccountingAccount
+                    {
+                        CreatedAt = DateTime.UtcNow,
+                        TenantId = tenantId,
+                        Code = code,
+                        Title = code == ACC_NOTES_RECEIVABLE
+                            ? "اسناد دریافتنی نزد صندوق (چک‌های دریافتنی)"
+                            : code == ACC_NOTES_IN_COLLECTION
+                                ? "اسناد دریافتنی در جریان وصول (واگذار شده به بانک)"
+                                : "اسناد پرداختنی تجاری (چک‌های پرداختنی شرکت)",
+                        Level = AccountLevel.Subsidiary,
+                        Category = code == ACC_NOTES_PAYABLE ? AccountCategory.Liability : AccountCategory.Asset,
+                        Nature = code == ACC_NOTES_PAYABLE ? AccountNature.CreditOnly : AccountNature.DebitOnly,
+                        IsSystemAccount = true,
+                        IsActive = true
+                    };
+                    await _context.AccountingAccounts.AddAsync(account, ct);
+                    await _context.SaveChangesAsync(ct);
+                    return account;
+                }
+
                 throw new InvalidOperationException($"حساب سیستمی با کد {code} یافت نشد.");
+            }
 
             return account;
         }
@@ -1191,6 +1222,486 @@ namespace HSCrm.DataModel.Services.Repository
                 await transaction.RollbackAsync(ct);
                 throw;
             }
+        }
+
+        // =========================================================================
+        // ۱۰. مدیریت چک‌های دریافتنی و پرداختنی (واگذاری به بانک، وصول، برگشت، خرج و راس‌گیری)
+        // =========================================================================
+
+        public async Task<JournalVoucher> CreateVoucherForChequeRegistrationAsync(Cheque cheque, CancellationToken ct = default)
+        {
+            var tenantId = cheque.TenantId > 0
+                ? cheque.TenantId
+                : (_currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد."));
+
+            var fiscalYearId = cheque.FiscalYearId > 0
+                ? cheque.FiscalYearId
+                : (_currentFiscalYear.FiscalYearId ?? throw new InvalidOperationException("سال مالی فعال یافت نشد."));
+
+            var nextNumber = await GetNextVoucherNumberAsync(tenantId, fiscalYearId, ct);
+            var items = new List<JournalVoucherItem>();
+
+            if (cheque.Type == ChequeType.Receivable)
+            {
+                var accNotesRec = await GetSystemAccountAsync(tenantId, ACC_NOTES_RECEIVABLE, ct);
+                var accCustomerRec = await GetSystemAccountAsync(tenantId, ACC_RECEIVABLE, ct);
+
+                // ۱. بدهکار شدن اسناد دریافتنی نزد صندوق (1102)
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = tenantId,
+                    RowNumber = 1,
+                    AccountId = accNotesRec.Id,
+                    Description = $"دریافت چک شماره {cheque.ChequeNumber} ({cheque.BankName}) سررسید {ConvertDate.ConvertMiladiToShamsi(cheque.DueDate, "yyyy/MM/dd")}",
+                    Debit = cheque.Amount,
+                    Credit = 0,
+                    CustomerId = cheque.CustomerId,
+                    ProjectId = cheque.ProjectId,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                // ۲. بستانکار شدن حساب دریافتنی مشتری (1103)
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = tenantId,
+                    RowNumber = 2,
+                    AccountId = accCustomerRec.Id,
+                    Description = $"بابت دریافت چک شماره {cheque.ChequeNumber} صیادی {cheque.SayadiId ?? "-"} از مشتری",
+                    Debit = 0,
+                    Credit = cheque.Amount,
+                    CustomerId = cheque.CustomerId,
+                    ProjectId = cheque.ProjectId,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                var accSupplierPay = await GetSystemAccountAsync(tenantId, ACC_PAYABLE, ct);
+                var accNotesPay = await GetSystemAccountAsync(tenantId, ACC_NOTES_PAYABLE, ct);
+                var bankAcc = await ResolveBankAccountAsync(tenantId, cheque.BankAccountId, ct);
+
+                // ۱. بدهکار شدن حساب پرداختنی تأمین‌کننده (2101)
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = tenantId,
+                    RowNumber = 1,
+                    AccountId = accSupplierPay.Id,
+                    Description = $"صدور و تحویل چک پرداختنی شماره {cheque.ChequeNumber} سررسید {ConvertDate.ConvertMiladiToShamsi(cheque.DueDate, "yyyy/MM/dd")}",
+                    Debit = cheque.Amount,
+                    Credit = 0,
+                    SupplierId = cheque.SupplierId,
+                    ProjectId = cheque.ProjectId,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                // ۲. بستانکار شدن اسناد پرداختنی تجاری (2103)
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = tenantId,
+                    RowNumber = 2,
+                    AccountId = accNotesPay.Id,
+                    Description = $"اسناد پرداختنی بابت چک شماره {cheque.ChequeNumber} عهده ({bankAcc?.Title ?? cheque.BankName})",
+                    Debit = 0,
+                    Credit = cheque.Amount,
+                    SupplierId = cheque.SupplierId,
+                    ProjectId = cheque.ProjectId,
+                    BankAccountId = bankAcc?.Id ?? cheque.BankAccountId,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            var voucher = new JournalVoucher
+            {
+                TenantId = tenantId,
+                FiscalYearId = fiscalYearId,
+                VoucherNumber = nextNumber,
+                VoucherDate = cheque.IssueDate,
+                Description = cheque.Type == ChequeType.Receivable
+                    ? $"سند خودکار دریافت چک شماره {cheque.ChequeNumber} نزد صندوق"
+                    : $"سند خودکار صدور چک پرداختنی شماره {cheque.ChequeNumber}",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.ChequeOperation,
+                ReferenceId = cheque.Id,
+                TotalDebit = cheque.Amount,
+                TotalCredit = cheque.Amount,
+                CreatedAt = DateTime.UtcNow,
+                Items = items
+            };
+
+            await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
+            await _unitOfWork.SaveAsync();
+            return voucher;
+        }
+
+        public async Task<JournalVoucher> ChangeChequeStatusAndCreateVoucherAsync(ChequeStatusChangeModel model, CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
+
+            var cheque = await _context.Set<Cheque>()
+                .FirstOrDefaultAsync(x => x.Id == model.ChequeId && x.TenantId == tenantId && !x.IsDeleted, ct)
+                ?? throw new InvalidOperationException("چک مورد نظر یافت نشد.");
+
+            if (cheque.Status == model.NewStatus)
+                throw new InvalidOperationException("وضعیت جدید چک با وضعیت فعلی آن یکسان است.");
+
+            var previousStatus = cheque.Status;
+            var actionDate = !string.IsNullOrWhiteSpace(model.ActionDateShamsi)
+                ? ConvertDate.ConvertShamsiToMiladi(model.ActionDateShamsi)
+                : DateTime.UtcNow;
+
+            var accCashBank = await GetSystemAccountAsync(tenantId, ACC_CASH_BANK, ct);
+            var accNotesRec = await GetSystemAccountAsync(tenantId, ACC_NOTES_RECEIVABLE, ct);
+            var accNotesInCol = await GetSystemAccountAsync(tenantId, ACC_NOTES_IN_COLLECTION, ct);
+            var accReceivable = await GetSystemAccountAsync(tenantId, ACC_RECEIVABLE, ct);
+            var accPayable = await GetSystemAccountAsync(tenantId, ACC_PAYABLE, ct);
+            var accNotesPay = await GetSystemAccountAsync(tenantId, ACC_NOTES_PAYABLE, ct);
+
+            var items = new List<JournalVoucherItem>();
+            string voucherTitle;
+
+            if (cheque.Type == ChequeType.Receivable)
+            {
+                if (model.NewStatus == ChequeStatus.InBankForCollection)
+                {
+                    // واگذاری چک دریافتنی به بانک جهت وصول (کلکسیون)
+                    var targetBank = await ResolveBankAccountAsync(tenantId, model.TargetBankAccountId ?? cheque.BankAccountId, ct)
+                        ?? throw new InvalidOperationException("لطفاً حساب بانکی مقصد جهت واگذاری چک را مشخص کنید.");
+
+                    cheque.BankAccountId = targetBank.Id;
+                    voucherTitle = $"سند خودکار واگذاری چک دریافتنی {cheque.ChequeNumber} به ({targetBank.Title}) جهت وصول";
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 1,
+                        AccountId = accNotesInCol.Id,
+                        Description = $"واگذاری چک شماره {cheque.ChequeNumber} به ({targetBank.Title}) در جریان وصول",
+                        Debit = cheque.Amount,
+                        Credit = 0,
+                        CustomerId = cheque.CustomerId,
+                        BankAccountId = targetBank.Id,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 2,
+                        AccountId = accNotesRec.Id,
+                        Description = $"خروج چک شماره {cheque.ChequeNumber} از صندوق جهت واگذاری به بانک",
+                        Debit = 0,
+                        Credit = cheque.Amount,
+                        CustomerId = cheque.CustomerId,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else if (model.NewStatus == ChequeStatus.Cleared)
+                {
+                    // وصول چک دریافتنی و واریز به حساب بانکی شرکت
+                    var targetBank = await ResolveBankAccountAsync(tenantId, model.TargetBankAccountId ?? cheque.BankAccountId, ct);
+                    if (targetBank != null)
+                        cheque.BankAccountId = targetBank.Id;
+
+                    var creditAccount = previousStatus == ChequeStatus.InBankForCollection ? accNotesInCol : accNotesRec;
+                    voucherTitle = $"سند خودکار وصول چک دریافتنی {cheque.ChequeNumber} و واریز به ({targetBank?.Title ?? "بانک شرکت"})";
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 1,
+                        AccountId = accCashBank.Id,
+                        Description = $"وصول چک دریافتنی شماره {cheque.ChequeNumber} و واریز به ({targetBank?.Title ?? "خزانه"})",
+                        Debit = cheque.Amount,
+                        Credit = 0,
+                        CustomerId = cheque.CustomerId,
+                        BankAccountId = targetBank?.Id,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 2,
+                        AccountId = creditAccount.Id,
+                        Description = $"تسویه اسناد دریافتنی بابت وصول چک شماره {cheque.ChequeNumber}",
+                        Debit = 0,
+                        Credit = cheque.Amount,
+                        CustomerId = cheque.CustomerId,
+                        BankAccountId = previousStatus == ChequeStatus.InBankForCollection ? targetBank?.Id : null,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else if (model.NewStatus == ChequeStatus.Bounced)
+                {
+                    // برگشت خوردن چک دریافتنی (بدهکار شدن مجدد مشتری)
+                    var creditAccount = previousStatus == ChequeStatus.InBankForCollection ? accNotesInCol : accNotesRec;
+                    voucherTitle = $"سند خودکار برگشت چک دریافتنی شماره {cheque.ChequeNumber} و بدهکار شدن مشتری";
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 1,
+                        AccountId = accReceivable.Id,
+                        Description = $"برگشت چک شماره {cheque.ChequeNumber} ({cheque.BankName}) و انتقال به حساب بدهکاری مشتری",
+                        Debit = cheque.Amount,
+                        Credit = 0,
+                        CustomerId = cheque.CustomerId,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 2,
+                        AccountId = creditAccount.Id,
+                        Description = $"خروج چک برگشتی شماره {cheque.ChequeNumber} از حساب اسناد دریافتنی",
+                        Debit = 0,
+                        Credit = cheque.Amount,
+                        CustomerId = cheque.CustomerId,
+                        BankAccountId = previousStatus == ChequeStatus.InBankForCollection ? cheque.BankAccountId : null,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else if (model.NewStatus == ChequeStatus.EndorsedToSupplier)
+                {
+                    // خرج کردن چک دریافتنی به تأمین‌کننده
+                    var targetSupplierId = model.EndorsedToSupplierId ?? cheque.EndorsedToSupplierId
+                        ?? throw new InvalidOperationException("لطفاً تأمین‌کننده گیرنده چک (خرج چک) را مشخص نمایید.");
+
+                    cheque.EndorsedToSupplierId = targetSupplierId;
+                    voucherTitle = $"سند خودکار خرج چک دریافتنی شماره {cheque.ChequeNumber} به تأمین‌کننده";
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 1,
+                        AccountId = accPayable.Id,
+                        Description = $"واگذاری (خرج) چک دریافتنی شماره {cheque.ChequeNumber} بابت تسویه با تأمین‌کننده",
+                        Debit = cheque.Amount,
+                        Credit = 0,
+                        SupplierId = targetSupplierId,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 2,
+                        AccountId = accNotesRec.Id,
+                        Description = $"خروج چک شماره {cheque.ChequeNumber} از صندوق بابت خرج به تأمین‌کننده",
+                        Debit = 0,
+                        Credit = cheque.Amount,
+                        CustomerId = cheque.CustomerId,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    throw new InvalidOperationException("تغییر وضعیت درخواستی برای چک دریافتنی معتبر نیست.");
+                }
+            }
+            else
+            {
+                // چک پرداختنی شرکت (Payable)
+                if (model.NewStatus == ChequeStatus.Cleared)
+                {
+                    var sourceBank = await ResolveBankAccountAsync(tenantId, model.TargetBankAccountId ?? cheque.BankAccountId, ct);
+                    if (sourceBank != null)
+                        cheque.BankAccountId = sourceBank.Id;
+
+                    voucherTitle = $"سند خودکار پاس شدن چک پرداختنی شماره {cheque.ChequeNumber} از ({sourceBank?.Title ?? cheque.BankName})";
+
+                    // ۱. بدهکار شدن اسناد پرداختنی تجاری (2103)
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 1,
+                        AccountId = accNotesPay.Id,
+                        Description = $"تسویه اسناد پرداختنی بابت پاس شدن چک شماره {cheque.ChequeNumber}",
+                        Debit = cheque.Amount,
+                        Credit = 0,
+                        SupplierId = cheque.SupplierId,
+                        BankAccountId = sourceBank?.Id,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    // ۲. بستانکار شدن موجودی نقد و بانک شرکت (1101)
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 2,
+                        AccountId = accCashBank.Id,
+                        Description = $"کسر از حساب ({sourceBank?.Title ?? cheque.BankName}) بابت پاس شدن چک پرداختنی {cheque.ChequeNumber}",
+                        Debit = 0,
+                        Credit = cheque.Amount,
+                        SupplierId = cheque.SupplierId,
+                        BankAccountId = sourceBank?.Id,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else if (model.NewStatus == ChequeStatus.Returned || model.NewStatus == ChequeStatus.Bounced)
+                {
+                    voucherTitle = $"سند خودکار ابطال / برگشت چک پرداختنی شماره {cheque.ChequeNumber}";
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 1,
+                        AccountId = accNotesPay.Id,
+                        Description = $"ابطال/عودت چک پرداختنی شماره {cheque.ChequeNumber}",
+                        Debit = cheque.Amount,
+                        Credit = 0,
+                        SupplierId = cheque.SupplierId,
+                        BankAccountId = cheque.BankAccountId,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    items.Add(new JournalVoucherItem
+                    {
+                        TenantId = tenantId,
+                        RowNumber = 2,
+                        AccountId = accPayable.Id,
+                        Description = $"برگشت بدهی به حساب تأمین‌کننده بابت ابطال/برگشت چک {cheque.ChequeNumber}",
+                        Debit = 0,
+                        Credit = cheque.Amount,
+                        SupplierId = cheque.SupplierId,
+                        ProjectId = cheque.ProjectId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    throw new InvalidOperationException("تغییر وضعیت درخواستی برای چک پرداختنی معتبر نیست.");
+                }
+            }
+
+            cheque.Status = model.NewStatus;
+            cheque.StatusChangedAt = actionDate;
+            if (!string.IsNullOrWhiteSpace(model.Description))
+                cheque.Description = model.Description.Trim();
+
+            _unitOfWork.chequeUW.Update(cheque);
+
+            var nextNumber = await GetNextVoucherNumberAsync(tenantId, fiscalYearId, ct);
+            var voucher = new JournalVoucher
+            {
+                TenantId = tenantId,
+                FiscalYearId = fiscalYearId,
+                VoucherNumber = nextNumber,
+                VoucherDate = actionDate,
+                Description = voucherTitle,
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.ChequeOperation,
+                ReferenceId = cheque.Id,
+                TotalDebit = cheque.Amount,
+                TotalCredit = cheque.Amount,
+                CreatedAt = DateTime.UtcNow,
+                Items = items
+            };
+
+            await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
+            await _unitOfWork.SaveAsync();
+
+            return voucher;
+        }
+
+        public async Task<ChequeRasGiriResultDto> CalculateChequesRasGiriAsync(ChequeRasGiriRequestModel model, CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+
+            var baseDate = !string.IsNullOrWhiteSpace(model.BaseDateShamsi)
+                ? ConvertDate.ConvertShamsiToMiladi(model.BaseDateShamsi).Date
+                : DateTime.UtcNow.Date;
+
+            var query = _context.Set<Cheque>()
+                .AsNoTracking()
+                .Where(x => x.TenantId == tenantId && !x.IsDeleted);
+
+            if (model.ChequeIds != null && model.ChequeIds.Count > 0)
+            {
+                query = query.Where(x => model.ChequeIds.Contains(x.Id));
+            }
+            else
+            {
+                if (model.Type.HasValue)
+                    query = query.Where(x => x.Type == model.Type.Value);
+
+                if (model.CustomerId.HasValue)
+                    query = query.Where(x => x.CustomerId == model.CustomerId.Value);
+
+                if (model.SupplierId.HasValue)
+                    query = query.Where(x => x.SupplierId == model.SupplierId.Value);
+            }
+
+            var cheques = await query
+                .OrderBy(x => x.DueDate)
+                .ToListAsync(ct);
+
+            if (cheques.Count == 0)
+                throw new InvalidOperationException("هیچ چکی جهت محاسبه راس‌گیری یافت نشد.");
+
+            var items = new List<ChequeRasGiriItemDto>();
+            decimal totalAmount = 0m;
+            decimal totalWeightedAmountDays = 0m;
+
+            foreach (var chq in cheques)
+            {
+                var daysDiff = (int)Math.Round((chq.DueDate.Date - baseDate).TotalDays);
+                var weighted = chq.Amount * daysDiff;
+
+                totalAmount += chq.Amount;
+                totalWeightedAmountDays += weighted;
+
+                items.Add(new ChequeRasGiriItemDto
+                {
+                    ChequeId = chq.Id,
+                    ChequeNumber = chq.ChequeNumber,
+                    SayadiId = chq.SayadiId,
+                    BankName = chq.BankName,
+                    Amount = chq.Amount,
+                    DueDate = chq.DueDate,
+                    DueDateShamsi = ConvertDate.ConvertMiladiToShamsi(chq.DueDate, "yyyy/MM/dd"),
+                    DaysFromBaseDate = daysDiff,
+                    WeightedAmountDays = weighted
+                });
+            }
+
+            var weightedAvgDays = totalAmount > 0
+                ? Math.Round(totalWeightedAmountDays / totalAmount, 2)
+                : 0m;
+
+            var exactRasDate = baseDate.AddDays((double)Math.Round(weightedAvgDays));
+            var discountRate = model.MonthlyDiscountRatePercent > 0 ? model.MonthlyDiscountRatePercent : 0m;
+            var estimatedDiscount = discountRate > 0 && weightedAvgDays > 0
+                ? Math.Round(totalAmount * (discountRate / 100m) * (weightedAvgDays / 30m), 0)
+                : 0m;
+
+            return new ChequeRasGiriResultDto
+            {
+                ChequeCount = cheques.Count,
+                TotalAmount = totalAmount,
+                BaseDate = baseDate,
+                BaseDateShamsi = ConvertDate.ConvertMiladiToShamsi(baseDate, "yyyy/MM/dd"),
+                TotalWeightedAmountDays = totalWeightedAmountDays,
+                WeightedAverageDays = weightedAvgDays,
+                ExactRasDate = exactRasDate,
+                ExactRasDateShamsi = ConvertDate.ConvertMiladiToShamsi(exactRasDate, "yyyy/MM/dd"),
+                MonthlyDiscountRatePercent = discountRate,
+                EstimatedDiscountAmount = estimatedDiscount,
+                Items = items
+            };
         }
     }
 }

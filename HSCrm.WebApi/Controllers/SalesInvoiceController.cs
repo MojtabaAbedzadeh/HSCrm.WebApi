@@ -87,7 +87,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("CreateSalesInvoice")]
         [Permission(Permissions.SalesInvoices.Create)]
-        public async Task<ApiResponse> CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model)
+        public async Task<ApiResponse> CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model, [FromQuery] InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage)
         {
             if (model.Items == null || model.Items.Count == 0) return new ApiResponse
             {
@@ -161,8 +161,8 @@ namespace HSCrm.WebApi.Controllers
 
                 if (invoice.Status == InvoiceStatus.Final)
                 {
-                    _inventory.ApplyInventoryForSalesInvoice(invoice);
-                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
+                    _inventory.ApplyInventoryForSalesInvoice(invoice, costingMethod);
+                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice, costingMethod);
                     await _context.SaveAsync();
                 }
 
@@ -246,7 +246,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPut("UpdateInvoice")]
         [Permission(Permissions.SalesInvoices.Edit)]
-        public async Task<ApiResponse> Update([FromBody] SalesInvoiceEditModel model)
+        public async Task<ApiResponse> Update([FromBody] SalesInvoiceEditModel model, [FromQuery] InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage)
         {
             using var tr = _context.BeginTransaction();
             try
@@ -302,8 +302,8 @@ namespace HSCrm.WebApi.Controllers
 
                 if (newStatus == InvoiceStatus.Final)
                 {
-                    _inventory.ApplyInventoryForSalesInvoice(invoice);
-                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
+                    _inventory.ApplyInventoryForSalesInvoice(invoice, costingMethod);
+                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice, costingMethod);
                     await _context.SaveAsync();
                 }
 
