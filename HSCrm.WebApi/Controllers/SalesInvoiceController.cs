@@ -366,20 +366,25 @@ namespace HSCrm.WebApi.Controllers
                     inventoriesToUpdate.Add((inventory, item));
                 }
 
-                // ۲. کسر موجودی و ثبت تراکنش انبار با WarehouseId معتبر
+                // ۲. کسر موجودی، محاسبه بهای تمام‌شده (COGS) و ثبت تراکنش انبار با WarehouseId معتبر
                 foreach (var (inventory, item) in inventoriesToUpdate)
                 {
+                    item.UnitCost = inventory.AverageUnitCost;
+                    item.TotalCost = Math.Round(item.Quantity * inventory.AverageUnitCost, 2);
                     inventory.Quantity -= item.Quantity;
 
                     _context.inventoryTransactionUW.Create(new InventoryTransaction
                     {
                         TenantId = tenantId,
+                        FiscalYearId = invoice.FiscalYearId,
                         WarehouseId = inventory.WarehouseId,
                         ProductId = item.ProductId,
                         QuantityChange = -item.Quantity,
+                        UnitCost = item.UnitCost,
+                        TotalCost = item.TotalCost,
                         CreatedAt = DateTime.UtcNow,
                         CreatedById = userId,
-                        Description = "تأیید فاکتور فروش شماره " + invoice.Id,
+                        Description = "تأیید فاکتور فروش شماره " + invoice.Number,
                         TransactionType = InventoryTransactionType.Sale,
                         ReferenceId = invoice.Id,
                         ReferenceType = InventoryReferenceType.SalesInvoice

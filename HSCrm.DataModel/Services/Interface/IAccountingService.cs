@@ -19,7 +19,7 @@ namespace HSCrm.DataModel.Services.Interface
         /// <summary>
         /// صدور خودکار سند حسابداری هنگام نهایی‌سازی فاکتور فروش (SalesInvoice)
         /// </summary>
-        Task<JournalVoucher> CreateVoucherForSalesInvoiceAsync(SalesInvoice invoice, CancellationToken ct = default);
+        Task<JournalVoucher> CreateVoucherForSalesInvoiceAsync(SalesInvoice invoice, InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage, CancellationToken ct = default);
 
         /// <summary>
         /// صدور خودکار سند حسابداری هنگام نهایی‌سازی فاکتور خرید (PurchaseInvoice)

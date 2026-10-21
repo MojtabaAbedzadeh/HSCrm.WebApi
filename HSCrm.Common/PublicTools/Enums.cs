@@ -114,6 +114,18 @@ namespace HSCrm.Common.PublicTools
         /// <summary>
         /// منشأ صدور سند حسابداری (دستی یا خودکار از زیرسیستم‌های HSCrm)
         /// </summary>
+        /// <summary>
+        /// روش قیمت‌گذاری موجودی انبار و محاسبه بهای تمام‌شده کالای فروش‌رفته (COGS)
+        /// </summary>
+        public enum InventoryCostingMethod : byte
+        {
+            [Display(Name = "میانگین موزون متحرک (Moving Weighted Average)")]
+            WeightedAverage = 1,
+
+            [Display(Name = "اولین صادره از اولین وارده (FIFO)")]
+            FIFO = 2
+        }
+
         public enum AccountingReferenceType : byte
         {
             [Display(Name = "سند دستی")]

@@ -62,6 +62,24 @@ namespace HSCrm.WebApi.Controllers
             });
         }
 
+        /// <summary>
+        /// گزارش ارزش‌گذاری ریالی موجودی انبار به هر دو روش میانگین موزون متحرک و FIFO
+        /// </summary>
+        [HttpGet("ValuationReport")]
+        public async Task<ActionResult<ApiResponse<List<InventoryValuationDto>>>> GetValuationReport(
+            [FromQuery] int? warehouseId,
+            CancellationToken ct)
+        {
+            var data = await _inventoryService.GetInventoryValuationAsync(warehouseId, ct);
+            return Ok(new ApiResponse<List<InventoryValuationDto>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "گزارش ارزش‌گذاری ریالی انبار (میانگین موزون و FIFO) محاسبه شد.",
+                Data = data
+            });
+        }
+
         [HttpPost("ApplyAdjustment")]
         public async Task<IActionResult> ApplyAdjustment([FromBody] AdjustmentRequest model)
         {

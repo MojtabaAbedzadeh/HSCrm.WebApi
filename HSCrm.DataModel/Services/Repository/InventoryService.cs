@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -15,7 +15,11 @@ namespace HSCrm.DataModel.Services.Repository
         private readonly ICurrentFiscalYearService _currentFiscalYear;
         private readonly ICurrentUserService _currentUser;
 
-        public InventoryService(ApplicationDbContext context, IUnitOfWork unitOfWork, ICurrentFiscalYearService currentFiscalYear, ICurrentUserService currentUser) : base(context)
+        public InventoryService(
+            ApplicationDbContext context,
+            IUnitOfWork unitOfWork,
+            ICurrentFiscalYearService currentFiscalYear,
+            ICurrentUserService currentUser) : base(context)
         {
             _context = context;
             _unitOfWork = unitOfWork;
@@ -23,7 +27,13 @@ namespace HSCrm.DataModel.Services.Repository
             _currentUser = currentUser;
         }
 
-        public void ApplyInventoryForSalesInvoice(SalesInvoice invoice)
+        /// <summary>
+        /// خروج کالا از انبار بابت فاکتور فروش + محاسبه بهای تمام‌شده کالای فروش‌رفته (COGS)
+        /// به روش میانگین موزون متحرک (WeightedAverage) یا اولین صادره از اولین وارده (FIFO)
+        /// </summary>
+        public void ApplyInventoryForSalesInvoice(
+            SalesInvoice invoice,
+            InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage)
         {
             if (invoice == null || invoice.Items == null || !invoice.Items.Any())
                 return;
@@ -46,13 +56,83 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = invoice.TenantId,
                         WarehouseId = invoice.WarehouseId,
                         CreatedAt = DateTime.UtcNow,
-                        Quantity = 0
+                        Quantity = 0,
+                        AverageUnitCost = 0
                     };
                     _context.Inventories.Add(inventory);
                 }
 
                 if (inventory.Quantity < item.Quantity)
                     throw new InvalidOperationException("موجودی انبار برای ثبت فروش کافی نیست.");
+
+                decimal cogsUnitCost = 0m;
+                decimal cogsTotalCost = 0m;
+
+                if (costingMethod == InventoryCostingMethod.FIFO)
+                {
+                    // الگوریتم FIFO: مصرف از قدیمی‌ترین پارت‌های خرید که RemainingFifoQuantity > 0 دارند
+                    var openLayers = _context.InventoryTransactions
+                        .Where(x => x.TenantId == invoice.TenantId
+                                 && x.WarehouseId == invoice.WarehouseId
+                                 && x.ProductId == item.ProductId
+                                 && x.QuantityChange > 0
+                                 && x.RemainingFifoQuantity > 0
+                                 && !x.IsDeleted)
+                        .OrderBy(x => x.CreatedAt)
+                        .ThenBy(x => x.Id)
+                        .ToList();
+
+                    decimal remainingToConsume = item.Quantity;
+                    foreach (var layer in openLayers)
+                    {
+                        if (remainingToConsume <= 0) break;
+
+                        decimal consumeFromLayer = Math.Min(remainingToConsume, layer.RemainingFifoQuantity);
+                        cogsTotalCost += consumeFromLayer * layer.UnitCost;
+                        layer.RemainingFifoQuantity -= consumeFromLayer;
+                        remainingToConsume -= consumeFromLayer;
+                    }
+
+                    // اگر بخشی از موجودی از قبل بدون لایه FIFO بوده باشد، با نرخ میانگین موزون قیمت‌گذاری می‌شود
+                    if (remainingToConsume > 0)
+                    {
+                        cogsTotalCost += remainingToConsume * inventory.AverageUnitCost;
+                    }
+
+                    cogsTotalCost = Math.Round(cogsTotalCost, 2);
+                    cogsUnitCost = item.Quantity > 0 ? Math.Round(cogsTotalCost / item.Quantity, 2) : inventory.AverageUnitCost;
+                }
+                else
+                {
+                    // الگوریتم میانگین موزون متحرک (Moving Weighted Average)
+                    cogsUnitCost = inventory.AverageUnitCost;
+                    cogsTotalCost = Math.Round(item.Quantity * cogsUnitCost, 2);
+
+                    // همگام‌سازی لایه‌های FIFO برای حفظ سازگاری گزارش مقایسه‌ای
+                    var openLayers = _context.InventoryTransactions
+                        .Where(x => x.TenantId == invoice.TenantId
+                                 && x.WarehouseId == invoice.WarehouseId
+                                 && x.ProductId == item.ProductId
+                                 && x.QuantityChange > 0
+                                 && x.RemainingFifoQuantity > 0
+                                 && !x.IsDeleted)
+                        .OrderBy(x => x.CreatedAt)
+                        .ThenBy(x => x.Id)
+                        .ToList();
+
+                    decimal rem = item.Quantity;
+                    foreach (var layer in openLayers)
+                    {
+                        if (rem <= 0) break;
+                        decimal take = Math.Min(rem, layer.RemainingFifoQuantity);
+                        layer.RemainingFifoQuantity -= take;
+                        rem -= take;
+                    }
+                }
+
+                // ذخیره بهای تمام‌شده روی ردیف فاکتور فروش جهت استفاده در سند حسابداری COGS
+                item.UnitCost = cogsUnitCost;
+                item.TotalCost = cogsTotalCost;
 
                 inventory.Quantity -= item.Quantity;
 
@@ -63,8 +143,11 @@ namespace HSCrm.DataModel.Services.Repository
                     TenantId = invoice.TenantId,
                     ProductId = item.ProductId,
                     QuantityChange = -item.Quantity,
+                    UnitCost = cogsUnitCost,
+                    TotalCost = cogsTotalCost,
+                    RemainingFifoQuantity = 0,
                     CreatedAt = DateTime.UtcNow,
-                    Description = "فاکتور فروش",
+                    Description = $"خروج انبار بابت فاکتور فروش شماره {invoice.Number}",
                     TransactionType = InventoryTransactionType.Sale,
                     ReferenceId = invoice.Id,
                     ReferenceType = InventoryReferenceType.SalesInvoice
@@ -90,7 +173,17 @@ namespace HSCrm.DataModel.Services.Repository
                 if (inventory == null)
                     throw new InvalidOperationException("موجودی انبار برای بازگشت فروش پیدا نشد.");
 
-                inventory.Quantity += item.Quantity;
+                decimal returnUnitCost = item.UnitCost > 0 ? item.UnitCost : inventory.AverageUnitCost;
+                decimal returnTotalCost = item.TotalCost > 0 ? item.TotalCost : Math.Round(item.Quantity * returnUnitCost, 2);
+
+                // بازنگری میانگین موزون هنگام برگشت کالا به انبار
+                decimal currentVal = Math.Max(0m, inventory.Quantity) * inventory.AverageUnitCost;
+                decimal newQty = inventory.Quantity + item.Quantity;
+                if (newQty > 0)
+                {
+                    inventory.AverageUnitCost = Math.Round((currentVal + returnTotalCost) / newQty, 2);
+                }
+                inventory.Quantity = newQty;
 
                 _context.InventoryTransactions.Add(new InventoryTransaction
                 {
@@ -100,6 +193,10 @@ namespace HSCrm.DataModel.Services.Repository
                     ProductId = item.ProductId,
                     CreatedAt = DateTime.UtcNow,
                     QuantityChange = item.Quantity,
+                    UnitCost = returnUnitCost,
+                    TotalCost = returnTotalCost,
+                    RemainingFifoQuantity = item.Quantity,
+                    Description = $"برگشت به انبار بابت ابطال/ویرایش فاکتور فروش شماره {invoice.Number}",
                     TransactionType = InventoryTransactionType.SaleRollback,
                     ReferenceId = invoice.Id,
                     ReferenceType = InventoryReferenceType.SalesInvoice
@@ -107,6 +204,9 @@ namespace HSCrm.DataModel.Services.Repository
             }
         }
 
+        /// <summary>
+        /// ورود کالا به انبار بابت فاکتور خرید + بروزرسانی خودکار نرخ میانگین موزون متحرک و ثبت لایه FIFO
+        /// </summary>
         public async Task ApplyInventoryForPurchaseInvoice(PurchaseInvoice invoice)
         {
             if (invoice == null || invoice.Items == null || !invoice.Items.Any())
@@ -130,12 +230,35 @@ namespace HSCrm.DataModel.Services.Repository
                         CreatedAt = DateTime.UtcNow,
                         TenantId = invoice.TenantId,
                         WarehouseId = invoice.WarehouseId,
-                        Quantity = 0
+                        Quantity = 0,
+                        AverageUnitCost = 0
                     };
+
                     await _context.Inventories.AddAsync(inventory);
                 }
 
-                inventory.Quantity += item.Quantity;
+                // محاسبه بهای تمام‌شده خالص خرید (پس از کسر تخفیف ردیف، بدون مالیات ارزش افزوده قابل استرداد)
+                decimal grossCost = item.Quantity * item.UnitPricePurchase;
+                decimal netLineCost = Math.Max(0m, grossCost - (item.Discount ?? 0m));
+                decimal purchaseUnitCost = item.Quantity > 0
+                    ? Math.Round(netLineCost / item.Quantity, 2)
+                    : item.UnitPricePurchase;
+
+                // فرمول میانگین موزون متحرک:
+                // NewAvgCost = ((OldQty * OldAvgCost) + (PurchaseQty * PurchaseUnitCost)) / (OldQty + PurchaseQty)
+                decimal existingValue = Math.Max(0m, inventory.Quantity) * inventory.AverageUnitCost;
+                decimal newTotalQty = inventory.Quantity + item.Quantity;
+
+                if (newTotalQty > 0)
+                {
+                    inventory.AverageUnitCost = Math.Round((existingValue + netLineCost) / newTotalQty, 2);
+                }
+                else
+                {
+                    inventory.AverageUnitCost = purchaseUnitCost;
+                }
+
+                inventory.Quantity = newTotalQty;
 
                 await _context.InventoryTransactions.AddAsync(new InventoryTransaction
                 {
@@ -145,7 +268,10 @@ namespace HSCrm.DataModel.Services.Repository
                     CreatedAt = DateTime.UtcNow,
                     ProductId = item.ProductId,
                     QuantityChange = item.Quantity,
-                    Description = "فاکتور خرید",
+                    UnitCost = purchaseUnitCost,
+                    TotalCost = netLineCost,
+                    RemainingFifoQuantity = item.Quantity, // آماده مصرف در روش FIFO
+                    Description = $"ورود به انبار بابت فاکتور خرید شماره {invoice.Number}",
                     TransactionType = InventoryTransactionType.Purchase,
                     ReferenceId = invoice.Id,
                     ReferenceType = InventoryReferenceType.PurchaseInvoice
@@ -171,7 +297,22 @@ namespace HSCrm.DataModel.Services.Repository
                 if (inventory == null || inventory.Quantity < item.Quantity)
                     throw new InvalidOperationException("موجودی انبار برای برگشت خرید کافی نیست.");
 
-                inventory.Quantity -= item.Quantity;
+                decimal grossCost = item.Quantity * item.UnitPricePurchase;
+                decimal netLineCost = Math.Max(0m, grossCost - (item.Discount ?? 0m));
+                decimal purchaseUnitCost = item.Quantity > 0
+                    ? Math.Round(netLineCost / item.Quantity, 2)
+                    : item.UnitPricePurchase;
+
+                decimal existingValue = inventory.Quantity * inventory.AverageUnitCost;
+                decimal newTotalQty = inventory.Quantity - item.Quantity;
+
+                if (newTotalQty > 0)
+                {
+                    decimal remainingValue = Math.Max(0m, existingValue - netLineCost);
+                    inventory.AverageUnitCost = Math.Round(remainingValue / newTotalQty, 2);
+                }
+
+                inventory.Quantity = newTotalQty;
 
                 _context.InventoryTransactions.Add(new InventoryTransaction
                 {
@@ -181,6 +322,10 @@ namespace HSCrm.DataModel.Services.Repository
                     TenantId = invoice.TenantId,
                     ProductId = item.ProductId,
                     QuantityChange = -item.Quantity,
+                    UnitCost = purchaseUnitCost,
+                    TotalCost = netLineCost,
+                    RemainingFifoQuantity = 0,
+                    Description = $"برگشت از انبار بابت ابطال فاکتور خرید شماره {invoice.Number}",
                     TransactionType = InventoryTransactionType.PurchaseRollback,
                     ReferenceId = invoice.Id,
                     ReferenceType = InventoryReferenceType.PurchaseInvoice
@@ -188,50 +333,46 @@ namespace HSCrm.DataModel.Services.Repository
             }
         }
 
+        /// <summary>
+        /// گزارش کاردکس تعدادی و ریالی کالا (شامل فی، مبلغ کل، نرخ میانگین در گردش و مانده ریالی)
+        /// </summary>
         public async Task<List<KardexDto>> GetProductKardexAsync(int productId, DateTime? fromDate, DateTime? toDate, int? warehouseId = null)
         {
             var baseQuery = _context.InventoryTransactions
                 .AsNoTracking()
-                .Where(x => x.ProductId == productId);
+                .Where(x => x.ProductId == productId && !x.IsDeleted);
 
             if (warehouseId.HasValue)
             {
-                baseQuery = baseQuery.Where(x =>
-                    x.WarehouseId == warehouseId.Value);
+                baseQuery = baseQuery.Where(x => x.WarehouseId == warehouseId.Value);
             }
 
             decimal openingBalance = 0;
+            decimal openingValue = 0;
 
             if (fromDate.HasValue)
             {
-                openingBalance = await baseQuery
+                var priorItems = await baseQuery
                     .Where(x => x.CreatedAt < fromDate.Value)
-                    .SumAsync(x => (decimal?)x.QuantityChange) ?? 0;
+                    .ToListAsync();
+
+                openingBalance = priorItems.Sum(x => x.QuantityChange);
+                openingValue = priorItems.Sum(x => x.QuantityChange >= 0 ? x.TotalCost : -x.TotalCost);
             }
 
             var query = baseQuery;
 
             if (fromDate.HasValue)
             {
-                query = query.Where(x =>
-                    x.CreatedAt >= fromDate.Value);
+                query = query.Where(x => x.CreatedAt >= fromDate.Value);
             }
 
             if (toDate.HasValue)
             {
-                var endDate = toDate.Value
-                    .Date
-                    .AddDays(1)
-                    .AddTicks(-1);
-
-                query = query.Where(x =>
-                    x.CreatedAt <= endDate);
+                var endDate = toDate.Value.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(x => x.CreatedAt <= endDate);
             }
 
-            /*
-             * به‌جای item.Warehouse.Title،
-             * مستقیماً جدول Warehouse را Join می‌کنیم.
-             */
             var transactions = await
                 (
                     from item in query
@@ -243,67 +384,106 @@ namespace HSCrm.DataModel.Services.Repository
                     select new
                     {
                         Item = item,
-
-                        // اگر انبار حذف شده یا رکورد آن پیدا نشود:
-                        WarehouseTitle = warehouse != null
-                            ? warehouse.Title
-                            : "نامشخص"
+                        WarehouseTitle = warehouse != null ? warehouse.Title : "نامشخص"
                     }
                 )
                 .ToListAsync();
 
             decimal runningBalance = openingBalance;
-
+            decimal runningValue = Math.Max(0m, openingValue);
             var result = new List<KardexDto>();
 
             foreach (var transaction in transactions)
             {
                 var item = transaction.Item;
 
-                var inputQty = item.QuantityChange > 0
-                    ? item.QuantityChange
-                    : 0;
-
-                var outputQty = item.QuantityChange < 0
-                    ? Math.Abs(item.QuantityChange)
-                    : 0;
+                var inputQty = item.QuantityChange > 0 ? item.QuantityChange : 0;
+                var outputQty = item.QuantityChange < 0 ? Math.Abs(item.QuantityChange) : 0;
 
                 runningBalance += item.QuantityChange;
+                runningValue += item.QuantityChange >= 0 ? item.TotalCost : -item.TotalCost;
+                if (runningBalance <= 0) runningValue = 0m;
+
+                decimal runningUnitCost = runningBalance > 0
+                    ? Math.Round(runningValue / runningBalance, 2)
+                    : item.UnitCost;
 
                 result.Add(new KardexDto
                 {
                     TransactionDate = item.CreatedAt,
-
-                    TransactionTypeTitle =
-                        item.TransactionType.ToPersianName(),
-
-                    ReferenceTypeTitle =
-                        item.ReferenceType.ToPersianName(),
-
-                    WarehouseTitle =
-                        transaction.WarehouseTitle,
-
+                    TransactionTypeTitle = item.TransactionType.ToPersianName(),
+                    ReferenceTypeTitle = item.ReferenceType.ToPersianName(),
+                    WarehouseTitle = transaction.WarehouseTitle,
                     ReferenceId = item.ReferenceId,
-
                     QuantityChange = item.QuantityChange,
-
                     InputQuantity = inputQty,
-
                     OutputQuantity = outputQty,
-
                     RunningBalance = runningBalance,
-
+                    UnitCost = item.UnitCost,
+                    TotalCost = item.TotalCost,
+                    RunningUnitCost = runningUnitCost,
+                    RunningValueBalance = Math.Round(runningValue, 2),
                     WarehouseId = item.WarehouseId,
-
-                    Description = GetKardexDescription(
-                        item.ReferenceType,
-                        item.ReferenceId)
+                    Description = !string.IsNullOrWhiteSpace(item.Description)
+                        ? item.Description
+                        : GetKardexDescription(item.ReferenceType, item.ReferenceId)
                 });
             }
 
             return result;
         }
 
+        /// <summary>
+        /// گزارش ارزش‌گذاری موجودی انبار به تفکیک هر دو روش میانگین موزون متحرک و FIFO
+        /// </summary>
+        public async Task<List<InventoryValuationDto>> GetInventoryValuationAsync(int? warehouseId = null, CancellationToken ct = default)
+        {
+            var invQuery = _context.Inventories
+                .AsNoTracking()
+                .Include(x => x.Product)
+                .Include(x => x.Warehouse)
+                .Where(x => !x.IsDeleted && x.Quantity > 0);
+
+            if (warehouseId.HasValue)
+                invQuery = invQuery.Where(x => x.WarehouseId == warehouseId.Value);
+
+            var inventories = await invQuery.OrderBy(x => x.ProductId).ToListAsync(ct);
+
+            var openFifoLayers = await _context.InventoryTransactions
+                .AsNoTracking()
+                .Where(x => !x.IsDeleted && x.QuantityChange > 0 && x.RemainingFifoQuantity > 0)
+                .ToListAsync(ct);
+
+            var result = new List<InventoryValuationDto>();
+            foreach (var inv in inventories)
+            {
+                var productLayers = openFifoLayers
+                    .Where(l => l.ProductId == inv.ProductId && l.WarehouseId == inv.WarehouseId)
+                    .OrderBy(l => l.CreatedAt)
+                    .ThenBy(l => l.Id)
+                    .ToList();
+
+                decimal fifoVal = productLayers.Sum(l => l.RemainingFifoQuantity * l.UnitCost);
+                decimal coveredQty = productLayers.Sum(l => l.RemainingFifoQuantity);
+                if (coveredQty < inv.Quantity)
+                {
+                    fifoVal += (inv.Quantity - coveredQty) * inv.AverageUnitCost;
+                }
+
+                result.Add(new InventoryValuationDto
+                {
+                    ProductId = inv.ProductId,
+                    ProductTitle = inv.Product?.ProductTitle ?? $"کالای #{inv.ProductId}",
+                    WarehouseId = inv.WarehouseId,
+                    WarehouseTitle = inv.Warehouse?.Title ?? $"انبار #{inv.WarehouseId}",
+                    CurrentQuantity = inv.Quantity,
+                    WeightedAverageUnitCost = inv.AverageUnitCost,
+                    FifoTotalValue = Math.Round(fifoVal, 2)
+                });
+            }
+
+            return result;
+        }
 
         private static string GetKardexDescription(InventoryReferenceType referenceType, long referenceId)
         {
@@ -313,15 +493,18 @@ namespace HSCrm.DataModel.Services.Repository
         public async Task ApplyAdjustmentAsync(AdjustmentDto dto, CancellationToken ct = default)
         {
             using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
-
             try
             {
-                var inventory = await _context.Inventories.FirstOrDefaultAsync(x => x.ProductId == dto.ProductId && x.WarehouseId == dto.WarehouseId, ct);
+                var inventory = await _context.Inventories.FirstOrDefaultAsync(
+                    x => x.ProductId == dto.ProductId && x.WarehouseId == dto.WarehouseId, ct);
 
                 if (inventory == null)
                 {
                     throw new Exception("رکورد موجودی برای این کالا و انبار یافت نشد.");
                 }
+
+                decimal unitCost = inventory.AverageUnitCost;
+                decimal totalCost = Math.Round(Math.Abs(dto.QuantityChange) * unitCost, 2);
 
                 inventory.Quantity += dto.QuantityChange;
 
@@ -332,10 +515,13 @@ namespace HSCrm.DataModel.Services.Repository
                     TenantId = (int)_currentUser.TenantId,
                     FiscalYearId = (int)_currentFiscalYear.FiscalYearId,
                     QuantityChange = dto.QuantityChange,
+                    UnitCost = unitCost,
+                    TotalCost = totalCost,
+                    RemainingFifoQuantity = dto.QuantityChange > 0 ? dto.QuantityChange : 0,
                     TransactionType = InventoryTransactionType.Adjustment,
                     Description = dto.Description,
                     ReferenceId = dto.ReferenceId,
-                    ReferenceType = InventoryReferenceType.SalesInvoice,
+                    ReferenceType = InventoryReferenceType.Adjustment,
                     CreatedAt = DateTime.Now,
                 };
 
@@ -343,7 +529,7 @@ namespace HSCrm.DataModel.Services.Repository
                 await _unitOfWork.SaveAsync();
                 await transaction.CommitAsync(ct);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await transaction.RollbackAsync(ct);
                 throw;

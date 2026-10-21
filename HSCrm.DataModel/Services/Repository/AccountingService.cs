@@ -162,12 +162,17 @@ namespace HSCrm.DataModel.Services.Repository
             return voucher;
         }
 
-        public async Task<JournalVoucher> CreateVoucherForSalesInvoiceAsync(SalesInvoice invoice, CancellationToken ct = default)
+        public async Task<JournalVoucher> CreateVoucherForSalesInvoiceAsync(
+            SalesInvoice invoice,
+            InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage,
+            CancellationToken ct = default)
         {
             var accReceivable = await GetSystemAccountAsync(invoice.TenantId, ACC_RECEIVABLE, ct);
             var accSales = await GetSystemAccountAsync(invoice.TenantId, ACC_SALES_REVENUE, ct);
             var accDiscount = await GetSystemAccountAsync(invoice.TenantId, ACC_SALES_DISCOUNT, ct);
             var accVat = await GetSystemAccountAsync(invoice.TenantId, ACC_VAT_PAYABLE, ct);
+            var accCogs = await GetSystemAccountAsync(invoice.TenantId, ACC_PURCHASE_COST, ct);    // 5101: بهای تمام‌شده کالای فروش‌رفته (COGS)
+            var accInventory = await GetSystemAccountAsync(invoice.TenantId, ACC_INVENTORY, ct);   // 1105: موجودی مواد و کالا (انبار)
 
             var project = await _context.Set<Project>()
                 .AsNoTracking()
@@ -234,6 +239,66 @@ namespace HSCrm.DataModel.Services.Repository
                 });
             }
 
+            // =========================================================================
+            // محاسبه و ثبت خودکار بهای تمام‌شده کالای فروش‌رفته (COGS - میانگین موزون یا FIFO)
+            // =========================================================================
+            decimal totalCogs = 0m;
+            if (invoice.Items != null && invoice.Items.Any())
+            {
+                foreach (var saleItem in invoice.Items)
+                {
+                    if (saleItem.TotalCost > 0)
+                    {
+                        totalCogs += saleItem.TotalCost;
+                    }
+                    else
+                    {
+                        // در صورتی که قبلاً توسط InventoryService محاسبه نشده باشد، از نرخ میانگین موزون انبار استخراج می‌شود
+                        var inv = await _context.Inventories
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(x => x.TenantId == invoice.TenantId
+                                                   && x.WarehouseId == invoice.WarehouseId
+                                                   && x.ProductId == saleItem.ProductId, ct);
+
+                        decimal unitCost = inv?.AverageUnitCost ?? 0m;
+                        decimal lineCost = Math.Round(saleItem.Quantity * unitCost, 2);
+                        saleItem.UnitCost = unitCost;
+                        saleItem.TotalCost = lineCost;
+                        totalCogs += lineCost;
+                    }
+                }
+            }
+
+            if (totalCogs > 0)
+            {
+                var methodTitle = costingMethod == InventoryCostingMethod.FIFO ? "FIFO" : "میانگین موزون";
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = invoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accCogs.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"بهای تمام‌شده کالای فروش‌رفته ({methodTitle}) بابت فاکتور {invoice.Number}",
+                    Debit = totalCogs,
+                    Credit = 0,
+                    ProjectId = invoice.ProjectId,
+                    WarehouseId = invoice.WarehouseId
+                });
+
+                items.Add(new JournalVoucherItem
+                {
+                    TenantId = invoice.TenantId,
+                    RowNumber = row++,
+                    AccountId = accInventory.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    Description = $"کسر ارزش موجودی انبار ({methodTitle}) بابت فاکتور فروش {invoice.Number}",
+                    Debit = 0,
+                    Credit = totalCogs,
+                    ProjectId = invoice.ProjectId,
+                    WarehouseId = invoice.WarehouseId
+                });
+            }
+
             var nextNumber = await GetNextVoucherNumberAsync(invoice.TenantId, invoice.FiscalYearId, ct);
 
             var voucher = new JournalVoucher
@@ -243,7 +308,7 @@ namespace HSCrm.DataModel.Services.Repository
                 CreatedAt = DateTime.UtcNow,
                 VoucherNumber = nextNumber,
                 VoucherDate = invoice.IssueDate,
-                Description = $"سند خودکار فاکتور فروش شماره {invoice.Number}",
+                Description = $"سند خودکار فاکتور فروش و بهای تمام‌شده (COGS) شماره {invoice.Number}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.SalesInvoice,
                 ReferenceId = invoice.Id,
@@ -259,7 +324,8 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForPurchaseInvoiceAsync(PurchaseInvoice invoice, CancellationToken ct = default)
         {
-            var accInventory = await GetSystemAccountAsync(invoice.TenantId, ACC_PURCHASE_COST, ct);
+            // در سیستم ثبت دائمی موجودی انبار (Perpetual Inventory)، خرید کالا ابتدا به حساب دارایی انبار (1105) بدهکار می‌شود
+            var accInventory = await GetSystemAccountAsync(invoice.TenantId, ACC_INVENTORY, ct);
             var accVatRec = await GetSystemAccountAsync(invoice.TenantId, ACC_VAT_RECEIVABLE, ct);
             var accPayable = await GetSystemAccountAsync(invoice.TenantId, ACC_PAYABLE, ct);
             var accDiscount = await GetSystemAccountAsync(invoice.TenantId, ACC_PURCHASE_DISCOUNT, ct);
