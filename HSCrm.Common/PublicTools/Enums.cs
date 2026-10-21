@@ -200,5 +200,17 @@ namespace HSCrm.Common.PublicTools
             [Display(Name = "فاکتور برگشت از خرید")]
             PurchaseReturnInvoice = 11
         }
+
+        /// <summary>
+        /// نوع طرف‌حساب در گزارش صورت‌حساب جامع و تحلیل سنی مطالبات/بدهی‌ها
+        /// </summary>
+        public enum AccountingPartyType : byte
+        {
+            [Display(Name = "مشتری (حساب‌های دریافتنی)")]
+            Customer = 1,
+
+            [Display(Name = "تأمین‌کننده (حساب‌های پرداختنی)")]
+            Supplier = 2
+        }
     }
 }

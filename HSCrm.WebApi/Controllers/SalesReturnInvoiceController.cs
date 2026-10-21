@@ -57,7 +57,7 @@ namespace HSCrm.WebApi.Controllers
 
             if (!string.IsNullOrWhiteSpace(customerFullName))
             {
-                query = query.Where(x => x.Project != null && x.Project.Customer != null && x.Project.Customer.CustomerFullName.Contains(customerFullName));
+                query = query.Where(x => x.Project != null && x.Project.Customer != null && x.Project.Customer.Name.Contains(customerFullName));
             }
 
             if (salesInvoiceId.HasValue)
@@ -90,7 +90,7 @@ namespace HSCrm.WebApi.Controllers
                 ProjectId = x.ProjectId,
                 ProjectTitle = x.Project?.ProjectTitle,
                 CustomerId = x.Project?.CustomerId,
-                CustomerName = x.Project?.Customer?.CustomerFullName,
+                CustomerName = x.Project?.Customer?.Name,
                 WarehouseId = x.WarehouseId,
                 WarehouseTitle = x.Warehouse?.Title,
                 IssueDate = x.IssueDate,

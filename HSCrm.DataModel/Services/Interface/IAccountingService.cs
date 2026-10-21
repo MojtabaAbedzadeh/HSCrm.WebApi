@@ -123,5 +123,24 @@ namespace HSCrm.DataModel.Services.Interface
         /// صدور خودکار سند حسابداری دوبل برای فاکتور برگشت از خرید (کاهش بدهی به تأمین‌کننده 2101 و کسر از موجودی انبار 1105)
         /// </summary>
         Task<JournalVoucher> CreateVoucherForPurchaseReturnAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct = default);
+
+        /// <summary>
+        /// گزارش صورت‌حساب جامع ۳۶۰ درجه طرف‌حساب (مشتری یا تأمین‌کننده) شامل مانده اول دوره، ریز گردش، چک‌های در جریان و ریسک اعتباری
+        /// </summary>
+        Task<PartyStatementReportDto> GetPartyStatementAsync(
+            AccountingPartyType partyType,
+            int partyId,
+            DateTime? fromDate = null,
+            DateTime? toDate = null,
+            bool includeChequeAccounts = false,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// گزارش تحلیل سنی مطالبات مشتریان (Receivables Aging) یا بدهی به تأمین‌کنندگان (Payables Aging) به روش تخصیص FIFO در ۵ بازه سنی
+        /// </summary>
+        Task<AgingReportSummaryDto> GetAgingReportAsync(
+            AccountingPartyType partyType = AccountingPartyType.Customer,
+            DateTime? asOfDate = null,
+            CancellationToken ct = default);
     }
 }

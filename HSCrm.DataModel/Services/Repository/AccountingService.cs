@@ -948,7 +948,7 @@ namespace HSCrm.DataModel.Services.Repository
                         AccountId = g.Key.AccountId,
                         AccountCode = g.Key.Code,
                         AccountTitle = g.Key.Title,
-                        CategoryTitle = g.Key.Category.GetDisplayName(),
+                        CategoryTitle = g.Key.Category.DisplayNameAttribute(),
                         BalanceDebit = net > 0 ? net : 0m,
                         BalanceCredit = net < 0 ? Math.Abs(net) : 0m,
                         ClosingActionDescription = net < 0
@@ -977,7 +977,7 @@ namespace HSCrm.DataModel.Services.Repository
                         AccountId = g.Key.AccountId,
                         AccountCode = g.Key.Code,
                         AccountTitle = g.Key.Title,
-                        CategoryTitle = g.Key.Category.GetDisplayName(),
+                        CategoryTitle = g.Key.Category.DisplayNameAttribute(),
                         BalanceDebit = net > 0 ? net : 0m,
                         BalanceCredit = net < 0 ? Math.Abs(net) : 0m,
                         ClosingActionDescription = net > 0
@@ -2247,6 +2247,500 @@ namespace HSCrm.DataModel.Services.Repository
             await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
             await _unitOfWork.SaveAsync();
             return voucher;
+        }
+
+        // =========================================================================
+        // ۱۲. فاز ۷: صورت‌حساب جامع طرف‌حساب‌ها (Customer/Supplier Statement) و تحلیل سنی مطالبات (Aging)
+        // =========================================================================
+
+        /// <summary>
+        /// گزارش صورت‌حساب جامع ۳۶۰ درجه طرف‌حساب (مشتری یا تأمین‌کننده)
+        /// </summary>
+        public async Task<PartyStatementReportDto> GetPartyStatementAsync(
+            AccountingPartyType partyType,
+            int partyId,
+            DateTime? fromDate = null,
+            DateTime? toDate = null,
+            bool includeChequeAccounts = false,
+            CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
+
+            string partyName;
+            string? partyPhone;
+            string? partyAddress;
+
+            if (partyType == AccountingPartyType.Customer)
+            {
+                var customer = await _context.Set<Customer>()
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Id == partyId && c.TenantId == tenantId && !c.IsDeleted, ct)
+                    ?? throw new InvalidOperationException("مشتری مورد نظر یافت نشد.");
+
+                partyName = customer.Name;
+                partyPhone = customer.Phone;
+                partyAddress = customer.Address;
+            }
+            else
+            {
+                var supplier = await _context.Set<Supplier>()
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(s => s.Id == partyId && s.TenantId == tenantId && !s.IsDeleted, ct)
+                    ?? throw new InvalidOperationException("تأمین‌کننده مورد نظر یافت نشد.");
+
+                partyName = supplier.SupplierFullName;
+                partyPhone = supplier.SupplierPhone;
+                partyAddress = supplier.SupplierAddress;
+            }
+
+            // کدهای حساب مرتبط با طرف‌حساب
+            var targetAccountCodes = new List<string>();
+            if (partyType == AccountingPartyType.Customer)
+            {
+                targetAccountCodes.Add(ACC_RECEIVABLE); // 1103
+                if (includeChequeAccounts)
+                {
+                    targetAccountCodes.Add(ACC_NOTES_RECEIVABLE);    // 1102
+                    targetAccountCodes.Add(ACC_NOTES_IN_COLLECTION); // 1107
+                }
+            }
+            else
+            {
+                targetAccountCodes.Add(ACC_PAYABLE); // 2101
+                if (includeChequeAccounts)
+                {
+                    targetAccountCodes.Add(ACC_NOTES_PAYABLE); // 2103
+                }
+            }
+
+            var baseQuery = _context.JournalVoucherItems
+                .AsNoTracking()
+                .Include(x => x.Account)
+                .Include(x => x.Project)
+                .Include(x => x.JournalVoucher)
+                .Where(x => x.TenantId == tenantId
+                         && !x.IsDeleted
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted
+                         && targetAccountCodes.Contains(x.Account.Code));
+
+            if (partyType == AccountingPartyType.Customer)
+            {
+                baseQuery = baseQuery.Where(x => x.CustomerId == partyId || (x.Project != null && x.Project.CustomerId == partyId));
+            }
+            else
+            {
+                baseQuery = baseQuery.Where(x => x.SupplierId == partyId);
+            }
+
+            // ۱. محاسبه مانده اول دوره (قبل از fromDate)
+            decimal openingBalance = 0m;
+            if (fromDate.HasValue)
+            {
+                var startDay = fromDate.Value.Date;
+                var priorItems = await baseQuery
+                    .Where(x => x.JournalVoucher.VoucherDate < startDay)
+                    .Select(x => new { x.Debit, x.Credit })
+                    .ToListAsync(ct);
+
+                openingBalance = priorItems.Sum(x => x.Debit - x.Credit);
+            }
+
+            // ۲. واکشی آرتیکل‌های دوره
+            var periodQuery = baseQuery;
+            if (fromDate.HasValue)
+            {
+                var startDay = fromDate.Value.Date;
+                periodQuery = periodQuery.Where(x => x.JournalVoucher.VoucherDate >= startDay);
+            }
+            if (toDate.HasValue)
+            {
+                var endDay = toDate.Value.Date.AddDays(1).AddTicks(-1);
+                periodQuery = periodQuery.Where(x => x.JournalVoucher.VoucherDate <= endDay);
+            }
+
+            var periodItems = await periodQuery
+                .OrderBy(x => x.JournalVoucher.VoucherDate)
+                .ThenBy(x => x.JournalVoucher.VoucherNumber)
+                .ThenBy(x => x.RowNumber)
+                .ToListAsync(ct);
+
+            decimal running = openingBalance;
+            var lines = new List<PartyStatementLineDto>();
+
+            foreach (var item in periodItems)
+            {
+                if (item.JournalVoucher.ReferenceType == AccountingReferenceType.OpeningBalance && !fromDate.HasValue)
+                {
+                    openingBalance += (item.Debit - item.Credit);
+                }
+
+                running += (item.Debit - item.Credit);
+                lines.Add(new PartyStatementLineDto
+                {
+                    VoucherId = item.JournalVoucherId,
+                    VoucherNumber = item.JournalVoucher.VoucherNumber,
+                    VoucherDate = item.JournalVoucher.VoucherDate,
+                    VoucherDateShamsi = ConvertDate.ConvertMiladiToShamsi(item.JournalVoucher.VoucherDate, "yyyy/MM/dd"),
+                    AccountCode = item.Account.Code,
+                    AccountTitle = item.Account.Title,
+                    ReferenceType = item.JournalVoucher.ReferenceType,
+                    ReferenceTypeTitle = item.JournalVoucher.ReferenceType.DisplayNameAttribute(),
+                    ReferenceId = item.JournalVoucher.ReferenceId,
+                    ProjectTitle = item.Project?.ProjectTitle,
+                    Description = item.Description,
+                    Debit = item.Debit,
+                    Credit = item.Credit,
+                    RunningBalance = running
+                });
+            }
+
+            // ۳. آمار تفکیکی فاکتورها، برگشتی‌ها، دریافت/پرداخت و چک‌ها
+            decimal totalInvoices = 0m;
+            decimal totalReturns = 0m;
+            decimal totalSettlements = 0m;
+
+            if (partyType == AccountingPartyType.Customer)
+            {
+                totalInvoices = periodItems
+                    .Where(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.SalesInvoice)
+                    .Sum(x => x.Debit);
+
+                totalReturns = periodItems
+                    .Where(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.SalesReturnInvoice)
+                    .Sum(x => x.Credit);
+
+                totalSettlements = periodItems
+                    .Where(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.Receipt)
+                    .Sum(x => x.Credit);
+            }
+            else
+            {
+                totalInvoices = periodItems
+                    .Where(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.PurchaseInvoice)
+                    .Sum(x => x.Credit);
+
+                totalReturns = periodItems
+                    .Where(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.PurchaseReturnInvoice)
+                    .Sum(x => x.Debit);
+
+                totalSettlements = periodItems
+                    .Where(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.Payment)
+                    .Sum(x => x.Debit);
+            }
+
+            // ۴. بررسی چک‌های در جریان و برگشتی این طرف‌حساب
+            var chequesQuery = _context.Cheques
+                .AsNoTracking()
+                .Where(c => c.TenantId == tenantId && !c.IsDeleted);
+
+            if (partyType == AccountingPartyType.Customer)
+            {
+                chequesQuery = chequesQuery.Where(c => c.CustomerId == partyId && c.Type == ChequeType.Receivable);
+            }
+            else
+            {
+                chequesQuery = chequesQuery.Where(c => c.SupplierId == partyId && c.Type == ChequeType.Payable);
+            }
+
+            var partyCheques = await chequesQuery.ToListAsync(ct);
+            var pendingCheques = partyCheques
+                .Where(c => c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.InBankForCollection)
+                .ToList();
+
+            var bouncedChequesAmount = partyCheques
+                .Where(c => c.Status == ChequeStatus.Bounced)
+                .Sum(c => c.Amount);
+
+            var pendingChequesAmount = pendingCheques.Sum(c => c.Amount);
+
+            decimal effectiveExposure = partyType == AccountingPartyType.Customer
+                ? (running > 0 ? running : 0m) + pendingChequesAmount
+                : (running < 0 ? Math.Abs(running) : 0m) + pendingChequesAmount;
+
+            return new PartyStatementReportDto
+            {
+                PartyType = partyType,
+                PartyTypeTitle = partyType.DisplayNameAttribute(),
+                PartyId = partyId,
+                PartyName = partyName,
+                Phone = partyPhone,
+                Address = partyAddress,
+                FromDate = fromDate,
+                ToDate = toDate,
+                OpeningBalance = openingBalance,
+                TotalInvoicesAmount = totalInvoices,
+                TotalReturnsAmount = totalReturns,
+                TotalCashAndBankSettlements = totalSettlements,
+                PendingChequesCount = pendingCheques.Count,
+                PendingChequesAmount = pendingChequesAmount,
+                BouncedChequesAmount = bouncedChequesAmount,
+                TotalPeriodDebit = periodItems.Sum(x => x.Debit),
+                TotalPeriodCredit = periodItems.Sum(x => x.Credit),
+                FinalBookBalance = running,
+                EffectiveExposureAmount = effectiveExposure,
+                Transactions = lines
+            };
+        }
+
+        /// <summary>
+        /// گزارش تحلیل سنی مطالبات مشتریان (Receivables Aging) و بدهی به تأمین‌کنندگان (Payables Aging) به روش FIFO در ۵ بازه سنی
+        /// </summary>
+        public async Task<AgingReportSummaryDto> GetAgingReportAsync(
+            AccountingPartyType partyType = AccountingPartyType.Customer,
+            DateTime? asOfDate = null,
+            CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
+
+            var baseDate = (asOfDate ?? DateTime.UtcNow).Date;
+            var targetAccountCode = partyType == AccountingPartyType.Customer ? ACC_RECEIVABLE : ACC_PAYABLE;
+
+            var items = await _context.JournalVoucherItems
+                .AsNoTracking()
+                .Include(x => x.Account)
+                .Include(x => x.Customer)
+                .Include(x => x.Supplier)
+                .Include(x => x.Project)
+                .ThenInclude(p => p!.Customer)
+                .Include(x => x.JournalVoucher)
+                .Where(x => x.TenantId == tenantId
+                         && !x.IsDeleted
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted
+                         && x.Account.Code == targetAccountCode
+                         && x.JournalVoucher.VoucherDate <= baseDate.AddDays(1).AddTicks(-1))
+                .OrderBy(x => x.JournalVoucher.VoucherDate)
+                .ThenBy(x => x.JournalVoucher.VoucherNumber)
+                .ToListAsync(ct);
+
+            var pendingChequesByParty = await _context.Cheques
+                .AsNoTracking()
+                .Where(c => c.TenantId == tenantId
+                         && !c.IsDeleted
+                         && (c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.InBankForCollection))
+                .ToListAsync(ct);
+
+            var rows = new List<PartyAgingRowDto>();
+
+            if (partyType == AccountingPartyType.Customer)
+            {
+                var groupedByCustomer = items
+                    .Select(x => new
+                    {
+                        Item = x,
+                        EffectiveCustomerId = x.CustomerId ?? x.Project?.CustomerId,
+                        EffectiveCustomerName = x.Customer?.Name ?? x.Project?.Customer?.Name,
+                        EffectiveCustomerPhone = x.Customer?.Phone ?? x.Project?.Customer?.Phone
+                    })
+                    .Where(x => x.EffectiveCustomerId.HasValue)
+                    .GroupBy(x => new
+                    {
+                        CustomerId = x.EffectiveCustomerId!.Value,
+                        CustomerName = x.EffectiveCustomerName ?? $"مشتری #{x.EffectiveCustomerId}",
+                        CustomerPhone = x.EffectiveCustomerPhone
+                    });
+
+                foreach (var group in groupedByCustomer)
+                {
+                    var totalDebit = group.Sum(g => g.Item.Debit);
+                    var totalCredit = group.Sum(g => g.Item.Credit);
+                    var netReceivable = totalDebit - totalCredit;
+
+                    // فقط مشتریانی که مانده بدهکار باز دارند در گزارش سنی مطالبات می‌آیند
+                    if (netReceivable <= 0) continue;
+
+                    // تخصیص FIFO: کسر کل پرداخت‌ها/بستانکاری‌ها از قدیمی‌ترین بدهکاری‌ها
+                    decimal remainingCreditsToApply = totalCredit;
+                    var openCharges = new List<(DateTime Date, decimal OpenAmount)>();
+
+                    foreach (var entry in group.Where(g => g.Item.Debit > 0).OrderBy(g => g.Item.JournalVoucher.VoucherDate))
+                    {
+                        var debitAmt = entry.Item.Debit;
+                        if (remainingCreditsToApply >= debitAmt)
+                        {
+                            remainingCreditsToApply -= debitAmt;
+                        }
+                        else
+                        {
+                            var openAmt = debitAmt - remainingCreditsToApply;
+                            remainingCreditsToApply = 0m;
+                            openCharges.Add((entry.Item.JournalVoucher.VoucherDate.Date, openAmt));
+                        }
+                    }
+
+                    decimal b0_30 = 0m, b31_60 = 0m, b61_90 = 0m, b91_180 = 0m, bOver180 = 0m;
+                    decimal weightedAgeSum = 0m;
+                    int maxAgeDays = 0;
+                    DateTime? oldestDate = null;
+
+                    foreach (var charge in openCharges)
+                    {
+                        int ageDays = Math.Max(0, (baseDate - charge.Date).Days);
+                        if (oldestDate == null || charge.Date < oldestDate.Value)
+                        {
+                            oldestDate = charge.Date;
+                        }
+                        if (ageDays > maxAgeDays) maxAgeDays = ageDays;
+
+                        weightedAgeSum += charge.OpenAmount * ageDays;
+
+                        if (ageDays <= 30) b0_30 += charge.OpenAmount;
+                        else if (ageDays <= 60) b31_60 += charge.OpenAmount;
+                        else if (ageDays <= 90) b61_90 += charge.OpenAmount;
+                        else if (ageDays <= 180) b91_180 += charge.OpenAmount;
+                        else bOver180 += charge.OpenAmount;
+                    }
+
+                    var avgAge = netReceivable > 0 ? Math.Round(weightedAgeSum / netReceivable, 1) : 0m;
+                    var pendingChq = pendingChequesByParty
+                        .Where(c => c.Type == ChequeType.Receivable && c.CustomerId == group.Key.CustomerId)
+                        .Sum(c => c.Amount);
+
+                    string riskStatus = bOver180 > 0
+                        ? "پرریسک / مشکوک‌الوصول (+۱۸۰ روز)"
+                        : b91_180 > 0
+                            ? "معوق (۹۱ تا ۱۸۰ روز)"
+                            : (b31_60 > 0 || b61_90 > 0)
+                                ? "نیاز به پیگیری (۳۱ تا ۹۰ روز)"
+                                : "خوش‌حساب (جاری ۰ تا ۳۰ روز)";
+
+                    rows.Add(new PartyAgingRowDto
+                    {
+                        PartyId = group.Key.CustomerId,
+                        PartyName = group.Key.CustomerName,
+                        Phone = group.Key.CustomerPhone,
+                        TotalOpenBalance = netReceivable,
+                        Bucket0To30 = b0_30,
+                        Bucket31To60 = b31_60,
+                        Bucket61To90 = b61_90,
+                        Bucket91To180 = b91_180,
+                        BucketOver180 = bOver180,
+                        OldestOpenDateShamsi = oldestDate.HasValue
+                            ? ConvertDate.ConvertMiladiToShamsi(oldestDate.Value, "yyyy/MM/dd")
+                            : null,
+                        MaxAgeDays = maxAgeDays,
+                        WeightedAverageAgeDays = avgAge,
+                        PendingChequesAmount = pendingChq,
+                        CreditRiskStatus = riskStatus
+                    });
+                }
+            }
+            else
+            {
+                // تحلیل سنی بدهی به تأمین‌کنندگان (حساب 2101)
+                var groupedBySupplier = items
+                    .Where(x => x.SupplierId.HasValue)
+                    .GroupBy(x => new
+                    {
+                        SupplierId = x.SupplierId!.Value,
+                        SupplierName = x.Supplier?.SupplierFullName ?? $"تأمین‌کننده #{x.SupplierId}",
+                        SupplierPhone = x.Supplier?.SupplierPhone
+                    });
+
+                foreach (var group in groupedBySupplier)
+                {
+                    var totalCredit = group.Sum(g => g.Credit);
+                    var totalDebit = group.Sum(g => g.Debit);
+                    var netPayable = totalCredit - totalDebit;
+
+                    if (netPayable <= 0) continue;
+
+                    decimal remainingDebitsToApply = totalDebit;
+                    var openPayables = new List<(DateTime Date, decimal OpenAmount)>();
+
+                    foreach (var entry in group.Where(g => g.Credit > 0).OrderBy(g => g.JournalVoucher.VoucherDate))
+                    {
+                        var creditAmt = entry.Credit;
+                        if (remainingDebitsToApply >= creditAmt)
+                        {
+                            remainingDebitsToApply -= creditAmt;
+                        }
+                        else
+                        {
+                            var openAmt = creditAmt - remainingDebitsToApply;
+                            remainingDebitsToApply = 0m;
+                            openPayables.Add((entry.JournalVoucher.VoucherDate.Date, openAmt));
+                        }
+                    }
+
+                    decimal b0_30 = 0m, b31_60 = 0m, b61_90 = 0m, b91_180 = 0m, bOver180 = 0m;
+                    decimal weightedAgeSum = 0m;
+                    int maxAgeDays = 0;
+                    DateTime? oldestDate = null;
+
+                    foreach (var payable in openPayables)
+                    {
+                        int ageDays = Math.Max(0, (baseDate - payable.Date).Days);
+                        if (oldestDate == null || payable.Date < oldestDate.Value)
+                        {
+                            oldestDate = payable.Date;
+                        }
+                        if (ageDays > maxAgeDays) maxAgeDays = ageDays;
+
+                        weightedAgeSum += payable.OpenAmount * ageDays;
+
+                        if (ageDays <= 30) b0_30 += payable.OpenAmount;
+                        else if (ageDays <= 60) b31_60 += payable.OpenAmount;
+                        else if (ageDays <= 90) b61_90 += payable.OpenAmount;
+                        else if (ageDays <= 180) b91_180 += payable.OpenAmount;
+                        else bOver180 += payable.OpenAmount;
+                    }
+
+                    var avgAge = netPayable > 0 ? Math.Round(weightedAgeSum / netPayable, 1) : 0m;
+                    var pendingChq = pendingChequesByParty
+                        .Where(c => c.Type == ChequeType.Payable && c.SupplierId == group.Key.SupplierId)
+                        .Sum(c => c.Amount);
+
+                    string riskStatus = bOver180 > 0
+                        ? "بدهی دیرکرد بیش از ۱۸۰ روز"
+                        : b91_180 > 0
+                            ? "بدهی معوق (۹۱ تا ۱۸۰ روز)"
+                            : (b31_60 > 0 || b61_90 > 0)
+                                ? "سررسید میان‌مدت (۳۱ تا ۹۰ روز)"
+                                : "بدهی جاری (۰ تا ۳۰ روز)";
+
+                    rows.Add(new PartyAgingRowDto
+                    {
+                        PartyId = group.Key.SupplierId,
+                        PartyName = group.Key.SupplierName,
+                        Phone = group.Key.SupplierPhone,
+                        TotalOpenBalance = netPayable,
+                        Bucket0To30 = b0_30,
+                        Bucket31To60 = b31_60,
+                        Bucket61To90 = b61_90,
+                        Bucket91To180 = b91_180,
+                        BucketOver180 = bOver180,
+                        OldestOpenDateShamsi = oldestDate.HasValue
+                            ? ConvertDate.ConvertMiladiToShamsi(oldestDate.Value, "yyyy/MM/dd")
+                            : null,
+                        MaxAgeDays = maxAgeDays,
+                        WeightedAverageAgeDays = avgAge,
+                        PendingChequesAmount = pendingChq,
+                        CreditRiskStatus = riskStatus
+                    });
+                }
+            }
+
+            rows = rows.OrderByDescending(r => r.TotalOpenBalance).ToList();
+
+            return new AgingReportSummaryDto
+            {
+                PartyType = partyType,
+                PartyTypeTitle = partyType.DisplayNameAttribute(),
+                AsOfDate = baseDate,
+                AsOfDateShamsi = ConvertDate.ConvertMiladiToShamsi(baseDate, "yyyy/MM/dd"),
+                ActivePartiesCount = rows.Count,
+                GrandTotalOpenBalance = rows.Sum(r => r.TotalOpenBalance),
+                TotalBucket0To30 = rows.Sum(r => r.Bucket0To30),
+                TotalBucket31To60 = rows.Sum(r => r.Bucket31To60),
+                TotalBucket61To90 = rows.Sum(r => r.Bucket61To90),
+                TotalBucket91To180 = rows.Sum(r => r.Bucket91To180),
+                TotalBucketOver180 = rows.Sum(r => r.BucketOver180),
+                Rows = rows
+            };
         }
     }
 }

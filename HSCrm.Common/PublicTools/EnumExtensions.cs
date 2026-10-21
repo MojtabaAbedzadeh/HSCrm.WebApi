@@ -40,5 +40,12 @@ namespace HSCrm.Common.PublicTools
                 _ => "نامشخص"
             };
         }
+        /// <summary>
+        /// دریافت نام فارسی از DisplayAttribute (سازگار با DisplayNameAttribute در Helpers)
+        /// </summary>
+        public static string GetDisplayName(this System.Enum value)
+        {
+            return value.DisplayNameAttribute();
+        }
     }
 }

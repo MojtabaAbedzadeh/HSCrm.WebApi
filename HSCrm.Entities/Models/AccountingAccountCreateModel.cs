@@ -356,4 +356,177 @@ namespace HSCrm.Entities.Models
         public decimal NetPresentValue => TotalAmount - EstimatedDiscountAmount;
         public List<ChequeRasGiriItemDto> Items { get; set; } = new();
     }
+
+    // =========================================================================
+    // مدل‌های فاز ۷: صورت‌حساب جامع طرف‌حساب‌ها (Customer/Supplier Statement) و تحلیل سنی مطالبات (Aging)
+    // =========================================================================
+
+    /// <summary>
+    /// ردیف گردش در صورت‌حساب جامع مشتری یا تأمین‌کننده
+    /// </summary>
+    public class PartyStatementLineDto
+    {
+        public int VoucherId { get; set; }
+        public int VoucherNumber { get; set; }
+        public DateTime VoucherDate { get; set; }
+        public string VoucherDateShamsi { get; set; } = default!;
+        public string AccountCode { get; set; } = default!;
+        public string AccountTitle { get; set; } = default!;
+        public AccountingReferenceType ReferenceType { get; set; }
+        public string ReferenceTypeTitle { get; set; } = default!;
+        public int? ReferenceId { get; set; }
+        public string? ProjectTitle { get; set; }
+        public string Description { get; set; } = default!;
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+        public decimal RunningBalance { get; set; }
+        public string BalanceNature => RunningBalance > 0 ? "بد" : RunningBalance < 0 ? "بس" : "تسویه";
+    }
+
+    /// <summary>
+    /// گزارش جامع ۳۶۰ درجه صورت‌حساب مشتری یا تأمین‌کننده (شامل مانده اول دوره، ریز گردش، چک‌های در جریان و ریسک واقعی)
+    /// </summary>
+    public class PartyStatementReportDto
+    {
+        public AccountingPartyType PartyType { get; set; }
+        public string PartyTypeTitle { get; set; } = default!;
+        public int PartyId { get; set; }
+        public string PartyName { get; set; } = default!;
+        public string? Phone { get; set; }
+        public string? Address { get; set; }
+        public DateTime? FromDate { get; set; }
+        public DateTime? ToDate { get; set; }
+
+        /// <summary>
+        /// مانده انتقالی از قبل از تاریخ شروع گزارش (مثبت = بدهکار، منفی = بستانکار)
+        /// </summary>
+        public decimal OpeningBalance { get; set; }
+        public string OpeningBalanceNature => OpeningBalance > 0 ? "بد" : OpeningBalance < 0 ? "بس" : "تسویه";
+
+        /// <summary>
+        /// جمع کل فاکتورهای فروش (برای مشتری) یا خرید (برای تأمین‌کننده) در دوره
+        /// </summary>
+        public decimal TotalInvoicesAmount { get; set; }
+
+        /// <summary>
+        /// جمع کل فاکتورهای برگشت از فروش یا برگشت از خرید در دوره
+        /// </summary>
+        public decimal TotalReturnsAmount { get; set; }
+
+        /// <summary>
+        /// جمع کل دریافت‌ها/پرداخت‌های نقدی و بانکی در دوره
+        /// </summary>
+        public decimal TotalCashAndBankSettlements { get; set; }
+
+        /// <summary>
+        /// تعداد و مبلغ چک‌های در جریان (نزد صندوق یا واگذار شده به بانک که هنوز پاس نشده‌اند)
+        /// </summary>
+        public int PendingChequesCount { get; set; }
+        public decimal PendingChequesAmount { get; set; }
+
+        /// <summary>
+        /// مبلغ چک‌های برگشتی (واخواست‌شده) طرف‌حساب
+        /// </summary>
+        public decimal BouncedChequesAmount { get; set; }
+
+        public decimal TotalPeriodDebit { get; set; }
+        public decimal TotalPeriodCredit { get; set; }
+
+        /// <summary>
+        /// مانده نهایی دفتری (مثبت = بدهکار به شرکت، منفی = بستانکار از شرکت)
+        /// </summary>
+        public decimal FinalBookBalance { get; set; }
+        public string FinalBalanceNature => FinalBookBalance > 0 ? "بدهکار" : FinalBookBalance < 0 ? "بستانکار" : "تسویه (بی‌حساب)";
+
+        /// <summary>
+        /// ریسک / تعهد واقعی باز (برای مشتری: مانده بدهکار دفتری + چک‌های دریافتنی هنوز وصول‌نشده)
+        /// </summary>
+        public decimal EffectiveExposureAmount { get; set; }
+
+        public List<PartyStatementLineDto> Transactions { get; set; } = new();
+    }
+
+    /// <summary>
+    /// ردیف تحلیل سنی مطالبات (مشتری) یا بدهی‌ها (تأمین‌کننده) به روش FIFO در ۵ بازه زمانی
+    /// </summary>
+    public class PartyAgingRowDto
+    {
+        public int PartyId { get; set; }
+        public string PartyName { get; set; } = default!;
+        public string? Phone { get; set; }
+
+        /// <summary>
+        /// مانده خالص بدهی باز (برای مشتری: مانده بدهکار، برای تأمین‌کننده: مانده بستانکار)
+        /// </summary>
+        public decimal TotalOpenBalance { get; set; }
+
+        /// <summary>
+        /// بازه ۱: جاری (۰ تا ۳۰ روز)
+        /// </summary>
+        public decimal Bucket0To30 { get; set; }
+
+        /// <summary>
+        /// بازه ۲: ۳۱ تا ۶۰ روز
+        /// </summary>
+        public decimal Bucket31To60 { get; set; }
+
+        /// <summary>
+        /// بازه ۳: ۶۱ تا ۹۰ روز
+        /// </summary>
+        public decimal Bucket61To90 { get; set; }
+
+        /// <summary>
+        /// بازه ۴: ۹۱ تا ۱۸۰ روز (معوق)
+        /// </summary>
+        public decimal Bucket91To180 { get; set; }
+
+        /// <summary>
+        /// بازه ۵: بیش از ۱۸۰ روز (راکد / مشکوک‌الوصول)
+        /// </summary>
+        public decimal BucketOver180 { get; set; }
+
+        /// <summary>
+        /// تاریخ قدیمی‌ترین فاکتور/بدهی تسویه‌نشده (به شمسی)
+        /// </summary>
+        public string? OldestOpenDateShamsi { get; set; }
+
+        /// <summary>
+        /// تعداد روز گذشته از قدیمی‌ترین بدهی باز
+        /// </summary>
+        public int MaxAgeDays { get; set; }
+
+        /// <summary>
+        /// میانگین موزون سنی بدهی به روز
+        /// </summary>
+        public decimal WeightedAverageAgeDays { get; set; }
+
+        /// <summary>
+        /// مبلغ چک‌های در جریان وصول این طرف‌حساب
+        /// </summary>
+        public decimal PendingChequesAmount { get; set; }
+
+        /// <summary>
+        /// وضعیت اعتباری طرف‌حساب بر اساس عمر بدهی
+        /// </summary>
+        public string CreditRiskStatus { get; set; } = default!;
+    }
+
+    /// <summary>
+    /// خروجی کامل گزارش تحلیل سنی مطالبات مشتریان یا بدهی به تأمین‌کنندگان
+    /// </summary>
+    public class AgingReportSummaryDto
+    {
+        public AccountingPartyType PartyType { get; set; }
+        public string PartyTypeTitle { get; set; } = default!;
+        public DateTime AsOfDate { get; set; }
+        public string AsOfDateShamsi { get; set; } = default!;
+        public int ActivePartiesCount { get; set; }
+        public decimal GrandTotalOpenBalance { get; set; }
+        public decimal TotalBucket0To30 { get; set; }
+        public decimal TotalBucket31To60 { get; set; }
+        public decimal TotalBucket61To90 { get; set; }
+        public decimal TotalBucket91To180 { get; set; }
+        public decimal TotalBucketOver180 { get; set; }
+        public List<PartyAgingRowDto> Rows { get; set; } = new();
+    }
 }

@@ -7,6 +7,8 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SinaPharm.Common;
+using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.WebApi.Controllers
 {
@@ -189,6 +191,126 @@ namespace HSCrm.WebApi.Controllers
                 Message = "صورت سود و زیان با موفقیت محاسبه شد",
                 Data = data
             });
+        }
+
+        /// <summary>
+        /// فاز ۷: دریافت صورت‌حساب جامع ۳۶۰ درجه مشتری (Customer Statement) به همراه مانده اول دوره، ریز گردش و چک‌های در جریان
+        /// </summary>
+        [HttpGet("CustomerStatement/{customerId:int}")]
+        [Permission(Permissions.AccountingReports.View)]
+        public async Task<ActionResult<ApiResponse<PartyStatementReportDto>>> GetCustomerStatement(
+            int customerId,
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate,
+            [FromQuery] bool includeChequeAccounts = false,
+            CancellationToken ct = default)
+        {
+            try
+            {
+                var report = await _accountingService.GetPartyStatementAsync(
+                    AccountingPartyType.Customer,
+                    customerId,
+                    fromDate,
+                    toDate,
+                    includeChequeAccounts,
+                    ct);
+
+                return Ok(new ApiResponse<PartyStatementReportDto>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = $"صورت‌حساب جامع مشتری «{report.PartyName}» با موفقیت استخراج شد.",
+                    Data = report
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+            }
+        }
+
+        /// <summary>
+        /// فاز ۷: دریافت صورت‌حساب جامع ۳۶۰ درجه تأمین‌کننده (Supplier Statement)
+        /// </summary>
+        [HttpGet("SupplierStatement/{supplierId:int}")]
+        [Permission(Permissions.AccountingReports.View)]
+        public async Task<ActionResult<ApiResponse<PartyStatementReportDto>>> GetSupplierStatement(
+            int supplierId,
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate,
+            [FromQuery] bool includeChequeAccounts = false,
+            CancellationToken ct = default)
+        {
+            try
+            {
+                var report = await _accountingService.GetPartyStatementAsync(
+                    AccountingPartyType.Supplier,
+                    supplierId,
+                    fromDate,
+                    toDate,
+                    includeChequeAccounts,
+                    ct);
+
+                return Ok(new ApiResponse<PartyStatementReportDto>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = $"صورت‌حساب جامع تأمین‌کننده «{report.PartyName}» با موفقیت استخراج شد.",
+                    Data = report
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+            }
+        }
+
+        /// <summary>
+        /// فاز ۷: گزارش تحلیل سنی مطالبات مشتریان یا بدهی به تأمین‌کنندگان (Aging Report) در ۵ بازه سنی به روش FIFO
+        /// </summary>
+        [HttpGet("AgingReport")]
+        [Permission(Permissions.AccountingReports.View)]
+        public async Task<ActionResult<ApiResponse<AgingReportSummaryDto>>> GetAgingReport(
+            [FromQuery] AccountingPartyType partyType = AccountingPartyType.Customer,
+            [FromQuery] string? asOfDateShamsi = null,
+            CancellationToken ct = default)
+        {
+            try
+            {
+                DateTime? asOfDate = null;
+                if (!string.IsNullOrWhiteSpace(asOfDateShamsi))
+                {
+                    asOfDate = ConvertDate.ConvertShamsiToMiladi(asOfDateShamsi);
+                }
+
+                var report = await _accountingService.GetAgingReportAsync(partyType, asOfDate, ct);
+                return Ok(new ApiResponse<AgingReportSummaryDto>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "گزارش تحلیل سنی مطالبات/بدهی‌ها با موفقیت محاسبه شد.",
+                    Data = report
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+            }
         }
 
         [HttpPost("CloseFiscalYear")]
