@@ -11,6 +11,7 @@ namespace HSCrm.Entities.Models
         public DateTime PaymentDate { get; set; }
         public decimal Amount { get; set; }
         public string Method { get; set; } = "Cash";
+        public int? BankAccountId { get; set; }
         public string? ReferenceNo { get; set; }
         public required string UserId { get; set; }
         public int TenantId { get; set; }
@@ -26,6 +27,7 @@ namespace HSCrm.Entities.Models
         public DateTime PaymentDate { get; set; }
         public decimal Amount { get; set; }
         public string Method { get; set; } = "Cash";
+        public int? BankAccountId { get; set; }
         public string? ReferenceNo { get; set; }
         public string Description { get; set; }
         public required string UserId { get; set; }
@@ -38,6 +40,7 @@ namespace HSCrm.Entities.Models
         public int PurchaseInvoiceId { get; set; }
         public decimal Amount { get; set; }
         public DateTime PaymentDate { get; set; }
+        public int? BankAccountId { get; set; }
         public string PaymentMethod { get; set; } = string.Empty;
         public string? Description { get; set; }
     }
@@ -51,6 +54,7 @@ namespace HSCrm.Entities.Models
         public DateTime PaymentDate { get; set; }
         public decimal Amount { get; set; }
         public string Method { get; set; } = "Cash";
+        public int? BankAccountId { get; set; }
         public string? ReferenceNo { get; set; }
         public string? Description { get; set; }
     }
@@ -60,6 +64,7 @@ namespace HSCrm.Entities.Models
         public DateTime PaymentDate { get; set; }
         public decimal Amount { get; set; }
         public string Method { get; set; }
+        public int? BankAccountId { get; set; }
         public string? ReferenceNo { get; set; }
         
         public int? PurchaseInvoiceId { get; set; }

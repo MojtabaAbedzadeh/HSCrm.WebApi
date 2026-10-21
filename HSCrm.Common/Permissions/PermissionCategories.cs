@@ -21,7 +21,8 @@
             new() { Key="Tenants", TitleFa="شرکت‌ها", Icon="mdi mdi-domain", Order=15 },
             new() { Key="AccountingAccounts", TitleFa="کدینگ حسابداری", Icon="mdi mdi-domain", Order=16 },
             new() { Key="JournalVouchers", TitleFa="اسناد حسابداری", Icon="mdi mdi-domain", Order=17 },
-            new() { Key="AccountingReports", TitleFa="گزارشات مالی و دفاتر", Icon="mdi mdi-domain", Order=18 }
+            new() { Key="AccountingReports", TitleFa="گزارشات مالی و دفاتر", Icon="mdi mdi-domain", Order=18 },
+            new() { Key="BankAccounts", TitleFa="حساب‌های بانکی و خزانه", Icon="mdi mdi-bank", Order=19 }
         };
 
         public static PermissionCategory Get(string key)

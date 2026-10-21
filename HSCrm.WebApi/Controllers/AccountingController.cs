@@ -159,11 +159,12 @@ namespace HSCrm.WebApi.Controllers
             [FromQuery] int? customerId,
             [FromQuery] int? supplierId,
             [FromQuery] int? projectId,
+            [FromQuery] int? bankAccountId,
             [FromQuery] DateTime? fromDate,
             [FromQuery] DateTime? toDate,
             CancellationToken ct)
         {
-            var data = await _accountingService.GetLedgerAsync(accountId, customerId, supplierId, projectId, fromDate, toDate, ct);
+            var data = await _accountingService.GetLedgerAsync(accountId, customerId, supplierId, projectId, bankAccountId, fromDate, toDate, ct);
             return Ok(new ApiResponse<List<LedgerTransactionDto>>
             {
                 Status = true,

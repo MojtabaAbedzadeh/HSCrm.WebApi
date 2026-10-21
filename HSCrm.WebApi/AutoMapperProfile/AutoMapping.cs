@@ -16,7 +16,9 @@ namespace Automation.WebApi.AutoMapperProfile
             // Receipt Mappings
             CreateMap<ReceiptCreateModel, Receipt>().ReverseMap();
             CreateMap<ReceiptEditModel, Receipt>().ReverseMap();
-            CreateMap<Receipt, ReceiptModel>().ReverseMap();
+            CreateMap<Receipt, ReceiptModel>()
+                .ForMember(dest => dest.BankAccountTitle, opt => opt.MapFrom(src => src.BankAccount != null ? $"{src.BankAccount.Title} ({src.BankAccount.BankName})" : null))
+                .ReverseMap();
 
             // User Mappings
             CreateMap<ApplicationUser, UserEditModel>().ReverseMap();

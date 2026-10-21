@@ -188,4 +188,12 @@ public static class Permissions
     {
         public const string View = "Permissions.AccountingReports.View";
     }
+
+    public static class BankAccounts
+    {
+        public const string View = "Permissions.BankAccounts.View";
+        public const string Create = "Permissions.BankAccounts.Create";
+        public const string Edit = "Permissions.BankAccounts.Edit";
+        public const string Delete = "Permissions.BankAccounts.Delete";
+    }
 }

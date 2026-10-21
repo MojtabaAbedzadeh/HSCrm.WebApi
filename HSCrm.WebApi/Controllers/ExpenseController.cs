@@ -153,6 +153,7 @@ namespace HSCrm.WebApi.Controllers
                     Description = model.Description,
                     PaymentStatus = model.PaymentStatus,
                     PaidAmount = model.PaidAmount,
+                    BankAccountId = model.BankAccountId,
                     PaymentMethod = model.PaymentMethod,
                     ReferenceNo = model.ReferenceNo,
                     CreatedAt = DateTime.UtcNow,
@@ -181,6 +182,7 @@ namespace HSCrm.WebApi.Controllers
                         FiscalYearId = fiscalYearId.Value,
                         ExpenseId = expense.Id,
                         Amount = actualPaidAmount,
+                        BankAccountId = model.BankAccountId,
                         Method = model.PaymentMethod ?? "Cash",
                         ReferenceNo = model.ReferenceNo,
                         PaymentDate = expenseDate,
@@ -234,6 +236,7 @@ namespace HSCrm.WebApi.Controllers
                 expense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
                 expense.PaymentStatus = model.PaymentStatus;
                 expense.PaidAmount = model.PaidAmount;
+                expense.BankAccountId = model.BankAccountId;
                 expense.PaymentMethod = model.PaymentMethod;
                 expense.ReferenceNo = model.ReferenceNo;
                 expense.ModifiedAt = DateTime.UtcNow;

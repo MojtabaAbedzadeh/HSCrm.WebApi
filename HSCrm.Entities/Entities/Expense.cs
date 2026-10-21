@@ -21,6 +21,9 @@ namespace HSCrm.Entities.Entities
         public decimal PaidAmount { get; set; }
         public string? PaymentMethod { get; set; }
         public string? ReferenceNo { get; set; }
+
+        public int? BankAccountId { get; set; }
+        public BankAccount? BankAccount { get; set; }
         public int FiscalYearId { get; set; }
         public FiscalYear FiscalYear { get; set; } = default!;
         public ICollection<Payment> Payments { get; set; } = new List<Payment>();

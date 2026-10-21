@@ -9,6 +9,8 @@
     public string Method { get; set; } = string.Empty;
 
     public string? ReferenceNo { get; set; }
+    public int? BankAccountId { get; set; }
+    public string? BankAccountTitle { get; set; }
 
     public int? PurchaseInvoiceId { get; set; }
 

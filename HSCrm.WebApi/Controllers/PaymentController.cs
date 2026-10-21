@@ -87,6 +87,7 @@ namespace HSCrm.WebApi.Controllers
                 ct: cancellationToken,
 
                 // Navigationهای موردنیاز
+                p => p.BankAccount!,
                 p => p.PurchaseInvoice!,
                 p => p.Expense!,
                 p => p.Expense!.Project!
@@ -99,6 +100,8 @@ namespace HSCrm.WebApi.Controllers
                 PaymentDate = p.PaymentDate,
                 Method = p.Method,
                 ReferenceNo = p.ReferenceNo,
+                BankAccountId = p.BankAccountId,
+                BankAccountTitle = p.BankAccount != null ? $"{p.BankAccount.Title} ({p.BankAccount.BankName})" : null,
 
                 PurchaseInvoiceId = p.PurchaseInvoiceId,
                 ExpenseId = p.ExpenseId,
@@ -269,6 +272,7 @@ namespace HSCrm.WebApi.Controllers
                     ExpenseId = model.ExpenseId,
                     PaymentDate = model.PaymentDate,
                     Amount = model.Amount,
+                    BankAccountId = model.BankAccountId,
                     Method = model.Method,
                     CreatedAt = DateTime.Now,
                     CreatedById = userId,
@@ -417,6 +421,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     PurchaseInvoiceId = invoice.Id,
                     Amount = model.Amount,
+                    BankAccountId = model.BankAccountId,
                     PaymentDate = model.PaymentDate,
                     Method = model.PaymentMethod,
                     Description = model.Description,

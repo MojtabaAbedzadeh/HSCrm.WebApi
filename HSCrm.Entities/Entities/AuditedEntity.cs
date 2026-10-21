@@ -11,6 +11,8 @@ namespace HSCrm.Entities.Entities
         public string? ModifiedById { get; set; }
         public ApplicationUser? ModifiedBy { get; set; }
         public bool IsDeleted { get; set; } = false;
+        public DateTime? DeletedAt { get; set; }
+        public string? DeletedById { get; set; }
         [Timestamp] public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     }
 

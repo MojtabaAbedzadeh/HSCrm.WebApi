@@ -6,6 +6,8 @@ namespace HSCrm.Entities.Models
     {
         public int? SalesInvoiceId { get; set; }
         public int? CustomerId { get; set; }
+        public int? BankAccountId { get; set; }
+        public string? BankAccountTitle { get; set; }
 
         public DateTime ReceiptDate { get; set; }
         public decimal Amount { get; set; }
@@ -24,6 +26,8 @@ namespace HSCrm.Entities.Models
 
         public int? SalesInvoiceId { get; set; }
         public int? CustomerId { get; set; }
+        public int? BankAccountId { get; set; }
+        public string? BankAccountTitle { get; set; }
 
         public DateTime ReceiptDate { get; set; }
         public decimal Amount { get; set; }
@@ -38,6 +42,8 @@ namespace HSCrm.Entities.Models
         public int FiscalYearId { get; set; }
         public int? SalesInvoiceId { get; set; }
         public int? CustomerId { get; set; }
+        public int? BankAccountId { get; set; }
+        public string? BankAccountTitle { get; set; }
         public DateTime ReceiptDate { get; set; }
         public decimal Amount { get; set; }
         public string Method { get; set; } = "Cash";

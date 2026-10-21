@@ -11,6 +11,9 @@
         public int? ExpenseId { get; set; }
         public Expense? Expense { get; set; }
 
+        public int? BankAccountId { get; set; }
+        public BankAccount? BankAccount { get; set; }
+
         public DateTime PaymentDate { get; set; }
         public decimal Amount { get; set; }
 

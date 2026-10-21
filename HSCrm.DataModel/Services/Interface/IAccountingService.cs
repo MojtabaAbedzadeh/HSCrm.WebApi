@@ -59,9 +59,20 @@ namespace HSCrm.DataModel.Services.Interface
             int? customerId = null,
             int? supplierId = null,
             int? projectId = null,
+            int? bankAccountId = null,
             DateTime? fromDate = null,
             DateTime? toDate = null,
             CancellationToken ct = default);
+
+        /// <summary>
+        /// صدور خودکار سند موجودی اول دوره هنگام تعریف حساب بانکی / صندوق جدید
+        /// </summary>
+        Task<JournalVoucher?> CreateOpeningVoucherForBankAccountAsync(BankAccount bankAccount, CancellationToken ct = default);
+
+        /// <summary>
+        /// گزارش خلاصه موجودی لحظه‌ای، کل واریزی‌ها و کل برداشت‌های هر حساب بانکی / صندوق
+        /// </summary>
+        Task<List<BankAccountBalanceSummaryDto>> GetBankAccountsBalanceSummaryAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default);
 
         /// <summary>
         /// گزارش صورت سود و زیان (Profit & Loss)

@@ -44,6 +44,7 @@ namespace HSCrm.DataModel.Context
         public DbSet<AccountingAccount> AccountingAccounts { get; set; }
         public DbSet<JournalVoucher> JournalVouchers { get; set; }
         public DbSet<JournalVoucherItem> JournalVoucherItems { get; set; }
+        public DbSet<BankAccount> BankAccounts { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -232,6 +233,7 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<AccountingAccount>(builder);
             ConfigureAuditedEntity<JournalVoucher>(builder);
             ConfigureAuditedEntity<JournalVoucherItem>(builder);
+            ConfigureAuditedEntity<BankAccount>(builder);
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>(e =>
@@ -312,6 +314,11 @@ namespace HSCrm.DataModel.Context
 
                 e.Property(x => x.Amount).HasPrecision(18, 2);
                 e.HasIndex(x => new { x.TenantId, x.ProjectId, x.ExpenseDate });
+
+                e.HasOne(x => x.BankAccount)
+                 .WithMany()
+                 .HasForeignKey(x => x.BankAccountId)
+                 .OnDelete(DeleteBehavior.Restrict);
             });
 
             // ========= FiscalYear =========
@@ -499,6 +506,11 @@ namespace HSCrm.DataModel.Context
                     .HasForeignKey(x => x.ExpenseId)
                     .OnDelete(DeleteBehavior.Restrict);
 
+                e.HasOne(x => x.BankAccount)
+                    .WithMany()
+                    .HasForeignKey(x => x.BankAccountId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
                 e.HasOne(x => x.FiscalYear)
                     .WithMany()
                     .HasForeignKey(x => x.FiscalYearId)
@@ -525,6 +537,11 @@ namespace HSCrm.DataModel.Context
                 e.HasOne(x => x.Customer)
                     .WithMany()
                     .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.BankAccount)
+                    .WithMany()
+                    .HasForeignKey(x => x.BankAccountId)
                     .OnDelete(DeleteBehavior.Restrict);
 
                 e.HasOne(x => x.FiscalYear)
@@ -637,7 +654,24 @@ namespace HSCrm.DataModel.Context
                 entity.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(x => x.BankAccount).WithMany().HasForeignKey(x => x.BankAccountId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<BankAccount>(entity =>
+            {
+                entity.ToTable("BankAccounts");
+                entity.Property(x => x.Title).HasMaxLength(200).IsRequired();
+                entity.Property(x => x.BankName).HasMaxLength(150).IsRequired();
+                entity.Property(x => x.AccountNumber).HasMaxLength(50);
+                entity.Property(x => x.ShebaNumber).HasMaxLength(35);
+                entity.Property(x => x.CardNumber).HasMaxLength(25);
+                entity.Property(x => x.InitialBalance).HasPrecision(18, 2);
+
+                entity.HasOne(x => x.Tenant)
+                      .WithMany()
+                      .HasForeignKey(x => x.TenantId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
         }
         private void ApplyFilters(ModelBuilder modelBuilder)

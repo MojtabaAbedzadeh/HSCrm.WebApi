@@ -34,6 +34,7 @@ namespace HSCrm.Entities.Models
         public int? SupplierId { get; set; }
         public int? ProjectId { get; set; }
         public int? WarehouseId { get; set; }
+        public int? BankAccountId { get; set; }
     }
 
     /// <summary>
@@ -44,6 +45,8 @@ namespace HSCrm.Entities.Models
         public int AccountId { get; set; }
         public string AccountCode { get; set; } = default!;
         public string AccountTitle { get; set; } = default!;
+        public int? BankAccountId { get; set; }
+        public string? BankAccountTitle { get; set; }
         public string CategoryTitle { get; set; } = default!;
         public decimal TurnoverDebit { get; set; }
         public decimal TurnoverCredit { get; set; }
@@ -61,6 +64,8 @@ namespace HSCrm.Entities.Models
         public DateTime VoucherDate { get; set; }
         public string AccountCode { get; set; } = default!;
         public string AccountTitle { get; set; } = default!;
+        public int? BankAccountId { get; set; }
+        public string? BankAccountTitle { get; set; }
         public string Description { get; set; } = default!;
         public string ReferenceTypeTitle { get; set; } = default!;
         public int? ReferenceId { get; set; }
@@ -124,5 +129,44 @@ namespace HSCrm.Entities.Models
         public int? ClosingVoucherNumber { get; set; }
         public int? OpeningVoucherNumberInNewYear { get; set; }
         public decimal TotalPermanentBalanceTransferred { get; set; }
+    }
+
+    /// <summary>
+    /// مدل تعریف یا ویرایش حساب بانکی / صندوق شرکت
+    /// </summary>
+    public class BankAccountCreateModel
+    {
+        public required string Title { get; set; }
+        public required string BankName { get; set; }
+        public string? AccountNumber { get; set; }
+        public string? ShebaNumber { get; set; }
+        public string? CardNumber { get; set; }
+        public decimal InitialBalance { get; set; }
+        public bool IsDefault { get; set; }
+        public string? Description { get; set; }
+    }
+
+    public class BankAccountEditModel : BankAccountCreateModel
+    {
+        public int Id { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
+    /// <summary>
+    /// گزارش خلاصه وضعیت و موجودی لحظه‌ای هر حساب بانکی / صندوق
+    /// </summary>
+    public class BankAccountBalanceSummaryDto
+    {
+        public int BankAccountId { get; set; }
+        public string Title { get; set; } = default!;
+        public string BankName { get; set; } = default!;
+        public string? AccountNumber { get; set; }
+        public string? ShebaNumber { get; set; }
+        public string? CardNumber { get; set; }
+        public bool IsDefault { get; set; }
+        public bool IsActive { get; set; }
+        public decimal TotalDeposits { get; set; }
+        public decimal TotalWithdrawals { get; set; }
+        public decimal CurrentBalance => TotalDeposits - TotalWithdrawals;
     }
 }

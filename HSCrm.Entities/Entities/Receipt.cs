@@ -11,6 +11,9 @@ public class Receipt : TenantScopedEntity, IFiscalYearScoped
     public int? CustomerId { get; set; }
     public Customer? Customer { get; set; }
 
+    public int? BankAccountId { get; set; }
+    public BankAccount? BankAccount { get; set; }
+
     public DateTime ReceiptDate { get; set; }
     public decimal Amount { get; set; }
 

@@ -92,6 +92,25 @@ namespace HSCrm.DataModel.Services.Repository
             return account;
         }
 
+        private async Task<BankAccount?> ResolveBankAccountAsync(int tenantId, int? requestedBankAccountId, CancellationToken ct)
+        {
+            if (requestedBankAccountId.HasValue && requestedBankAccountId.Value > 0)
+            {
+                var specific = await _context.Set<BankAccount>()
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == requestedBankAccountId.Value && x.TenantId == tenantId && !x.IsDeleted, ct);
+                if (specific != null) return specific;
+            }
+
+            var defaultBank = await _context.Set<BankAccount>()
+                .AsNoTracking()
+                .OrderByDescending(x => x.IsDefault)
+                .ThenBy(x => x.Id)
+                .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.IsActive && !x.IsDeleted, ct);
+
+            return defaultBank;
+        }
+
         public async Task<JournalVoucher> CreateManualVoucherAsync(JournalVoucherCreateModel model, CancellationToken ct = default)
         {
             var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
@@ -133,7 +152,8 @@ namespace HSCrm.DataModel.Services.Repository
                     CustomerId = item.CustomerId,
                     SupplierId = item.SupplierId,
                     ProjectId = item.ProjectId,
-                    WarehouseId = item.WarehouseId
+                    WarehouseId = item.WarehouseId,
+                    BankAccountId = item.BankAccountId
                 }).ToList()
             };
 
@@ -329,6 +349,8 @@ namespace HSCrm.DataModel.Services.Repository
         {
             var accCashBank = await GetSystemAccountAsync(receipt.TenantId, ACC_CASH_BANK, ct);
             var accReceivable = await GetSystemAccountAsync(receipt.TenantId, ACC_RECEIVABLE, ct);
+            var bankAcc = await ResolveBankAccountAsync(receipt.TenantId, receipt.BankAccountId, ct);
+            var bankTitle = bankAcc != null ? $"{bankAcc.Title} - {bankAcc.BankName}" : "خزانه/بانک";
 
             var nextNumber = await GetNextVoucherNumberAsync(receipt.TenantId, receipt.FiscalYearId, ct);
             var refDesc = !string.IsNullOrWhiteSpace(receipt.ReferenceNo) ? $" (شماره پیگیری: {receipt.ReferenceNo})" : "";
@@ -340,7 +362,7 @@ namespace HSCrm.DataModel.Services.Repository
                 CreatedAt = DateTime.UtcNow,
                 VoucherNumber = nextNumber,
                 VoucherDate = receipt.ReceiptDate,
-                Description = $"سند دریافت وجه ({receipt.Method}){refDesc}",
+                Description = $"سند دریافت وجه به {bankTitle} ({receipt.Method}){refDesc}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.Receipt,
                 ReferenceId = receipt.Id,
@@ -353,10 +375,12 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = receipt.TenantId,
                         RowNumber = 1,
                         AccountId = accCashBank.Id,
-                        Description = $"افزایش موجودی خزانه/بانک بابت دریافت شماره {receipt.Id}{refDesc}",
+                        Description = $"افزایش موجودی {bankTitle} بابت دریافت شماره {receipt.Id}{refDesc}",
                         Debit = receipt.Amount,
-                        Credit = 0,CreatedAt = DateTime.UtcNow,
-                        CustomerId = receipt.CustomerId
+                        Credit = 0,
+                        CreatedAt = DateTime.UtcNow,
+                        CustomerId = receipt.CustomerId,
+                        BankAccountId = bankAcc?.Id ?? receipt.BankAccountId
                     },
                     new()
                     {
@@ -399,6 +423,9 @@ namespace HSCrm.DataModel.Services.Repository
                 projectId = exp?.ProjectId;
             }
 
+            var bankAcc = await ResolveBankAccountAsync(payment.TenantId, payment.BankAccountId, ct);
+            var bankTitle = bankAcc != null ? $"{bankAcc.Title} - {bankAcc.BankName}" : "خزانه/بانک";
+
             var nextNumber = await GetNextVoucherNumberAsync(payment.TenantId, payment.FiscalYearId, ct);
             var refDesc = !string.IsNullOrWhiteSpace(payment.ReferenceNo) ? $" (پیگیری: {payment.ReferenceNo})" : "";
 
@@ -409,7 +436,7 @@ namespace HSCrm.DataModel.Services.Repository
                 VoucherNumber = nextNumber,
                 CreatedAt = DateTime.UtcNow,
                 VoucherDate = payment.PaymentDate,
-                Description = $"سند پرداخت وجه ({payment.Method}){refDesc}",
+                Description = $"سند پرداخت وجه از {bankTitle} ({payment.Method}){refDesc}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.Payment,
                 ReferenceId = payment.Id,
@@ -425,7 +452,8 @@ namespace HSCrm.DataModel.Services.Repository
                         Description = $"تسویه بدهی بابت سند پرداخت شماره {payment.Id}",
                         Debit = payment.Amount,
                         Credit = 0,
-                        SupplierId = supplierId,CreatedAt = DateTime.UtcNow,
+                        CreatedAt = DateTime.UtcNow,
+                        SupplierId = supplierId,
                         ProjectId = projectId
                     },
                     new()
@@ -433,11 +461,13 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = payment.TenantId,
                         RowNumber = 2,
                         AccountId = accCashBank.Id,
-                        Description = $"کسر از خزانه/بانک بابت پرداخت شماره {payment.Id}{refDesc}",
+                        Description = $"کسر از {bankTitle} بابت پرداخت شماره {payment.Id}{refDesc}",
                         Debit = 0,
-                        Credit = payment.Amount,CreatedAt = DateTime.UtcNow,
+                        Credit = payment.Amount,
+                        CreatedAt = DateTime.UtcNow,
                         SupplierId = supplierId,
-                        ProjectId = projectId
+                        ProjectId = projectId,
+                        BankAccountId = bankAcc?.Id ?? payment.BankAccountId
                     }
                 }
             };
@@ -551,6 +581,7 @@ namespace HSCrm.DataModel.Services.Repository
             int? customerId = null,
             int? supplierId = null,
             int? projectId = null,
+            int? bankAccountId = null,
             DateTime? fromDate = null,
             DateTime? toDate = null,
             CancellationToken ct = default)
@@ -558,6 +589,7 @@ namespace HSCrm.DataModel.Services.Repository
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
+                .Include(x => x.BankAccount)
                 .Include(x => x.JournalVoucher)
                 .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted && !x.JournalVoucher.IsDeleted);
 
@@ -565,6 +597,7 @@ namespace HSCrm.DataModel.Services.Repository
             if (customerId.HasValue) query = query.Where(x => x.CustomerId == customerId.Value);
             if (supplierId.HasValue) query = query.Where(x => x.SupplierId == supplierId.Value);
             if (projectId.HasValue) query = query.Where(x => x.ProjectId == projectId.Value);
+            if (bankAccountId.HasValue) query = query.Where(x => x.BankAccountId == bankAccountId.Value);
             if (fromDate.HasValue) query = query.Where(x => x.JournalVoucher.VoucherDate >= fromDate.Value.Date);
             if (toDate.HasValue) query = query.Where(x => x.JournalVoucher.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
@@ -590,6 +623,8 @@ namespace HSCrm.DataModel.Services.Repository
                     Description = item.Description,
                     ReferenceTypeTitle = item.JournalVoucher.ReferenceType.ToString(),
                     ReferenceId = item.JournalVoucher.ReferenceId,
+                    BankAccountId = item.BankAccountId,
+                    BankAccountTitle = item.BankAccount != null ? $"{item.BankAccount.Title} ({item.BankAccount.BankName})" : null,
                     Debit = item.Debit,
                     Credit = item.Credit,
                     RunningBalance = running
@@ -597,6 +632,111 @@ namespace HSCrm.DataModel.Services.Repository
             }
 
             return result;
+        }
+
+        public async Task<JournalVoucher?> CreateOpeningVoucherForBankAccountAsync(BankAccount bankAccount, CancellationToken ct = default)
+        {
+            if (bankAccount.InitialBalance <= 0) return null;
+
+            var fiscalYearId = _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی فعال برای صدور سند موجودی اولیه بانک یافت نشد.");
+
+            var accCashBank = await GetSystemAccountAsync(bankAccount.TenantId, ACC_CASH_BANK, ct);
+            var accEquity = await GetSystemAccountAsync(bankAccount.TenantId, ACC_EQUITY, ct);
+            var nextNumber = await GetNextVoucherNumberAsync(bankAccount.TenantId, fiscalYearId, ct);
+
+            var voucher = new JournalVoucher
+            {
+                TenantId = bankAccount.TenantId,
+                FiscalYearId = fiscalYearId,
+                CreatedAt = DateTime.UtcNow,
+                VoucherNumber = nextNumber,
+                VoucherDate = DateTime.UtcNow,
+                Description = $"سند موجودی اول دوره حساب بانکی/صندوق ({bankAccount.Title} - {bankAccount.BankName})",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.OpeningBalance,
+                ReferenceId = bankAccount.Id,
+                TotalDebit = bankAccount.InitialBalance,
+                TotalCredit = bankAccount.InitialBalance,
+                Items = new List<JournalVoucherItem>
+                {
+                    new()
+                    {
+                        TenantId = bankAccount.TenantId,
+                        RowNumber = 1,
+                        CreatedAt = DateTime.UtcNow,
+                        AccountId = accCashBank.Id,
+                        BankAccountId = bankAccount.Id,
+                        Description = $"موجودی اول دوره {bankAccount.Title} ({bankAccount.BankName})",
+                        Debit = bankAccount.InitialBalance,
+                        Credit = 0
+                    },
+                    new()
+                    {
+                        TenantId = bankAccount.TenantId,
+                        RowNumber = 2,
+                        CreatedAt = DateTime.UtcNow,
+                        AccountId = accEquity.Id,
+                        Description = $"طرف حساب موجودی اول دوره {bankAccount.Title}",
+                        Debit = 0,
+                        Credit = bankAccount.InitialBalance
+                    }
+                }
+            };
+
+            await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
+            await _unitOfWork.SaveAsync();
+            return voucher;
+        }
+
+        public async Task<List<BankAccountBalanceSummaryDto>> GetBankAccountsBalanceSummaryAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
+        {
+            var bankAccounts = await _context.Set<BankAccount>()
+                .AsNoTracking()
+                .Where(x => !x.IsDeleted)
+                .OrderByDescending(x => x.IsDefault)
+                .ThenBy(x => x.Id)
+                .ToListAsync(ct);
+
+            var itemsQuery = _context.JournalVoucherItems
+                .AsNoTracking()
+                .Include(x => x.JournalVoucher)
+                .Where(x => x.BankAccountId != null
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted);
+
+            if (fromDate.HasValue)
+                itemsQuery = itemsQuery.Where(x => x.JournalVoucher.VoucherDate >= fromDate.Value.Date);
+            if (toDate.HasValue)
+                itemsQuery = itemsQuery.Where(x => x.JournalVoucher.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+            var groupedMovements = await itemsQuery
+                .GroupBy(x => x.BankAccountId!.Value)
+                .Select(g => new
+                {
+                    BankAccountId = g.Key,
+                    TotalDeposits = g.Sum(i => i.Debit),
+                    TotalWithdrawals = g.Sum(i => i.Credit)
+                })
+                .ToDictionaryAsync(x => x.BankAccountId, ct);
+
+            return bankAccounts.Select(ba =>
+            {
+                groupedMovements.TryGetValue(ba.Id, out var mov);
+                return new BankAccountBalanceSummaryDto
+                {
+                    BankAccountId = ba.Id,
+                    Title = ba.Title,
+                    BankName = ba.BankName,
+                    AccountNumber = ba.AccountNumber,
+                    ShebaNumber = ba.ShebaNumber,
+                    CardNumber = ba.CardNumber,
+                    IsDefault = ba.IsDefault,
+                    IsActive = ba.IsActive,
+                    TotalDeposits = mov?.TotalDeposits ?? 0m,
+                    TotalWithdrawals = mov?.TotalWithdrawals ?? 0m
+                };
+            }).ToList();
         }
 
         public async Task<ProfitAndLossReportDto> GetProfitAndLossAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
@@ -696,6 +836,7 @@ namespace HSCrm.DataModel.Services.Repository
                                 AccountId = tb.AccountId,
                                 Description = $"بستن حساب موقت ({tb.Title}) در پایان سال مالی {sourceFiscalYear.Title}",
                                 Debit = Math.Abs(tb.NetBalance),
+                                CreatedAt = DateTime.UtcNow,
                                 Credit = 0
                             });
                         }
@@ -709,6 +850,7 @@ namespace HSCrm.DataModel.Services.Repository
                                 AccountId = tb.AccountId,
                                 Description = $"بستن حساب موقت ({tb.Title}) در پایان سال مالی {sourceFiscalYear.Title}",
                                 Debit = 0,
+                                CreatedAt = DateTime.UtcNow,
                                 Credit = tb.NetBalance
                             });
                         }
@@ -728,6 +870,7 @@ namespace HSCrm.DataModel.Services.Repository
                             AccountId = accEquity.Id,
                             Description = $"انتقال سود خالص سال مالی {sourceFiscalYear.Title} به سود انباشته",
                             Debit = 0,
+                            CreatedAt = DateTime.UtcNow,
                             Credit = netProfitOrLoss
                         });
                     }
@@ -741,6 +884,7 @@ namespace HSCrm.DataModel.Services.Repository
                             AccountId = accEquity.Id,
                             Description = $"انتقال زیان خالص سال مالی {sourceFiscalYear.Title} به سود انباشته",
                             Debit = Math.Abs(netProfitOrLoss),
+                            CreatedAt = DateTime.UtcNow,
                             Credit = 0
                         });
                     }
@@ -757,6 +901,7 @@ namespace HSCrm.DataModel.Services.Repository
                         ReferenceType = AccountingReferenceType.ClosingBalance,
                         TotalDebit = pnlItems.Sum(x => x.Debit),
                         TotalCredit = pnlItems.Sum(x => x.Credit),
+                        CreatedAt = DateTime.UtcNow,
                         Items = pnlItems
                     };
 
@@ -789,7 +934,8 @@ namespace HSCrm.DataModel.Services.Repository
                         x.CustomerId,
                         x.SupplierId,
                         x.ProjectId,
-                        x.WarehouseId
+                        x.WarehouseId,
+                        x.BankAccountId
                     })
                     .Select(g => new
                     {
@@ -799,6 +945,7 @@ namespace HSCrm.DataModel.Services.Repository
                         g.Key.SupplierId,
                         g.Key.ProjectId,
                         g.Key.WarehouseId,
+                        g.Key.BankAccountId,
                         NetBalance = g.Sum(i => i.Debit - i.Credit)
                     })
                     .Where(x => x.NetBalance != 0)
@@ -855,7 +1002,9 @@ namespace HSCrm.DataModel.Services.Repository
                                 CustomerId = pb.CustomerId,
                                 SupplierId = pb.SupplierId,
                                 ProjectId = pb.ProjectId,
-                                WarehouseId = pb.WarehouseId
+                                CreatedAt = DateTime.UtcNow,
+                                WarehouseId = pb.WarehouseId,
+                                BankAccountId = pb.BankAccountId
                             });
 
                             openingItems.Add(new JournalVoucherItem
@@ -869,7 +1018,9 @@ namespace HSCrm.DataModel.Services.Repository
                                 CustomerId = pb.CustomerId,
                                 SupplierId = pb.SupplierId,
                                 ProjectId = pb.ProjectId,
-                                WarehouseId = pb.WarehouseId
+                                WarehouseId = pb.WarehouseId,
+                                CreatedAt = DateTime.UtcNow,
+                                BankAccountId = pb.BankAccountId
                             });
                         }
                         else if (pb.NetBalance < 0)
@@ -888,7 +1039,9 @@ namespace HSCrm.DataModel.Services.Repository
                                 CustomerId = pb.CustomerId,
                                 SupplierId = pb.SupplierId,
                                 ProjectId = pb.ProjectId,
-                                WarehouseId = pb.WarehouseId
+                                CreatedAt = DateTime.UtcNow,
+                                WarehouseId = pb.WarehouseId,
+                                BankAccountId = pb.BankAccountId
                             });
 
                             openingItems.Add(new JournalVoucherItem
@@ -902,7 +1055,9 @@ namespace HSCrm.DataModel.Services.Repository
                                 CustomerId = pb.CustomerId,
                                 SupplierId = pb.SupplierId,
                                 ProjectId = pb.ProjectId,
-                                WarehouseId = pb.WarehouseId
+                                CreatedAt = DateTime.UtcNow,
+                                WarehouseId = pb.WarehouseId,
+                                BankAccountId = pb.BankAccountId
                             });
                         }
                     }
@@ -921,6 +1076,7 @@ namespace HSCrm.DataModel.Services.Repository
                         ReferenceType = AccountingReferenceType.ClosingBalance,
                         TotalDebit = closingItems.Sum(x => x.Debit),
                         TotalCredit = closingItems.Sum(x => x.Credit),
+                        CreatedAt = DateTime.UtcNow,
                         Items = closingItems
                     };
 
@@ -935,6 +1091,7 @@ namespace HSCrm.DataModel.Services.Repository
                         Status = JournalVoucherStatus.Posted,
                         ReferenceType = AccountingReferenceType.OpeningBalance,
                         TotalDebit = openingItems.Sum(x => x.Debit),
+                        CreatedAt = DateTime.UtcNow,
                         TotalCredit = openingItems.Sum(x => x.Credit),
                         Items = openingItems
                     };

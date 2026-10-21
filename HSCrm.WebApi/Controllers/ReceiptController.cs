@@ -42,6 +42,7 @@ namespace HSCrm.WebApi.Controllers
                      && x.FiscalYearId == _currentFiscalYearService.FiscalYearId,
                 true,
                 cancellationToken,
+                x => x.BankAccount!,
                 x => x.SalesInvoice!,
                 x => x.Customer!);
 
@@ -132,6 +133,7 @@ namespace HSCrm.WebApi.Controllers
 
             receipt.SalesInvoiceId = model.SalesInvoiceId;
             receipt.CustomerId = model.CustomerId;
+            receipt.BankAccountId = model.BankAccountId;
             receipt.ReceiptDate = model.ReceiptDate;
             receipt.Amount = model.Amount;
             receipt.Method = model.Method;

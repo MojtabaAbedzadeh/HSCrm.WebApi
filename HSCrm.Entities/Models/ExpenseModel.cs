@@ -13,6 +13,7 @@ namespace HSCrm.Entities.Models
         public string? Description { get; set; }
         public int PaymentStatus { get; set; }
         public decimal PaidAmount { get; set; }
+        public int? BankAccountId { get; set; }
         public string? PaymentMethod { get; set; }
         public string? ReferenceNo { get; set; }
 
@@ -30,6 +31,7 @@ namespace HSCrm.Entities.Models
 
         public int PaymentStatus { get; set; }
         public decimal PaidAmount { get; set; }
+        public int? BankAccountId { get; set; }
         public string? PaymentMethod { get; set; }
         public string? ReferenceNo { get; set; }
     }

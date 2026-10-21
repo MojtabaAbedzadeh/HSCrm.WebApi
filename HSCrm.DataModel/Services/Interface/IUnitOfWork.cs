@@ -30,6 +30,7 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<AccountingAccount> accountingAccountUW { get; }
         GenericCRUDClass<JournalVoucher> journalVoucherUW { get; }
         GenericCRUDClass<JournalVoucherItem> journalVoucherItemUW { get; }
+        GenericCRUDClass<BankAccount> bankAccountUW { get; }
 
         IEntityTransaction BeginTransaction();
         Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default);

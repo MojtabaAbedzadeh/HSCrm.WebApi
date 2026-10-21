@@ -1,4 +1,4 @@
-﻿using Common.Permissions;
+using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
