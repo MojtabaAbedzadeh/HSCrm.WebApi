@@ -1,4 +1,4 @@
-using HSCrm.Common.PublicTools;
+﻿using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;

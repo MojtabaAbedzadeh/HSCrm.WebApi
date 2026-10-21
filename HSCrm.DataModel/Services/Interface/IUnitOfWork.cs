@@ -1,4 +1,4 @@
-using HSCrm.DataModel.Services.Repository;
+﻿using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
 
 namespace HSCrm.DataModel.Services.Interface

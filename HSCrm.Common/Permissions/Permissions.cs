@@ -1,4 +1,4 @@
-namespace Common.Permissions;
+﻿namespace Common.Permissions;
 
 public static class Permissions
 {
@@ -49,6 +49,8 @@ public static class Permissions
         public const string Create = "fiscalYears.create";
         public const string Edit = "fiscalYears.edit";
         public const string Delete = "fiscalYears.delete";
+        public const string Close = "fiscalYears.close";
+        public const string Reopen = "fiscalYears.reopen";
     }
 
     public static class Inventories

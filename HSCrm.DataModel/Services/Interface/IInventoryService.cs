@@ -1,4 +1,4 @@
-using HSCrm.Entities.Entities;
+﻿using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models.Dto;
 using static HSCrm.Common.PublicTools.Enums;
 

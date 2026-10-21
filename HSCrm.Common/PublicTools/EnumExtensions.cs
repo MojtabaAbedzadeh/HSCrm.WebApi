@@ -1,4 +1,4 @@
-using HSCrm.Common.PublicTools;
+﻿using HSCrm.Common.PublicTools;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Common.PublicTools

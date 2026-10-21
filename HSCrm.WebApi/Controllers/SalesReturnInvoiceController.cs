@@ -1,4 +1,4 @@
-using Common.Permissions;
+﻿using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -57,7 +57,7 @@ namespace HSCrm.WebApi.Controllers
 
             if (!string.IsNullOrWhiteSpace(customerFullName))
             {
-                query = query.Where(x => x.Project != null && x.Project.Customer != null && x.Project.Customer.Name.Contains(customerFullName));
+                query = query.Where(x => x.Project != null && x.Project.Customer != null && x.Project.Customer.CustomerFullName.Contains(customerFullName));
             }
 
             if (salesInvoiceId.HasValue)
@@ -90,7 +90,7 @@ namespace HSCrm.WebApi.Controllers
                 ProjectId = x.ProjectId,
                 ProjectTitle = x.Project?.ProjectTitle,
                 CustomerId = x.Project?.CustomerId,
-                CustomerName = x.Project?.Customer?.Name,
+                CustomerName = x.Project?.Customer?.CustomerFullName,
                 WarehouseId = x.WarehouseId,
                 WarehouseTitle = x.Warehouse?.Title,
                 IssueDate = x.IssueDate,

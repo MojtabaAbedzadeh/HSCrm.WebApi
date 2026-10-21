@@ -1,4 +1,4 @@
-using static HSCrm.Common.PublicTools.Enums;
+﻿using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Entities.Models
 {
@@ -90,6 +90,17 @@ namespace HSCrm.Entities.Models
     }
 
     /// <summary>
+    /// مدل تعریف یا ویرایش سال مالی
+    /// </summary>
+    public class FiscalYearCreateModel
+    {
+        public required string Title { get; set; }
+        public required string StartDateShamsi { get; set; }
+        public required string EndDateShamsi { get; set; }
+        public bool IsCurrent { get; set; } = false;
+    }
+
+    /// <summary>
     /// ورودی عملیات بستن سال مالی و صدور خودکار سند اختتامیه و افتتاحیه
     /// </summary>
     public class CloseFiscalYearRequestModel
@@ -113,6 +124,48 @@ namespace HSCrm.Entities.Models
         /// تاریخ پایان سال مالی جدید به شمسی (مثال: 1405/12/29)
         /// </summary>
         public required string NextEndDateShamsi { get; set; }
+
+        /// <summary>
+        /// آیا در صورت وجود اسناد پیش‌نویس (Draft) در سال مالی مبدأ، قبل از بستن سال به‌طور خودکار قطعی شوند؟
+        /// </summary>
+        public bool AutoPostDraftVouchers { get; set; } = false;
+    }
+
+    /// <summary>
+    /// جزئیات هر حساب در پیش‌نمایش عملیات پایان سال مالی (حساب‌های موقت یا دائم)
+    /// </summary>
+    public class ClosingAccountPreviewItemDto
+    {
+        public int AccountId { get; set; }
+        public string AccountCode { get; set; } = default!;
+        public string AccountTitle { get; set; } = default!;
+        public string CategoryTitle { get; set; } = default!;
+        public decimal BalanceDebit { get; set; }
+        public decimal BalanceCredit { get; set; }
+        public string? SubAccountSummary { get; set; }
+        public string ClosingActionDescription { get; set; } = default!;
+    }
+
+    /// <summary>
+    /// پیش‌نمایش و ممیزی کنترلی قبل از بستن سال مالی (Pre-Closing Audit & Preview)
+    /// </summary>
+    public class FiscalYearClosingPreviewDto
+    {
+        public int FiscalYearId { get; set; }
+        public string FiscalYearTitle { get; set; } = default!;
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public bool IsClosed { get; set; }
+        public bool CanClose { get; set; }
+        public int UnpostedDraftVouchersCount { get; set; }
+        public int TotalPostedVouchersCount { get; set; }
+        public decimal TotalRevenues { get; set; }
+        public decimal TotalExpenses { get; set; }
+        public decimal NetProfitOrLoss { get; set; }
+        public bool IsProfitable => NetProfitOrLoss >= 0;
+        public List<string> ValidationMessages { get; set; } = new();
+        public List<ClosingAccountPreviewItemDto> TemporaryAccountsToClose { get; set; } = new();
+        public List<ClosingAccountPreviewItemDto> PermanentAccountsToTransfer { get; set; } = new();
     }
 
     /// <summary>
@@ -125,10 +178,26 @@ namespace HSCrm.Entities.Models
         public int NewFiscalYearId { get; set; }
         public string NewFiscalYearTitle { get; set; } = default!;
         public decimal NetProfitOrLossTransferred { get; set; }
+        public int TemporaryAccountsClosedCount { get; set; }
+        public int PermanentLinesTransferredCount { get; set; }
+        public int? ProfitLossClosingVoucherId { get; set; }
         public int? ProfitLossClosingVoucherNumber { get; set; }
+        public int? ClosingVoucherId { get; set; }
         public int? ClosingVoucherNumber { get; set; }
+        public int? OpeningVoucherIdInNewYear { get; set; }
         public int? OpeningVoucherNumberInNewYear { get; set; }
         public decimal TotalPermanentBalanceTransferred { get; set; }
+    }
+
+    /// <summary>
+    /// خروجی عملیات بازگشایی سال مالی بسته شده جهت انجام اصلاحات
+    /// </summary>
+    public class ReopenFiscalYearResultDto
+    {
+        public int ReopenedFiscalYearId { get; set; }
+        public string ReopenedFiscalYearTitle { get; set; } = default!;
+        public int RemovedClosingVouchersCount { get; set; }
+        public int RemovedOpeningVouchersCount { get; set; }
     }
 
     /// <summary>

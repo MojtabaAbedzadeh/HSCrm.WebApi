@@ -1,4 +1,4 @@
-namespace HSCrm.Common.Permissions
+﻿namespace HSCrm.Common.Permissions
 {
     public static class PermissionCategories
     {

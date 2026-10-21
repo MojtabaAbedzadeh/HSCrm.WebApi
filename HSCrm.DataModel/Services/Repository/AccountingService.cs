@@ -1,4 +1,4 @@
-using HSCrm.Common.PublicTools;
+﻿using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -26,7 +26,8 @@ namespace HSCrm.DataModel.Services.Repository
         public const string ACC_PAYABLE = "2101";            // حساب‌های پرداختنی تجاری (تأمین‌کنندگان)
         public const string ACC_VAT_PAYABLE = "2102";        // مالیات بر ارزش افزوده فروش
         public const string ACC_NOTES_PAYABLE = "2103";      // اسناد پرداختنی تجاری (چک‌های صادره شرکت)
-        public const string ACC_EQUITY = "3101";             // سرمایه اولیه
+        public const string ACC_EQUITY = "3101";             // سرمایه اولیه و سود انباشته
+        public const string ACC_CLOSING_SUMMARY = "3102";    // خلاصه سود و زیان و تراز اختتامیه/افتتاحیه
         public const string ACC_SALES_REVENUE = "4101";      // درآمد فروش کالا و خدمات
         public const string ACC_SALES_DISCOUNT = "4102";     // تخفیفات فروش
         public const string ACC_SALES_RETURN = "4103";       // برگشت از فروش کالا و خدمات
@@ -80,6 +81,7 @@ namespace HSCrm.DataModel.Services.Repository
 
         private async Task<int> GetNextVoucherNumberAsync(int tenantId, int fiscalYearId, CancellationToken ct)
         {
+            await EnsureFiscalYearIsOpenAsync(tenantId, fiscalYearId, ct);
             var lastNumber = await _context.JournalVouchers
                 .Where(x => x.TenantId == tenantId && x.FiscalYearId == fiscalYearId && !x.IsDeleted)
                 .MaxAsync(x => (int?)x.VoucherNumber, ct) ?? 0;
@@ -879,6 +881,142 @@ namespace HSCrm.DataModel.Services.Repository
         }
 
         /// <summary>
+        /// گارد کنترلی باز بودن سال مالی (جلوگیری از ثبت یا تغییر سند در سال مالی بسته شده)
+        /// </summary>
+        private async Task EnsureFiscalYearIsOpenAsync(int tenantId, int fiscalYearId, CancellationToken ct = default)
+        {
+            var fy = await _context.FiscalYears
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(f => f.Id == fiscalYearId && f.TenantId == tenantId && !f.IsDeleted, ct);
+
+            if (fy != null && fy.IsClosed)
+                throw new InvalidOperationException($"سال مالی {fy.Title} بسته شده است و امکان ثبت یا ویرایش سند در سال مالی بسته وجود ندارد. در صورت نیاز ابتدا سال مالی را بازگشایی نمایید.");
+        }
+
+        /// <summary>
+        /// ممیزی و پیش‌نمایش کنترلی پیش از بستن سال مالی (بررسی اسناد پیش‌نویس، محاسبه سود/زیان و لیست حساب‌های موقت و دائم)
+        /// </summary>
+        public async Task<FiscalYearClosingPreviewDto> GetFiscalYearClosingPreviewAsync(int? fiscalYearId = null, CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var targetFiscalYearId = fiscalYearId ?? _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی مورد نظر مشخص نشده است.");
+
+            var fy = await _context.FiscalYears
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(f => f.Id == targetFiscalYearId && f.TenantId == tenantId && !f.IsDeleted, ct)
+                ?? throw new InvalidOperationException("سال مالی مورد نظر یافت نشد.");
+
+            await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
+
+            var draftCount = await _context.JournalVouchers
+                .IgnoreQueryFilters()
+                .CountAsync(v => v.TenantId == tenantId
+                              && v.FiscalYearId == targetFiscalYearId
+                              && v.Status == JournalVoucherStatus.Draft
+                              && !v.IsDeleted, ct);
+
+            var postedCount = await _context.JournalVouchers
+                .IgnoreQueryFilters()
+                .CountAsync(v => v.TenantId == tenantId
+                              && v.FiscalYearId == targetFiscalYearId
+                              && v.Status == JournalVoucherStatus.Posted
+                              && !v.IsDeleted, ct);
+
+            var allPostedItems = await _context.JournalVoucherItems
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Include(x => x.Account)
+                .Include(x => x.JournalVoucher)
+                .Where(x => x.TenantId == tenantId
+                         && !x.IsDeleted
+                         && x.JournalVoucher.FiscalYearId == targetFiscalYearId
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted)
+                .ToListAsync(ct);
+
+            var tempAccounts = allPostedItems
+                .Where(x => x.Account.Category == AccountCategory.Revenue || x.Account.Category == AccountCategory.Expense)
+                .GroupBy(x => new { x.AccountId, x.Account.Code, x.Account.Title, x.Account.Category })
+                .Select(g =>
+                {
+                    var net = g.Sum(i => i.Debit - i.Credit);
+                    return new ClosingAccountPreviewItemDto
+                    {
+                        AccountId = g.Key.AccountId,
+                        AccountCode = g.Key.Code,
+                        AccountTitle = g.Key.Title,
+                        CategoryTitle = g.Key.Category.GetDisplayName(),
+                        BalanceDebit = net > 0 ? net : 0m,
+                        BalanceCredit = net < 0 ? Math.Abs(net) : 0m,
+                        ClosingActionDescription = net < 0
+                            ? $"بدهکار شدن به مبلغ {Math.Abs(net):N0} جهت بستن به خلاصه سود و زیان"
+                            : $"بستانکار شدن به مبلغ {net:N0} جهت بستن به خلاصه سود و زیان"
+                    };
+                })
+                .Where(x => x.BalanceDebit > 0 || x.BalanceCredit > 0)
+                .OrderBy(x => x.AccountCode)
+                .ToList();
+
+            var totalRevenues = tempAccounts.Sum(x => x.BalanceCredit);
+            var totalExpenses = tempAccounts.Sum(x => x.BalanceDebit);
+            var netProfitOrLoss = totalRevenues - totalExpenses;
+
+            var permAccounts = allPostedItems
+                .Where(x => x.Account.Category == AccountCategory.Asset
+                         || x.Account.Category == AccountCategory.Liability
+                         || x.Account.Category == AccountCategory.Equity)
+                .GroupBy(x => new { x.AccountId, x.Account.Code, x.Account.Title, x.Account.Category })
+                .Select(g =>
+                {
+                    var net = g.Sum(i => i.Debit - i.Credit);
+                    return new ClosingAccountPreviewItemDto
+                    {
+                        AccountId = g.Key.AccountId,
+                        AccountCode = g.Key.Code,
+                        AccountTitle = g.Key.Title,
+                        CategoryTitle = g.Key.Category.GetDisplayName(),
+                        BalanceDebit = net > 0 ? net : 0m,
+                        BalanceCredit = net < 0 ? Math.Abs(net) : 0m,
+                        ClosingActionDescription = net > 0
+                            ? "بستانکار در سند اختتامیه و بدهکار در سند افتتاحیه سال جدید"
+                            : "بدهکار در سند اختتامیه و بستانکار در سند افتتاحیه سال جدید"
+                    };
+                })
+                .Where(x => x.BalanceDebit > 0 || x.BalanceCredit > 0)
+                .OrderBy(x => x.AccountCode)
+                .ToList();
+
+            var validations = new List<string>();
+            if (fy.IsClosed)
+                validations.Add($"سال مالی {fy.Title} قبلاً بسته شده است. برای بستن مجدد ابتدا آن را بازگشایی کنید.");
+            if (draftCount > 0)
+                validations.Add($"تعداد {draftCount} سند حسابداری پیش‌نویس (غیرقطعی) در این سال مالی وجود دارد. ابتدا آن‌ها را قطعی یا حذف کنید (یا گزینه قطعی‌سازی خودکار را فعال نمایید).");
+            if (postedCount == 0)
+                validations.Add("هیچ سند قطعی در این سال مالی ثبت نشده است.");
+
+            return new FiscalYearClosingPreviewDto
+            {
+                FiscalYearId = fy.Id,
+                FiscalYearTitle = fy.Title,
+                StartDate = fy.StartDate,
+                EndDate = fy.EndDate,
+                IsClosed = fy.IsClosed,
+                CanClose = !fy.IsClosed && postedCount > 0,
+                UnpostedDraftVouchersCount = draftCount,
+                TotalPostedVouchersCount = postedCount,
+                TotalRevenues = totalRevenues,
+                TotalExpenses = totalExpenses,
+                NetProfitOrLoss = netProfitOrLoss,
+                ValidationMessages = validations,
+                TemporaryAccountsToClose = tempAccounts,
+                PermanentAccountsToTransfer = permAccounts
+            };
+        }
+
+        /// <summary>
         /// عملیات کامل بستن سال مالی (بستن حساب‌های موقت، انتقال سود/زیان به سرمایه، صدور سند اختتامیه و صدور سند افتتاحیه سال جدید)
         /// </summary>
         public async Task<CloseFiscalYearResultDto> CloseFiscalYearAndGenerateOpeningAsync(CloseFiscalYearRequestModel model, CancellationToken ct = default)
@@ -905,6 +1043,27 @@ namespace HSCrm.DataModel.Services.Repository
             {
                 await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
                 var accEquity = await GetSystemAccountAsync(tenantId, ACC_EQUITY, ct);
+
+                // ۰. بررسی اسناد پیش‌نویس (Draft) در سال مالی مبدأ
+                var draftVouchers = await _context.JournalVouchers
+                    .IgnoreQueryFilters()
+                    .Where(v => v.TenantId == tenantId
+                             && v.FiscalYearId == sourceFiscalYearId
+                             && v.Status == JournalVoucherStatus.Draft
+                             && !v.IsDeleted)
+                    .ToListAsync(ct);
+
+                if (draftVouchers.Any())
+                {
+                    if (!model.AutoPostDraftVouchers)
+                        throw new InvalidOperationException($"در سال مالی {sourceFiscalYear.Title} تعداد {draftVouchers.Count} سند پیش‌نویس (غیرقطعی) وجود دارد. لطفاً ابتدا اسناد پیش‌نویس را قطعی یا ابطال نمایید.");
+
+                    foreach (var dv in draftVouchers)
+                    {
+                        dv.Status = JournalVoucherStatus.Posted;
+                    }
+                    await _context.SaveChangesAsync(ct);
+                }
 
                 // ۱. استخراج تمام آرتیکل‌های قطعی در سال مالی مبدأ (بدون تداخل Global Query Filter)
                 var allPostedItems = await _context.JournalVoucherItems
@@ -933,6 +1092,7 @@ namespace HSCrm.DataModel.Services.Repository
                     .Where(x => x.NetBalance != 0)
                     .ToList();
 
+                int? pnlVoucherId = null;
                 int? pnlVoucherNumber = null;
                 decimal netProfitOrLoss = 0m;
 
@@ -1025,9 +1185,10 @@ namespace HSCrm.DataModel.Services.Repository
 
                     await _context.JournalVouchers.AddAsync(pnlVoucher, ct);
                     await _context.SaveChangesAsync(ct);
+                    pnlVoucherId = pnlVoucher.Id;
                 }
 
-                // ۴. محاسبه مانده حساب‌های دائم (دارایی، بدهی، سرمایه) به تفکیک تفصیلی‌های شناور (Customer, Supplier, Project, Warehouse)
+                // ۴. محاسبه مانده حساب‌های دائم (دارایی، بدهی، سرمایه) به تفکیک تفصیلی‌های شناور (Customer, Supplier, Project, Warehouse, BankAccount)
                 // شامل سود/زیانی که در مرحله ۳ به حساب 3101 منتقل شد
                 var permanentItemsAfterPnl = await _context.JournalVoucherItems
                     .IgnoreQueryFilters()
@@ -1070,16 +1231,17 @@ namespace HSCrm.DataModel.Services.Repository
                     .ToList();
 
                 // ۵. ایجاد یا بازیابی سال مالی جدید
+                var cleanNextTitle = model.NextFiscalYearTitle.CleanName();
                 var nextFiscalYear = await _context.FiscalYears
                     .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(f => f.TenantId == tenantId && f.Title == model.NextFiscalYearTitle.Trim() && !f.IsDeleted, ct);
+                    .FirstOrDefaultAsync(f => f.TenantId == tenantId && f.Title == cleanNextTitle && !f.IsDeleted, ct);
 
                 if (nextFiscalYear == null)
                 {
                     nextFiscalYear = new FiscalYear
                     {
                         TenantId = tenantId,
-                        Title = model.NextFiscalYearTitle.Trim(),
+                        Title = cleanNextTitle,
                         StartDate = nextStartDate,
                         EndDate = nextEndDate,
                         IsClosed = false,
@@ -1091,7 +1253,9 @@ namespace HSCrm.DataModel.Services.Repository
                     await _context.SaveChangesAsync(ct);
                 }
 
+                int? closingVoucherId = null;
                 int? closingVoucherNumber = null;
+                int? openingVoucherId = null;
                 int? openingVoucherNumber = null;
                 decimal totalPermanentBalance = 0m;
 
@@ -1215,12 +1379,23 @@ namespace HSCrm.DataModel.Services.Repository
                     };
 
                     await _context.JournalVouchers.AddRangeAsync(new[] { closingVoucher, openingVoucher }, ct);
+                    await _context.SaveChangesAsync(ct);
+
+                    closingVoucherId = closingVoucher.Id;
+                    openingVoucherId = openingVoucher.Id;
                 }
 
                 // ۷. بستن سال مالی قدیم و فعال کردن سال مالی جدید
+                var allTenantYears = await _context.FiscalYears
+                    .IgnoreQueryFilters()
+                    .Where(f => f.TenantId == tenantId && !f.IsDeleted)
+                    .ToListAsync(ct);
+
+                foreach (var fy in allTenantYears)
+                {
+                    fy.IsCurrent = (fy.Id == nextFiscalYear.Id);
+                }
                 sourceFiscalYear.IsClosed = true;
-                sourceFiscalYear.IsCurrent = false;
-                nextFiscalYear.IsCurrent = true;
 
                 await _context.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
@@ -1232,10 +1407,101 @@ namespace HSCrm.DataModel.Services.Repository
                     NewFiscalYearId = nextFiscalYear.Id,
                     NewFiscalYearTitle = nextFiscalYear.Title,
                     NetProfitOrLossTransferred = netProfitOrLoss,
+                    TemporaryAccountsClosedCount = tempBalances.Count,
+                    PermanentLinesTransferredCount = permanentBalances.Count,
+                    ProfitLossClosingVoucherId = pnlVoucherId,
                     ProfitLossClosingVoucherNumber = pnlVoucherNumber,
+                    ClosingVoucherId = closingVoucherId,
                     ClosingVoucherNumber = closingVoucherNumber,
+                    OpeningVoucherIdInNewYear = openingVoucherId,
                     OpeningVoucherNumberInNewYear = openingVoucherNumber,
                     TotalPermanentBalanceTransferred = totalPermanentBalance
+                };
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// بازگشایی سال مالی بسته شده و ابطال خودکار اسناد بستن حساب موقت، اختتامیه و افتتاحیه جهت انجام اصلاحات
+        /// </summary>
+        public async Task<ReopenFiscalYearResultDto> ReopenFiscalYearAsync(int fiscalYearId, int? nextFiscalYearId = null, CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+
+            var fiscalYear = await _context.FiscalYears
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(f => f.Id == fiscalYearId && f.TenantId == tenantId && !f.IsDeleted, ct)
+                ?? throw new InvalidOperationException("سال مالی مورد نظر یافت نشد.");
+
+            if (!fiscalYear.IsClosed)
+                throw new InvalidOperationException($"سال مالی {fiscalYear.Title} در حال حاضر باز است.");
+
+            using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
+            try
+            {
+                // ۱. حذف نرم (Soft Delete) اسناد بستن حساب موقت و اختتامیه در سال مالی مبدأ
+                var closingVouchers = await _context.JournalVouchers
+                    .IgnoreQueryFilters()
+                    .Include(v => v.Items)
+                    .Where(v => v.TenantId == tenantId
+                             && v.FiscalYearId == fiscalYearId
+                             && v.ReferenceType == AccountingReferenceType.ClosingBalance
+                             && !v.IsDeleted)
+                    .ToListAsync(ct);
+
+                foreach (var cv in closingVouchers)
+                {
+                    cv.IsDeleted = true;
+                    cv.Status = JournalVoucherStatus.Cancelled;
+                    foreach (var item in cv.Items)
+                    {
+                        item.IsDeleted = true;
+                    }
+                }
+
+                // ۲. حذف نرم سند افتتاحیه انتقالی در سال مالی جدید
+                var openingQuery = _context.JournalVouchers
+                    .IgnoreQueryFilters()
+                    .Include(v => v.Items)
+                    .Where(v => v.TenantId == tenantId
+                             && v.ReferenceType == AccountingReferenceType.OpeningBalance
+                             && !v.IsDeleted);
+
+                if (nextFiscalYearId.HasValue)
+                {
+                    openingQuery = openingQuery.Where(v => v.FiscalYearId == nextFiscalYearId.Value);
+                }
+                else
+                {
+                    openingQuery = openingQuery.Where(v => v.Description.Contains(fiscalYear.Title));
+                }
+
+                var openingVouchers = await openingQuery.ToListAsync(ct);
+                foreach (var ov in openingVouchers)
+                {
+                    ov.IsDeleted = true;
+                    ov.Status = JournalVoucherStatus.Cancelled;
+                    foreach (var item in ov.Items)
+                    {
+                        item.IsDeleted = true;
+                    }
+                }
+
+                // ۳. بازگشایی سال مالی
+                fiscalYear.IsClosed = false;
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return new ReopenFiscalYearResultDto
+                {
+                    ReopenedFiscalYearId = fiscalYear.Id,
+                    ReopenedFiscalYearTitle = fiscalYear.Title,
+                    RemovedClosingVouchersCount = closingVouchers.Count,
+                    RemovedOpeningVouchersCount = openingVouchers.Count
                 };
             }
             catch

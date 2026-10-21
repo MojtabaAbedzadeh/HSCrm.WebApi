@@ -1,4 +1,4 @@
-using HSCrm.Entities.Entities;
+﻿using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using static HSCrm.Common.PublicTools.Enums;
 
@@ -83,7 +83,21 @@ namespace HSCrm.DataModel.Services.Interface
         /// بستن حساب‌های موقت (درآمد و هزینه)، انتقال سود و زیان به سرمایه/سود انباشته،
         /// صدور سند اختتامیه در سال مالی جاری و صدور خودکار سند افتتاحیه در سال مالی جدید
         /// </summary>
+        /// <summary>
+        /// ممیزی و پیش‌نمایش کنترلی پیش از بستن سال مالی (بررسی اسناد پیش‌نویس، محاسبه سود/زیان و لیست حساب‌های موقت و دائم)
+        /// </summary>
+        Task<FiscalYearClosingPreviewDto> GetFiscalYearClosingPreviewAsync(int? fiscalYearId = null, CancellationToken ct = default);
+
+        /// <summary>
+        /// بستن حساب‌های موقت (درآمد و هزینه)، انتقال سود و زیان به سرمایه/سود انباشته،
+        /// صدور سند اختتامیه در سال مالی جاری و صدور خودکار سند افتتاحیه در سال مالی جدید
+        /// </summary>
         Task<CloseFiscalYearResultDto> CloseFiscalYearAndGenerateOpeningAsync(CloseFiscalYearRequestModel model, CancellationToken ct = default);
+
+        /// <summary>
+        /// بازگشایی سال مالی بسته شده و ابطال خودکار اسناد بستن حساب موقت، اختتامیه و افتتاحیه جهت انجام اصلاحات
+        /// </summary>
+        Task<ReopenFiscalYearResultDto> ReopenFiscalYearAsync(int fiscalYearId, int? nextFiscalYearId = null, CancellationToken ct = default);
 
         /// <summary>
         /// صدور خودکار سند حسابداری هنگام ثبت اولیه چک دریافتنی (از مشتری) یا چک پرداختنی (به تأمین‌کننده)
