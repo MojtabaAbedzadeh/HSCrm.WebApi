@@ -1,4 +1,4 @@
-﻿@using System.Security.Claims
+@using System.Security.Claims
 @using HSCrm.Dashboard.Costants
 @{
     ViewData["Title"] = "دریافت‌ها و واریزی‌های مشتریان";
@@ -159,8 +159,22 @@
                 method: document.getElementById('recMethod').value,
                 referenceNo: document.getElementById('recRefNo').value.trim() || null
             };
-            if (!payload.salesInvoiceId || payload.amount <= 0) {
-                swal.fire({ title: 'هشدار', text: 'انتخاب فاکتور و مبلغ معتبر الزامی است.', icon: 'warning', confirmButtonText: 'باشه' });
+            if (!payload.salesInvoiceId) {
+                swal.fire({
+                    icon: 'warning',
+                    title: 'فاکتور فروش انتخاب نشده است',
+                    text: 'لطفاً فاکتور فروشی که دریافت وجه بابت آن انجام شده را انتخاب نمایید تا مانده طلب مشتری به‌درستی تسویه گردد.',
+                    confirmButtonText: 'متوجه شدم'
+                });
+                return;
+            }
+            if (payload.amount <= 0) {
+                swal.fire({
+                    icon: 'warning',
+                    title: 'مبلغ دریافتی نامعتبر است',
+                    text: 'لطفاً مبلغ دریافتی را به ریال و بزرگتر از صفر مشخص فرمایید.',
+                    confirmButtonText: 'متوجه شدم'
+                });
                 return;
             }
             try {

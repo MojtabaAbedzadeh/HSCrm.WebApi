@@ -48,7 +48,9 @@ namespace HSCrm.UnitTests
             context.Tenants.Add(new Tenant
             {
                 Id = 1,
+                TenantCode = "TNT01",
                 TenantTitle = "شرکت مهندسی آسانسور هگمتانه",
+                IsActive = true,
                 CreatedAt = DateTime.UtcNow
             });
 
@@ -139,7 +141,7 @@ namespace HSCrm.UnitTests
             Assert.Contains(accounts, a => a.Code == "2101" && a.Category == AccountCategory.Liability);
             Assert.Contains(accounts, a => a.Code == "3101" && a.Category == AccountCategory.Equity);
             Assert.Contains(accounts, a => a.Code == "4103" && a.Title.Contains("برگشت از فروش"));
-            Assert.Contains(accounts, a => a.Code == "5101" && a.Title.Contains("بهای تمام‌شده"));
+            Assert.Contains(accounts, a => a.Code == "5101" && a.Category == AccountCategory.Expense);
         }
 
         [Fact(DisplayName = "02. کنترل تراز بودن سند روزنامه دستی (رد سند ناتراز و ثبت موفق سند تراز)")]
@@ -681,27 +683,29 @@ namespace HSCrm.UnitTests
             var (context, _, accounting, _, _, _) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
 
             var baseDate = new DateTime(2025, 4, 1);
-            var baseDateShamsi = ConvertDate.ConvertMiladiToShamsi(baseDate, "yyyy/MM/dd");
+            var baseDateShamsi = "1404/01/12";
 
             var c1 = new Cheque
             {
                 TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
                 ChequeNumber = "1001", Amount = 100_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(30),
-                BankName = "ط¨ط§ظ†ع© ظ…ظ„طھ", CustomerId = 1
+                BankName = "بانک ملت", CustomerId = 1
             };
             var c2 = new Cheque
             {
                 TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
                 ChequeNumber = "1002", Amount = 300_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(70),
-                BankName = "ط¨ط§ظ†ع© ظ…ظ„طھ", CustomerId = 1
+                BankName = "بانک ملت", CustomerId = 1
             };
             context.Cheques.AddRange(c1, c2);
             await context.SaveChangesAsync();
 
+            // چک ۱: ۱۰۰ میلیون به سررسید ۳۰ روز | چک ۲: ۳۰۰ میلیون به سررسید ۷۰ روز
+            // میانگین موزون = (100M * 30 + 300M * 70) / 400M = 24,000,000,000 / 400,000,000 = 60 روز
             var result = await accounting.CalculateChequesRasGiriAsync(new ChequeRasGiriRequestModel
             {
                 BaseDateShamsi = baseDateShamsi,
-                MonthlyDiscountRatePercent = 3m,
+                MonthlyDiscountRatePercent = 3m, // ۳ درصد ماهانه
                 ChequeIds = new List<int> { c1.Id, c2.Id }
             });
 

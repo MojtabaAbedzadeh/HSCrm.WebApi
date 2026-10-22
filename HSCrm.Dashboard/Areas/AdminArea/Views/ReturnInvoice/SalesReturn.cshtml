@@ -1,4 +1,4 @@
-﻿@using System.Security.Claims
+@using System.Security.Claims
 @using HSCrm.Dashboard.Costants
 @{
     ViewData["Title"] = "فاکتورهای برگشت از فروش";
@@ -225,11 +225,23 @@
         }
 
         async function confirmSalesReturn(id) {
+            const confirmResult = await swal.fire({
+                title: 'تأیید نهایی فاکتور برگشت از فروش؟',
+                text: 'با تأیید نهایی، اقلام به موجودی انبار بازگردانده شده و سند حسابداری برگشت از فروش صادر می‌گردد.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#198754',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'بله، تأیید نهایی شود',
+                cancelButtonText: 'انصراف'
+            });
+            if (!confirmResult.isConfirmed) return;
+
             try {
                 const res = await fetch(`${apiBase}/SalesReturnInvoice/${id}/Confirm`, { method: 'POST', headers: getAuthHeaders() });
                 const json = await res.json();
                 if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در تأیید نهایی');
-                await swal.fire({ title: 'تأیید نهایی', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                await swal.fire({ title: 'تأیید نهایی موفق', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
                 loadSalesReturns();
             } catch (err) {
                 swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
@@ -237,6 +249,18 @@
         }
 
         async function cancelSalesReturn(id) {
+            const confirmResult = await swal.fire({
+                title: 'آیا از ابطال فاکتور برگشت از فروش اطمینان دارید؟',
+                text: 'این فاکتور باطل شده و دیگر اثری در انبار و حسابداری نخواهد داشت.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'بله، باطل شود',
+                cancelButtonText: 'انصراف'
+            });
+            if (!confirmResult.isConfirmed) return;
+
             try {
                 const res = await fetch(`${apiBase}/SalesReturnInvoice/${id}/Cancel`, { method: 'POST', headers: getAuthHeaders() });
                 const json = await res.json();

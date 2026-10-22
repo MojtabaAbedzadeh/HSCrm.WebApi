@@ -1,0 +1,353 @@
+﻿@model IEnumerable<WarehousesModel>
+
+@{
+    ViewData["AdminTitle"] = "انبارها";
+    ViewData["selected"] = "warehouse_list";
+
+    string ApiAddress = ViewBag.ApiAddress;
+}
+
+@section styles {
+    <link href="~/assets/plugins/data-tables/datatables.bootstrap5.min.css" rel="stylesheet">
+    <link href="~/assets/plugins/data-tables/responsive.datatables.min.css" rel="stylesheet">
+    <link href="~/assets/css/ekka.css" id="ekka-css" rel="stylesheet">
+    <link href="~/lib/persiandate/persian-datepicker.css" rel="stylesheet" />
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>لیست انبارها</h1>
+        <p class="breadcrumbs"><span><a href="index.html">خانه</a></span> <span><i class="mdi mdi-chevron-left"></i></span>انبار</p>
+    </div>
+    @if (ViewBag.FiscalYearStatus == "0")
+    {
+        <div><button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addWarehouse"> افزودن انبار </button></div>
+    }
+</div>
+@if (ViewBag.FiscalYearStatus != "0")
+{
+    <div class="alert alert-primary col-lg-8" role="alert" style="margin-top:40px; color:#084298;">
+        توجه!
+        <br>
+        سال مالی انتخاب شده بسته می باشد! شما فقط قادر به مشاهده گزارشات سیستم هستید.
+    </div>
+}
+<div class="row">
+    <div class="col-12">
+        <div class="ec-vendor-list card card-default">
+            <div class="card-body">
+                <div class="table-responsive-md">
+                    <div id="responsive-data-table_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer">
+                        <table id="responsive-data-table" class="table dataTable no-footer" aria-describedby="responsive-data-table_info">
+                            <thead>
+                                <tr>
+                                    <th>عنوان انبار</th>
+                                    <th>آدرس انبار</th>
+                                    <th>وضعیت انبار</th>
+                                    <th>فعالیت</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>@item.Title</td>
+                                        <td>@item.Address</td>
+                                        <td>
+                                            <span class="badge @(item.IsActive ? "bg-success" : "bg-danger")">
+                                                @(item.IsActive ? "فعال" : "غیرفعال")
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group mb-1">
+                                                <button type="button" class="btn btn-outline-success">اطلاعات</button>
+                                                <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-display="static">
+                                                    <span class="sr-only">اطلاعات</span>
+                                                </button>
+                                                @if (ViewBag.FiscalYearStatus == "0")
+                                                {
+                                                    <div class="dropdown-menu">
+                                                        <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">ویرایش</a>
+                                                        <a class="dropdown-item" href="#">حذف</a>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="dropdown-menu"></div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade modal-add-contact" id="addWarehouse" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmWarehouse">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="exampleModalCenterTitle">تعریف انبار جدید</h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-6">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="Title" name="Title" placeholder="عنوان انبار">
+                                <label for="Title" style="right:0!important; left:unset!important;">عنوان انبار</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-6" style="margin-bottom:8px;">
+                            <div class="form-check" style="margin:auto;">
+                                <input style="font-size:13px;" type="checkbox" class="form-check-input chk-date-type" id="IsActive">
+                                <label for="IsActive" class="lbl-date-change">وضعیت انبار</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-12">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="Address" name="Address" placeholder="آدرس">
+                                <label for="Address" style="right:0!important; left:unset!important;">آدرس</label>
+                            </div>
+                        </div>
+                        <input hidden class="form-control text-end" id="CreateById" name="CreateById" value="@ViewBag.UserId">
+                        <input hidden class="form-control text-end" id="TenantId" name="TenantId" value="@ViewBag.TenantId">
+                        <div class="col-lg-12 alert" style="color:red">
+                            <span class="text-danger" id="spnValidate"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnWarehouseSubmit" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade modal-add-contact" id="editWarehouse" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmEditWarehouse">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="exampleModalCenterTitle">ویرایش انبار</h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-6">
+                            <div class="form-group form-floating">
+                                <input id="warehouseId" name="warehouseId" hidden>
+                                <input class="form-control text-end" id="TitleE" name="TitleE" placeholder="عنوان انبار">
+                                <label for="TitleE" style="right:0!important; left:unset!important;">عنوان انبار</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-6" style="margin-bottom:8px;">
+                            <div class="form-check" style="margin:auto;">
+                                <input style="font-size:13px;" type="checkbox" class="form-check-input chk-date-type" id="IsActiveE">
+                                <label for="IsActiveE" class="lbl-date-change">وضعیت انبار</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-12">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="AddressE" name="AddressE" placeholder="آدرس">
+                                <label for="AddressE" style="right:0!important; left:unset!important;">آدرس</label>
+                            </div>
+                        </div>
+                        <input hidden class="form-control text-end" id="ModifiedByIdE" name="ModifiedByIdE" value="@ViewBag.UserId">
+                        <input hidden class="form-control text-end" id="TenantIdE" name="TenantIdE" value="@ViewBag.TenantId">
+                        <div class="col-lg-12 alert" style="color:red">
+                            <span class="text-danger" id="spnValidate"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnWarehouseUpdate" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@section AdminScripts {
+    <script src="~/lib/sweetalert/sweetalert2.min.js"></script>
+    <script src="~/lib/sweetalert/sweetalert2.js"></script>
+    <script>
+        $("#btnWarehouseSubmit").on('click', function (e) {
+            e.preventDefault();
+            var formData = new FormData($("#frmWarehouse")[0]);
+            $.ajax({
+                type: 'POST',
+                url: '@ApiAddress' + 'Warehouse/CreateWarehouse',
+                processData: false,
+                contentType: false,
+                dataType: "json",
+                data: formData,
+                headers: {
+                    Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                },
+                success: function (xhr) {
+                    if (xhr.statusCode == 200) {
+                        // ثبت موفق اطلاعات
+                                swal.fire({
+            title: "ثبت اطلاعات",
+            text: "اطلاعات با موفقیت ثبت شد!",
+            icon: 'success',
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500,
+        });
+                        $('#addWarehouse').modal('hide');
+                        $('#Title').val("");
+                        $('#IsActive').val("");
+                        $('#Address').val("");
+                        window.location.reload();
+                    }
+                    if (xhr.statusCode == 500) {
+                                swal.fire({
+            title: "خطا",
+            text: "خطا در سرور!",
+            icon: 'warning',
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500,
+        });
+
+                        return false;
+                    } else if (xhr.statusCode == 400) {
+                               swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر نیست!",
+            icon: 'error',
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500,
+        });
+                        return false;
+                    }
+                    else if (xhr.statusCode == 409) {
+                               swal.fire({
+            title: "خطا",
+            text: "اطلاعات تکراری می باشد!",
+            icon: 'error',
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500,
+        });
+                        return false;
+                    }
+                }
+            });
+        });
+
+    </script>
+
+    <script>
+        function showUpdateModal(warehouseId) {
+
+            $.ajax({
+                type: 'GET',
+                url: '@ApiAddress' + 'Warehouse/GetById?warehouseId=' + warehouseId,
+                dataType: 'json',
+                headers: {
+                    Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                },
+                success: function (xhr) {
+                    $("#warehouseId").val(xhr.data.id);
+                    $("#TitleE").val(xhr.data.title);
+                    $("#IsActiveE").prop("checked", xhr.data.isActive);
+                    $("#AddressE").val(xhr.data.address);
+
+                    $("#editWarehouse").modal('show');
+                }
+            });
+        }
+
+        $("#btnWarehouseUpdate").on('click', function (e) {
+            e.preventDefault();
+
+            var model = {
+                warehouseId: $("#warehouseId").val(),
+                title: $("#TitleE").val(),
+                isActive: $("#IsActiveE").is(":checked"),
+                address: $("#AddressE").val(),
+                modifiedById: $("#ModifiedByIdE").val(),
+                tenantId: $("#TenantIdE").val(),
+            }
+
+            $.ajax({
+                type: 'PUT',
+                url: '@ApiAddress' + 'Warehouse/UpdateWarehouse',
+                dataType: 'Json',
+                contentType: 'application/json',
+                processData: false,
+                data: JSON.stringify(model),
+                headers: {
+                    Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                },
+                success: function (xhr) {
+                    if (xhr.statusCode == '200') {
+                                swal.fire({
+            title: "ویرایش انبار",
+            text: "ویرایش انبار با موفقیت انجام شد!",
+            icon: 'success',
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500,
+        });
+                        window.location.reload();
+                    }
+                    if (xhr.statusCode == '400') {
+                               swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر نیست!",
+            icon: 'error',
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500,
+        });
+                        return false;
+                    } else if (xhr.statusCode == '409') {
+                                swal.fire({
+            title: "خطا",
+            text: "اطلاعات تکراری می‌باشد!",
+            icon: 'error',
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500,
+        });
+                        return false;
+                    }
+                }
+            });
+        })
+    </script>
+}

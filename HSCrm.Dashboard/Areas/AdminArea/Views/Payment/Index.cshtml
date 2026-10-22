@@ -1,4 +1,4 @@
-﻿@using HSCrm.Dashboard.Costants
+@using HSCrm.Dashboard.Costants
 @model IEnumerable<PaymentModel>
 
 @{
@@ -430,19 +430,34 @@
 
                 if (hasPurchase === hasExpense) {
                     e.preventDefault();
-                    alert("فقط یکی از مرجع‌ها باید انتخاب شود.");
+                    swal.fire({
+                        icon: 'warning',
+                        title: 'خطای انتخاب مرجع پرداخت',
+                        text: 'لطفاً دقیقاً یکی از مراجع پرداخت (یا فاکتور خرید تأمین‌کننده یا هزینه پروژه/عمومی) را مشخص فرمایید.',
+                        confirmButtonText: 'متوجه شدم'
+                    });
                     return;
                 }
 
                 if (!document.getElementById("PaymentDate").value) {
                     e.preventDefault();
-                    alert("تاریخ پرداخت را وارد کنید.");
+                    swal.fire({
+                        icon: 'warning',
+                        title: 'تاریخ پرداخت وارد نشده است',
+                        text: 'لطفاً تاریخ پرداخت را تعیین فرمایید تا سند مالی در تاریخ معتبر صادر گردد.',
+                        confirmButtonText: 'متوجه شدم'
+                    });
                     return;
                 }
 
                 if (!document.getElementById("Amount").value) {
                     e.preventDefault();
-                    alert("مبلغ را وارد کنید.");
+                    swal.fire({
+                        icon: 'warning',
+                        title: 'مبلغ پرداخت وارد نشده است',
+                        text: 'لطفاً مبلغ پرداختی را به ریال مشخص فرمایید.',
+                        confirmButtonText: 'متوجه شدم'
+                    });
                     return;
                 }
             });

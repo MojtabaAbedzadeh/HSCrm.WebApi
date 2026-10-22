@@ -666,11 +666,14 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<TrialBalanceRowDto>> GetTrialBalanceAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
         {
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted && !x.JournalVoucher.IsDeleted);
+                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted
+                         && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
             if (fromDate.HasValue)
                 query = query.Where(x => x.JournalVoucher.VoucherDate >= fromDate.Value.Date);
@@ -706,12 +709,15 @@ namespace HSCrm.DataModel.Services.Repository
             DateTime? toDate = null,
             CancellationToken ct = default)
         {
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.BankAccount)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted && !x.JournalVoucher.IsDeleted);
+                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted
+                         && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
             if (accountId.HasValue) query = query.Where(x => x.AccountId == accountId.Value);
             if (customerId.HasValue) query = query.Where(x => x.CustomerId == customerId.Value);
@@ -818,13 +824,15 @@ namespace HSCrm.DataModel.Services.Repository
                 .ThenBy(x => x.Id)
                 .ToListAsync(ct);
 
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var itemsQuery = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.JournalVoucher)
                 .Where(x => x.BankAccountId != null
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
-                         && !x.JournalVoucher.IsDeleted);
+                         && !x.JournalVoucher.IsDeleted
+                         && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
             if (fromDate.HasValue)
                 itemsQuery = itemsQuery.Where(x => x.JournalVoucher.VoucherDate >= fromDate.Value.Date);
@@ -865,6 +873,7 @@ namespace HSCrm.DataModel.Services.Repository
             var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
 
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
@@ -873,6 +882,7 @@ namespace HSCrm.DataModel.Services.Repository
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
                          && !x.IsDeleted
+                         && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value)
                          && (x.Account.Code.StartsWith("4") || x.Account.Code.StartsWith("5")));
 
             if (fromDate.HasValue)
@@ -2346,6 +2356,7 @@ namespace HSCrm.DataModel.Services.Repository
                 }
             }
 
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var baseQuery = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
@@ -2356,6 +2367,7 @@ namespace HSCrm.DataModel.Services.Repository
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
+                         && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value)
                          && targetAccountCodes.Contains(x.Account.Code));
 
             if (partyType == AccountingPartyType.Customer)
@@ -2531,6 +2543,7 @@ namespace HSCrm.DataModel.Services.Repository
             var baseDate = (asOfDate ?? DateTime.UtcNow).Date;
             var targetAccountCode = partyType == AccountingPartyType.Customer ? ACC_RECEIVABLE : ACC_PAYABLE;
 
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var items = await _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
@@ -2544,6 +2557,7 @@ namespace HSCrm.DataModel.Services.Repository
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
+                         && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value)
                          && x.Account.Code == targetAccountCode
                          && x.JournalVoucher.VoucherDate <= baseDate.AddDays(1).AddTicks(-1))
                 .OrderBy(x => x.JournalVoucher.VoucherDate)

@@ -35,7 +35,8 @@ namespace HSCrm.DataModel.Context
         public DbSet<Expense> Expenses { get; set; }
         public DbSet<Receipt> Receipts { get; set; }
         public DbSet<Payment> Payments { get; set; }
-        public DbSet<Attachment> Attachments { get; set; }        public DbSet<Inventory> Inventories { get; set; }
+        public DbSet<Attachment> Attachments { get; set; }
+        public DbSet<Inventory> Inventories { get; set; }
         public DbSet<Warehouse> Warehouses { get; set; }
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
         public DbSet<FiscalYear> FiscalYears { get; set; }
@@ -62,8 +63,6 @@ namespace HSCrm.DataModel.Context
             var ownerRoleId = "OwnerId";
             var customerId = "CustomerId";
             var defaultTenantId = 1;
-
-            ApplyFilters(builder);
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>().HasData(

@@ -1,4 +1,4 @@
-﻿@using HSCrm.Dashboard.Costants
+@using HSCrm.Dashboard.Costants
 @{
     ViewData["AdminTitle"] = "کاردکس ریالی و تعدادی کالا";
     ViewData["selected"] = "product-kardex";
@@ -267,6 +267,14 @@
                             $('#kxTotalOutCogs').text('0 ریال');
                             $('#kxFinalValue').text('0 ریال');
                         }
+                    },
+                    error: function (xhr) {
+                        swal.fire({
+                            icon: 'error',
+                            title: 'خطا در دریافت کاردکس کالا',
+                            text: xhr.responseJSON?.message || 'دریافت گردش کاردکس انبار با خطا مواجه شد. لطفاً سال مالی و دسترسی خود را بررسی فرمایید.',
+                            confirmButtonText: 'باشه'
+                        });
                     }
                 });
             });
