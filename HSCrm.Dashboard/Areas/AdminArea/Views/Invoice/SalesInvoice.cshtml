@@ -1,0 +1,501 @@
+﻿@using HSCrm.Dashboard.Costants
+@model IEnumerable<SalesInvoiceModel>
+
+@{
+    ViewData["Title"] = "فاکتورهای فروش";
+    ViewData["selected"] = "invoice_salles_list";
+
+    string ApiAddress = ViewBag.ApiAddress;
+}
+
+@section styles {
+    <link href="~/assets/plugins/data-tables/datatables.bootstrap5.min.css" rel="stylesheet">
+    <link href="~/assets/plugins/data-tables/responsive.datatables.min.css" rel="stylesheet">
+    <link href="~/assets/css/ekka.css" id="ekka-css" rel="stylesheet">
+    <link href="~/lib/persiandate/persian-datepicker.css" rel="stylesheet" />
+}
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>لیست مشتریان</h1>
+        <p class="breadcrumbs"><span><a href="index.html">خانه</a></span> <span><i class="mdi mdi-chevron-left"></i></span>فاکتور فروش</p>
+    </div>
+    @if (ViewBag.FiscalYearStatus == "0")
+    {
+        <div>
+            @if (User.HasPermission(Permissions.SalesInvoices.Create))
+            {
+                <a type="button" class="btn btn-primary" href="/adminarea/invoice/AddSaleInvoice">افزودن فاکتور فروش</a>
+            }
+        </div>
+    }
+</div>
+@if (ViewBag.FiscalYearStatus != "0")
+{
+    <div class="alert alert-primary col-lg-8" role="alert" style="margin-top:40px; color:#084298;">
+        توجه!
+        <br>
+        سال مالی انتخاب شده بسته می باشد! شما فقط قادر به مشاهده گزارشات سیستم هستید.
+    </div>
+}
+<div class="row">
+    <div class="col-12">
+        <div class="ec-vendor-list card card-default">
+            <div class="card-body">
+                <div class="table-responsive-md">
+                    <div id="responsive-data-table_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer">
+                        <table id="responsive-data-table" class="table dataTable no-footer" aria-describedby="responsive-data-table_info">
+                            <thead>
+                                <tr>
+                                    <th>شماره فاکتور</th>
+                                    <th>تاریخ فاکتور</th>
+                                    <th>عنوان پروژه</th>
+                                    <th>مشتری</th>
+                                    <th>نوع فاکتور</th>
+                                    <th>جمع فاکتور</th>
+                                    <th>عملیات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>@item.Number</td>
+                                        <td>@item.IssueDate.ToString("yyyy/MM/dd")</td>
+                                        <td>@item.Project.ProjectTitle</td>
+                                        <td>@item.Project.Customer.Name</td>
+                                        <td>
+                                            <span class="badge @(item.Status == 1 ? "bg-success" : "bg-info")">
+                                                @(item.Status == 1 ? "فاکتور نهایی" : "پیش فاکتور")
+                                            </span>
+                                        </td>
+                                        <td>@item.Total.ToString("N0")</td>
+                                        <td>
+                                            <div class="btn-group mb-1">
+                                                <button type="button" class="btn btn-outline-success" onclick="showInvoiceDetail('@item.Id')">جزئیات</button>
+                                                <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-display="static">
+                                                    <span class="sr-only">اطلاعات</span>
+                                                </button>
+                                                @if (ViewBag.FiscalYearStatus == "0")
+                                                {
+                                                    <div class="dropdown-menu">
+                                                        @if (User.HasPermission(Permissions.SalesInvoices.Edit))
+                                                        {
+                                                            <a class="dropdown-item" href="#"><i class="mdi mdi-email-edit"></i> ویرایش</a>
+                                                        }
+                                                        @if (User.HasPermission(Permissions.SalesInvoices.Delete))
+                                                        {
+                                                            <a class="dropdown-item" href="#"><i class="mdi mdi-trash-can"></i> حذف</a>
+                                                        }
+                                                        @if (item.Status == 0)
+                                                        {
+                                                            <div class="dropdown-divider"></div>
+                                                            <a class="dropdown-item text-primary" href="javascript:void(0)" onclick="confirmInvoice('@item.Id')">
+                                                                <i class="mdi mdi-file"></i>
+                                                                تبدیل به فاکتور نهایی
+                                                            </a>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="dropdown-divider"></div>
+                                                            <a class="dropdown-item text-success" href="/AdminArea/Receipt/Index?invoiceId=@item.Id">
+                                                                <i class="mdi mdi-cash-plus me-1"></i>
+                                                                ثبت دریافت وجه / چک
+                                                            </a>
+                                                            <a class="dropdown-item text-warning" href="/AdminArea/ReturnInvoice/SalesReturn?invoiceId=@item.Id">
+                                                                <i class="mdi mdi-keyboard-return me-1"></i>
+                                                                ثبت برگشت از فروش
+                                                            </a>
+                                                            <a class="dropdown-item text-info" href="/AdminArea/Accounting/Vouchers?refType=1&refId=@item.Id">
+                                                                <i class="mdi mdi-book-open-page-variant me-1"></i>
+                                                                مشاهده سند حسابداری
+                                                            </a>
+                                                            <a class="dropdown-item text-dark" href="javascript:void(0)" onclick="openSalesInvoicePrintModal('@item.Id', '@item.InvoiceNumber', '@ConvertDate.ConvertMiladiToShamsi(item.InvoiceDate, "yyyy/MM/dd")', '@item.Customer.Name', '@item.Project.ProjectTitle', '@item.TotalAmount')">
+                                                                <i class="mdi mdi-printer me-1"></i>
+                                                                نمایش ریز اقلام و چاپ رسمی (A4)
+                                                            </a>
+                                                        }
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="dropdown-menu"></div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- مودال مشاهده ریز اقلام و چاپ رسمی فاکتور فروش (A4) -->
+<div class="modal fade" id="printOfficialSalesInvoiceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h5 class="modal-title"><i class="mdi mdi-printer me-1"></i>نمایش جزئیات و چاپ رسمی فاکتور فروش</h5>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-warning fw-bold" onclick="window.print()">
+                        <i class="mdi mdi-printer me-1"></i>چاپ فاکتور رسمی (A4)
+                    </button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body p-4" id="officialInvoicePrintArea">
+                <div class="border border-2 border-dark p-4 rounded">
+                    <div class="d-flex justify-content-between align-items-center border-bottom border-dark pb-3 mb-3">
+                        <div>
+                            <h4 class="fw-bold mb-1">صورت‌حساب فروش کالا و خدمات</h4>
+                            <div class="text-muted small">سامانه جامع مالی و حسابداری HSCrm</div>
+                        </div>
+                        <div class="text-end font-monospace">
+                            <div><strong>شماره فاکتور:</strong> <span id="prInvNumber">-</span></div>
+                            <div><strong>تاریخ صدور:</strong> <span id="prInvDate">-</span></div>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3 p-2 bg-light border rounded small">
+                        <div class="col-md-6"><strong>خریدار / طرف‌حساب:</strong> <span id="prInvCustomer">-</span></div>
+                        <div class="col-md-6"><strong>پروژه مرتبط:</strong> <span id="prInvProject">-</span></div>
+                    </div>
+                    <table class="table table-bordered border-dark align-middle text-center small mb-3">
+                        <thead class="table-secondary border-dark">
+                            <tr>
+                                <th>ردیف</th>
+                                <th>شرح کالا / خدمات</th>
+                                <th>تعداد</th>
+                                <th>مبلغ واحد (ریال)</th>
+                                <th>تخفیف</th>
+                                <th>مالیات و عوارض</th>
+                                <th>مبلغ کل پس از تخفیف و مالیات (ریال)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prInvItemsBody"></tbody>
+                        <tfoot>
+                            <tr class="table-light fw-bold">
+                                <td colspan="6" class="text-end">جمع کل قابل پرداخت (ریال):</td>
+                                <td class="font-monospace fs-6 text-primary" id="prInvTotal">0</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <div class="row mt-5 pt-4 text-center small">
+                        <div class="col-4"><div class="border-top border-dark pt-2">مهر و امضای فروشنده</div></div>
+                        <div class="col-4"><div class="border-top border-dark pt-2">تایید واحد مالی و حسابداری</div></div>
+                        <div class="col-4"><div class="border-top border-dark pt-2">مهر و امضای خریدار</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    function openSalesInvoicePrintModal(id, number, dateStr, customer, project, total) {
+        document.getElementById('prInvNumber').textContent = number || id;
+        document.getElementById('prInvDate').textContent = dateStr || '-';
+        document.getElementById('prInvCustomer').textContent = customer || '-';
+        document.getElementById('prInvProject').textContent = project || '-';
+        document.getElementById('prInvTotal').textContent = Number(total || 0).toLocaleString('fa-IR');
+
+        const tbody = document.getElementById('prInvItemsBody');
+        tbody.innerHTML = '<tr><td colspan="7" class="py-3 text-muted">در حال دریافت ریز اقلام فاکتور از سرور...</td></tr>';
+        new bootstrap.Modal(document.getElementById('printOfficialSalesInvoiceModal')).show();
+
+        fetch('@ApiAddress' + 'SalesInvoice/GetById?id=' + id, {
+            headers: { 'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")' }
+        })
+        .then(r => r.json())
+        .then(res => {
+            const inv = res.data || res || {};
+            const items = inv.items || inv.salesInvoiceItems || [];
+            if (!Array.isArray(items) || items.length === 0) {
+                tbody.innerHTML = `<tr>
+                    <td>1</td>
+                    <td>فروش کالا / خدمات طبق فاکتور شماره ${number || id}</td>
+                    <td>1</td>
+                    <td class="font-monospace">${Number(total || 0).toLocaleString('fa-IR')}</td>
+                    <td>0</td>
+                    <td>0</td>
+                    <td class="font-monospace fw-bold">${Number(total || 0).toLocaleString('fa-IR')}</td>
+                </tr>`;
+            } else {
+                tbody.innerHTML = items.map((it, idx) => `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td>${it.productTitle || it.productName || ('کالای #' + it.productId)}</td>
+                        <td class="font-monospace">${it.quantity || it.count || 1}</td>
+                        <td class="font-monospace">${Number(it.unitPrice || it.price || 0).toLocaleString('fa-IR')}</td>
+                        <td class="font-monospace">${Number(it.discount || 0).toLocaleString('fa-IR')}</td>
+                        <td class="font-monospace">${Number(it.tax || it.vatAmount || 0).toLocaleString('fa-IR')}</td>
+                        <td class="font-monospace fw-bold">${Number(it.totalPrice || it.rowSum || total || 0).toLocaleString('fa-IR')}</td>
+                    </tr>
+                `).join('');
+            }
+        })
+        .catch(() => {});
+    }
+</script>
+
+@section AdminScripts {
+    <script src="~/lib/sweetalert/sweetalert2.min.js"></script>
+    <script>
+        function confirmInvoice(invoiceId) {
+        swal.fire({
+            title: "تأیید فاکتور",
+            text: "آیا از تبدیل پیش‌فاکتور به فاکتور نهایی مطمئن هستید؟",
+            icon: "warning",
+            showCancelButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            cancelButtonColor: "#d33",
+            confirmButtonText: "بله، تأیید شود",
+            cancelButtonText: "انصراف"
+        }).then(function (result) {
+
+                if (!result.value)
+                    return false;
+
+                var formData = new FormData();
+                formData.append("invoiceId", invoiceId);
+                console.log(onformdata);
+                $.ajax({
+                    type: 'POST',
+                    url: '@ApiAddress' + 'SalesInvoice/ConfirmInvoice',
+                    processData: false,
+                    contentType: false,
+                    dataType: 'json',
+                    data: formData,
+                    headers: {
+                        "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                    },
+                    success: function (xhr) {
+
+                        if (xhr.statusCode == 200) {
+                            swal.fire({
+                                title: "تأیید فاکتور",
+                                text: "فاکتور با موفقیت نهایی شد!",
+                                icon: "success",
+                                showCancelButton: false,
+                                showConfirmButton: true,
+                                allowOutsideClick: false,
+                                confirmButtonColor: "green",
+                                confirmButtonText: "باشه"                            
+                            });
+                            setTimeout(function () {
+                                window.location.reload();
+                            }, 1500);
+                        }
+
+                        else if (xhr.statusCode == 400) {
+                            swal.fire({
+                                title: "خطا",
+                                text: "پارامترهای ارسالی معتبر نیست!",
+                                icon: "error",
+                                showCancelButton: false,
+                                showConfirmButton: true,
+                                allowOutsideClick: false,
+                                confirmButtonColor: "green",
+                                confirmButtonText: "باشه"
+                            });
+                            return false;
+                        }
+
+                        else if (xhr.statusCode == 404) {
+                            swal.fire({
+                                title: "خطا",
+                                text: "فاکتور مورد نظر یافت نشد!",
+                                icon: "error",
+                                showCancelButton: false,
+                                showConfirmButton: true,
+                                allowOutsideClick: false,
+                                confirmButtonColor: "green",
+                                confirmButtonText: "باشه",
+                                timer: 1500
+                            });
+                            return false;
+                        }
+                        else if (xhr.statusCode == 409) {
+                            swal.fire({
+                                title: "خطا",
+                                text: "این فاکتور قبلاً نهایی شده است!",
+                                icon: "error",
+                                showCancelButton: false,
+                                showConfirmButton: true,
+                                allowOutsideClick: false,
+                                confirmButtonColor: "green",
+                                confirmButtonText: "باشه"                            
+                            });
+                            return false;
+                        }
+                        else if (xhr.statusCode == 500) {
+                            swal.fire({
+                                title: "خطا",
+                                text: "خطایی در انجام عملیات رخ داده است!",
+                                icon: "error",
+                                showCancelButton: false,
+                                showConfirmButton: true,
+                                allowOutsideClick: false,
+                                confirmButtonColor: "green",
+                                confirmButtonText: "باشه"                            
+                            });
+
+                            return false;
+                        }
+                    },
+                    error: function (err) {
+                        swal.fire({
+                            title: "خطا",
+                            text: err.responseText || "خطایی در ارتباط با سرور رخ داده است!",
+                            icon: "error",
+                            showCancelButton: false,
+                            showConfirmButton: true,
+                            allowOutsideClick: false,
+                            confirmButtonColor: "green",
+                            confirmButtonText: "باشه"
+                        });
+                    }
+                });
+
+            });
+        }
+    </script>
+    <script>
+        function showInvoiceDetail(invoiceId) {
+
+            $.ajax({
+                type: 'GET',
+                url: '@ApiAddress' + 'SalesInvoice/GetInvoiceDetail?invoiceId=' + invoiceId,
+                dataType: 'json',
+                headers: {
+                    "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                },
+                success: function (xhr) {
+
+                    if (xhr.statusCode == 200) {
+
+                        const items = xhr.data;
+
+                        if (!items || items.length === 0) {
+                                    swal.fire({
+            title: "جزئیات فاکتور",
+            text: "آیتمی برای این فاکتور ثبت نشده است!",
+            icon: "warning",
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                            return false;
+                        }
+
+                        let itemsHtml = '';
+
+                        items.forEach(item => {
+
+                            itemsHtml +=
+                                "<tr>" +
+                                "<td>" + item.productId + "</td>" +
+                                "<td>" + item.quantity + "</td>" +
+                                "<td>" + item.unitPriceSell.toLocaleString() + "</td>" +
+                                "<td>" + item.lineTotal.toLocaleString() + "</td>" +
+                                "</tr>";
+
+                        });
+
+                                swal.fire({
+            title: "جزئیات آیتم‌های فاکتور",
+            html:
+                "<div class='table-responsive'>" +
+                "<table class='table table-bordered text-center'>" +
+                "<thead>" +
+                "<tr>" +
+                "<th>شناسه محصول</th>" +
+                "<th>تعداد</th>" +
+                "<th>قیمت واحد</th>" +
+                "<th>جمع</th>" +
+                "</tr>" +
+                "</thead>" +
+                "<tbody>" +
+                itemsHtml +
+                "</tbody>" +
+                "</table>" +
+                "</div>",
+            icon: "info",
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            width: "700px"
+        });
+                    }
+
+                    else if (xhr.statusCode == 400) {
+                                swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر نیست!",
+            icon: "error",
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    }
+
+                    else if (xhr.statusCode == 404) {
+                                swal.fire({
+            title: "خطا",
+            text: "جزئیات فاکتور مورد نظر یافت نشد!",
+            icon: "error",
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    }
+
+                    else if (xhr.statusCode == 500) {
+                                swal.fire({
+            title: "خطا",
+            text: "خطایی در دریافت اطلاعات فاکتور رخ داده است!",
+            icon: "error",
+            showCancelButton: false,
+            showConfirmButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    }
+                },
+                error: function (err) {
+
+                    swal({
+                        title: "خطا",
+                        text: err.responseText || "خطایی در ارتباط با سرور رخ داده است!",
+                        type: 'error',
+                        showCancelButton: false,
+                        allowOutsideClick: false,
+                        confirmButtonColor: "green",
+                        confirmButtonText: "باشه",
+                        timer: 1500,
+                    });
+
+                }
+            });
+        }
+    </script>
+}
+

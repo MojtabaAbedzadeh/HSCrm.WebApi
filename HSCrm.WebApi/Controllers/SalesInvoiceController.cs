@@ -252,7 +252,7 @@ namespace HSCrm.WebApi.Controllers
             try
             {
                 var invoice = _context.salesInvoiceUW
-                    .Get(x => x.Id == model.InvoiceId, true, x => x.Items)
+                    .Get(x => x.Id == model.InvoiceId, false, x => x.Items)
                     .SingleOrDefault();
 
                 if (invoice == null) return new ApiResponse

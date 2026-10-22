@@ -1,0 +1,499 @@
+﻿@using HSCrm.Dashboard.Costants
+@model IEnumerable<SupplierModel>
+
+@{
+    ViewData["Title"] = "تامین کنندگان";
+    ViewData["selected"] = "supplier_list";
+
+    string ApiAddress = ViewBag.ApiAddress;
+}
+
+@section styles {
+    <link href="~/assets/plugins/data-tables/datatables.bootstrap5.min.css" rel="stylesheet">
+    <link href="~/assets/plugins/data-tables/responsive.datatables.min.css" rel="stylesheet">
+    <link href="~/assets/css/ekka.css" id="ekka-css" rel="stylesheet">
+    <link href="~/lib/persiandate/persian-datepicker.css" rel="stylesheet" />
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>لیست تامین کنندگان</h1>
+        <p class="breadcrumbs"><span><a href="index.html">خانه</a></span> <span><i class="mdi mdi-chevron-left"></i></span>تامین کننده</p>
+    </div>
+    <div>
+        @if (User.HasPermission(Permissions.Suppliers.Create))
+        {
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSupplier"> اضافه کردن تامین کننده </button>
+        }
+    </div>
+
+</div>
+<div class="row">
+    <div class="col-12">
+        <div class="ec-vendor-list card card-default">
+            <div class="card-body">
+                <div class="table-responsive-md">
+                    <div id="responsive-data-table_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer">
+                        <table id="responsive-data-table" class="table dataTable no-footer" aria-describedby="responsive-data-table_info">
+                            <thead>
+                                <tr>
+                                    <th>نام و نام خانوادگی</th>
+                                    <th>شماره همراه</th>
+                                    <th>آدرس</th>
+                                    <th>فعالیت</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>@item.SupplierFullName</td>
+                                        <td>@item.SupplierPhone</td>
+                                        <td>@item.SupplierAddress</td>
+                                        <td>
+                                            <div class="btn-group mb-1">
+                                                <button type="button" class="btn btn-outline-success btn-show-financial" data-id="@item.Id">وضعیت مالی</button>
+                                                <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-display="static">
+                                                    <span class="sr-only">وضعیت مالی</span>
+                                                </button>
+                                                <div class="dropdown-menu">
+                                                    <a class="dropdown-item text-primary fw-bold" href="/AdminArea/Accounting/AgingAndStatements?partyType=2&partyId=@item.Id">صورت‌حساب جامع ۳۶۰ درجه</a>
+                                                    <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">ویرایش</a>
+                                                    <a class="dropdown-item" href="#" onclick="">حذف</a>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade modal-add-contact" id="addSupplier" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmSupplier">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="exampleModalCenterTitle">تعریف تامین کننده جدید</h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="SupplierFullName" name="SupplierFullName" placeholder="نام و نام خانوادگی">
+                                <label for="SupplierFullName" style="right:0!important; left:unset!important;">نام و نام خانوادگی</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="SupplierPhone" name="SupplierPhone" placeholder=" شماره تماس">
+                                <label for="SupplierPhone" style="right:0!important; left:unset!important;">شماره تماس</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-12">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="SupplierAddress" name="SupplierAddress" placeholder="آدرس">
+                                <label for="SupplierAddress" style="right:0!important; left:unset!important;">آدرس</label>
+                            </div>
+                        </div>
+                        <input hidden class="form-control text-end" id="CreateById" name="CreateById" value="@ViewBag.UserId">
+                        <input hidden class="form-control text-end" id="TenantId" name="TenantId" value="@ViewBag.TenantId">
+                        <div class="col-lg-12 alert" style="color:red">
+                            <span class="text-danger" id="spnValidate"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnSupplierSubmit" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade modal-add-contact" id="editSupplier" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmEditSupplier">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="exampleModalCenterTitle">ویرایش تامین کننده</h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input id="supplierId" name="supplierId" hidden>
+                                <input class="form-control text-end" id="SupplierFullNameU" name="SupplierFullNameU" placeholder=" نام و نام خانوادگی">
+                                <label for="SupplierFullNameU" style="right:0!important; left:unset!important;">نام و نام خانوادگی</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="SupplierPhoneU" name="SupplierPhoneU" placeholder=" شماره تماس">
+                                <label for="SupplierPhoneU" style="right:0!important; left:unset!important;">شماره تماس</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-12">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="SupplierAddressU" name="SupplierAddressU" placeholder="آدرس">
+                                <label for="SupplierAddressU" style="right:0!important; left:unset!important;">آدرس</label>
+                            </div>
+                        </div>
+                        <input hidden class="form-control text-end" id="ModifiedByIdU" name="ModifiedByIdU" value="@ViewBag.UserId">
+                        <input hidden class="form-control text-end" id="TenantIdU" name="TenantIdU" value="2">
+                        <div class="col-lg-12 alert" style="color:red">
+                            <span class="text-danger" id="spnValidate"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnSupplierUpdate" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<!-- Modal -->
+<div class="modal fade" id="financialModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">پرونده مالی: <span id="lblSupplierName"></span></h5>
+                <!-- اصلاح دکمه بستن برای Bootstrap 5 -->
+                <button type="button" style="margin:0" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- کارت خلاصه‌ وضعیت مانده بدهی -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="card bg-light text-center p-2">
+                            <h6>جمع کل فاکتورها</h6>
+                            <h5 class="text-primary font-weight-bold" id="lblTotalInvoices">۰</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light text-center p-2">
+                            <h6>جمع کل پرداختی‌ها</h6>
+                            <h5 class="text-success font-weight-bold" id="lblTotalPayments">۰</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card text-center p-2" id="cardBalanceDue">
+                            <h6>مانده بدهی</h6>
+                            <h5 class="font-weight-bold" id="lblBalanceDue">۰</h5>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- تب‌ها -->
+                <ul class="nav nav-tabs" id="financialTab" role="tablist">
+                    <li class="nav-item">
+                        <!-- تغییر data-toggle به data-bs-toggle -->
+                        <a class="nav-link active" id="invoices-tab" data-bs-toggle="tab" href="#invoicesPanel" role="tab">فاکتورهای خرید</a>
+                    </li>
+                    <li class="nav-item">
+                        <!-- تغییر data-toggle به data-bs-toggle -->
+                        <a class="nav-link" id="payments-tab" data-bs-toggle="tab" href="#paymentsPanel" role="tab">پرداخت‌ها</a>
+                    </li>
+                </ul>
+                <div class="tab-content pt-3" id="financialTabContent">
+                    <!-- پنل فاکتورها -->
+                    <div class="tab-pane fade show active" id="invoicesPanel" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped" id="tblInvoices">
+                                <thead>
+                                    <tr>
+                                        <th>شماره فاکتور</th>
+                                        <th>تاریخ فاکتور</th>
+                                        <th>مبلغ کل</th>
+                                        <th>توضیحات</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- پنل پرداخت‌ها -->
+                    <div class="tab-pane fade" id="paymentsPanel" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped" id="tblPayments">
+                                <thead>
+                                    <tr>
+                                        <th>مبلغ پرداختی</th>
+                                        <th>تاریخ پرداخت</th>
+                                        <th>روش پرداخت</th>
+                                        <th>کد رهگیری</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <!-- تغییر data-dismiss به data-bs-dismiss -->
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script src="~/lib/sweetalert/sweetalert2.js"></script>
+    <script>
+        $("#btnSupplierSubmit").on('click', function (e) {
+            e.preventDefault();
+            var formData = new FormData($("#frmSupplier")[0]);
+            $.ajax({
+                type: 'POST',
+                url: '@ApiAddress' + 'Supplier/CreateSupplier',
+                processData: false,
+                contentType: false,
+                dataType: "json",
+                data: formData,
+                headers: {
+                    Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                },
+                success: function (xhr) {
+                    if (xhr.statusCode == 200) {
+                        // ثبت موفق اطلاعات
+                                swal.fire({
+            title: "ثبت اطلاعات",
+            text: "ثبت اطلاعات با موفقیت انجام شد!",
+            icon: "success",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        $('#addSupplier').modal('hide');
+                        window.location.reload();
+                    }
+                    if (xhr.statusCode == 500) {
+                                swal.fire({
+            title: "خطا",
+            text: "در سرور خطایی رخ داده است!",
+            icon: "error",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        return false;
+                    } else if (xhr.statusCode == 400) {
+                                swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر نیست!",
+            icon: "error",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        return false;
+                    }
+                    else if (xhr.statusCode == 409) {
+                                swal.fire({
+            title: "خطا",
+            text: "اطلاعات تکراری می‌باشد!",
+            icon: "error",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        return false;
+                    }
+                }
+            });
+        });
+
+    </script>
+
+    <script>
+        $(document).ready(function () {
+            $('.btn-show-financial').on('click', function () {
+                var supplierId = $(this).data('id');
+
+                // نمایش لودینگ یا شروع درخواست Ajax
+                $.ajax({
+                    url: '@ApiAddress' + 'Supplier/GetFinancialProfile/' + supplierId, // آدرس کنترلر خودت
+                    type: 'GET',
+                     headers: {
+                        Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                    },
+                    success: function (response) {
+                        if (response.status) {
+                            var data = response.data;
+
+                            // پر کردن هدر و خلاصه‌ها
+                            $('#lblSupplierName').text(data.supplierName);
+                            $('#lblTotalInvoices').text(formatCurrency(data.totalInvoices));
+                            $('#lblTotalPayments').text(formatCurrency(data.totalPayments));
+                            $('#lblBalanceDue').text(formatCurrency(Math.abs(data.balanceDue)));
+
+                            // تغییر رنگ وضعیت مانده بدهی بر اساس مثبت یا منفی بودن بدهی
+                            if (data.balanceDue > 0) {
+                                $('#cardBalanceDue').removeClass('bg-light bg-success text-white').addClass('bg-danger text-white');
+                                $('#lblBalanceDue').append(' (بدهکار)');
+                            } else if (data.balanceDue < 0) {
+                                $('#cardBalanceDue').removeClass('bg-light bg-danger text-white').addClass('bg-success text-white');
+                                $('#lblBalanceDue').append(' (بستانکار)');
+                            } else {
+                                $('#cardBalanceDue').removeClass('bg-danger bg-success text-white').addClass('bg-light text-dark');
+                                $('#lblBalanceDue').append(' (تسویه)');
+                            }
+
+                            // پر کردن جدول فاکتورها
+                            var invoiceRows = '';
+                            if (data.invoices.length > 0) {
+                                $.each(data.invoices, function (i, item) {
+                                    invoiceRows += `<tr>
+                                        <td>${item.invoiceNumber}</td>
+                                        <td>${item.invoiceDate}</td> <!-- در صورت نیاز مبدل تاریخ شمسی اضافه شود -->
+                                        <td>${formatCurrency(item.totalAmount)} ریال</td>
+                                        <td>${item.description || '-'}</td>
+                                    </tr>`;
+                                });
+                            } else {
+                                invoiceRows = '<tr><td colspan="4" class="text-center">هیچ فاکتوری یافت نشد.</td></tr>';
+                            }
+                            $('#tblInvoices tbody').html(invoiceRows);
+
+                            // پر کردن جدول پرداخت‌ها
+                            var paymentRows = '';
+                            if (data.payments.length > 0) {
+                                $.each(data.payments, function (i, item) {
+                                    paymentRows += `<tr>
+                                        <td>${formatCurrency(item.amount)} ریال</td>
+                                        <td>${item.paymentDate}</td>
+                                        <td>${item.method}</td>
+                                        <td>${item.referenceNo || '-'}</td>
+                                    </tr>`;
+                                });
+                            } else {
+                                paymentRows = '<tr><td colspan="4" class="text-center">هیچ پرداختی یافت نشد.</td></tr>';
+                            }
+                            $('#tblPayments tbody').html(paymentRows);
+
+                            // باز کردن مودال
+                            $('#financialModal').modal('show');
+                        } else {
+                                   swal.fire({
+            title: "خطا",
+            text: "خطایی رخ داده است!",
+            icon: "error",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        }
+                    },
+                    error: function () {
+                                swal.fire({
+            title: "خطا",
+            text: "خطای ارتباط با سرور!",
+            icon: "error",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                    }
+                });
+            });
+
+            // تابع کمکی فرمت‌دهی به اعداد ریالی/تومانی
+            function formatCurrency(amount) {
+                return new Intl.NumberFormat('fa-IR').format(amount);
+            }
+        });
+
+    </script>
+
+    <script>
+        function showUpdateModal(supplierId) {
+
+            $.ajax({
+                type: 'GET',
+                url: '@ApiAddress' + 'Supplier/GetById?supplierId=' + supplierId,
+                dataType: 'json',
+                headers: {
+                    Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                },
+                success: function (xhr) {
+                    $("#supplierId").val(xhr.data.id);
+                    $("#SupplierFullNameU").val(xhr.data.supplierFullName);
+                    $("#SupplierAddressU").val(xhr.data.supplierAddress);
+                    $("#SupplierPhoneU").val(xhr.data.supplierPhone);
+
+                    $("#editSupplier").modal('show');
+                }
+            });
+        }
+
+        $("#btnSupplierUpdate").on('click', function (e) {
+            e.preventDefault();
+
+            var model = {
+                SupplierId: $("#supplierId").val(),
+                SupplierFullName: $("#SupplierFullNameU").val(),
+                SupplierAddress: $("#SupplierAddressU").val(),
+                SupplierPhone: $("#SupplierPhoneU").val(),
+                ModifiedById: $("#ModifiedByIdU").val(),
+            }
+
+            $.ajax({
+                type: 'PUT',
+                url: '@ApiAddress' + 'Supplier/UpdateSupplier',
+                dataType: 'Json',
+                contentType: 'application/json',
+                processData: false,
+                data: JSON.stringify(model),
+                headers: {
+                    Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                },
+                success: function (xhr) {
+                    if (xhr.statusCode == '200') {
+                                swal.fire({
+            title: "ویرایش اطلاعات",
+            text: "ویرایش اطلاعات با موفقیت انجام شد!",
+            icon: "success",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                         $('#editSupplier').modal('hide');
+                        window.location.reload();
+                    }
+                    if (xhr.statusCode == '400') {
+                                swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر نیست!",
+            icon: "error",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        return false;
+                    } else if (xhr.statusCode == '409') {
+                               swal.fire({
+            title: "خطا",
+            text: "اطلاعات تکراری می‌باشد!",
+            icon: "error",
+            position: "center",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        return false;
+                    }
+                }
+            });
+        })
+    </script>
+}

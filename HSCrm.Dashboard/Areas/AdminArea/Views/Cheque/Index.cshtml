@@ -1,0 +1,378 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "مدیریت چک‌های صیادی و رأس‌گیری";
+    ViewData["selected"] = "cheques_list";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>مدیریت چک‌های صیادی (دریافتنی/پرداختنی) و ماشین‌حساب رأس‌گیری (فاز ۴)</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            چک‌های صیادی و رأس‌گیری
+        </p>
+    </div>
+    <div>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChequeModal">
+            <i class="mdi mdi-plus me-1"></i>ثبت چک صیادی جدید
+        </button>
+    </div>
+</div>
+
+<!-- Ras-Giri Calculator Panel -->
+<div class="card card-default mb-4 border-primary">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">ماشین‌حساب رأس‌گیری چک‌ها و ارزش فعلی (POST /api/Cheque/CalculateRasGiri)</h5>
+        <button type="button" class="btn btn-sm btn-light fw-bold" onclick="calculateRasGiri()">محاسبه رأس چک‌های انتخاب‌شده</button>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-bold">نرخ تنزیل ماهیانه (%)</label>
+                <input type="number" id="rasDiscountRate" class="form-control form-control-sm" value="2.5" step="0.1" dir="ltr" />
+            </div>
+            <div class="col-md-3">
+                <div class="p-2 border rounded bg-light">
+                    <small class="text-muted d-block">جمع کل چک‌های انتخابی</small>
+                    <strong class="font-monospace" id="rasTotalAmount" dir="ltr">0 ریال</strong>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-2 border rounded bg-info-subtle">
+                    <small class="text-dark fw-bold d-block">رأس چک‌ها (میانگین وزنی سررسید)</small>
+                    <strong class="text-primary" id="rasWeightedDays">0 روز</strong>
+                    <small class="ms-2 font-monospace" id="rasExactDate"></small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-2 border rounded bg-success-subtle">
+                    <small class="text-success fw-bold d-block">ارزش فعلی خالص (پس از کسر تنزیل)</small>
+                    <strong class="font-monospace text-success" id="rasPresentValue" dir="ltr">0 ریال</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cheques List Table -->
+<div class="card card-default">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">فهرست چک‌های دریافتنی و پرداختنی</h5>
+        <select id="cmbChequeTypeFilter" class="form-select form-select-sm" style="width:200px;" onchange="loadCheques()">
+            <option value="">همه چک‌ها</option>
+            <option value="1">چک‌های دریافتنی (از مشتری)</option>
+            <option value="2">چک‌های پرداختنی (شرکت)</option>
+        </select>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:40px;"><input type="checkbox" checked onchange="toggleAllCheques(this)" /></th>
+                        <th>شماره چک / صیادی</th>
+                        <th>نوع چک</th>
+                        <th>بانک</th>
+                        <th>طرف‌حساب</th>
+                        <th>سررسید</th>
+                        <th class="text-end">مبلغ (ریال)</th>
+                        <th>وضعیت فعلی</th>
+                        <th>عملیات چرخه چک</th>
+                    </tr>
+                </thead>
+                <tbody id="chequesTableBody">
+                    <tr><td colspan="9" class="text-center py-4">در حال دریافت فهرست چک‌ها...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Cheque -->
+<div class="modal fade" id="addChequeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">ثبت چک صیادی جدید (+ صدور خودکار سند حسابداری)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="frmAddCheque">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">نوع چک</label>
+                            <select id="chqType" class="form-select">
+                                <option value="1">چک دریافتنی (از مشتری)</option>
+                                <option value="2">چک پرداختنی (شرکت)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">شماره چک <span class="text-danger">*</span></label>
+                            <input type="text" id="chqNumber" class="form-control" required dir="ltr" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">شناسه ۱۶ رقمی صیادی</label>
+                            <input type="text" id="chqSayadi" class="form-control" maxlength="16" dir="ltr" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">مبلغ چک (ریال) <span class="text-danger">*</span></label>
+                            <input type="number" id="chqAmount" class="form-control" min="1" required dir="ltr" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">تاریخ صدور (شمسی) <span class="text-danger">*</span></label>
+                            <input type="text" id="chqIssueDate" class="form-control" value="1403/08/01" required dir="ltr" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">تاریخ سررسید (شمسی) <span class="text-danger">*</span></label>
+                            <input type="text" id="chqDueDate" class="form-control" value="1403/09/15" required dir="ltr" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">نام بانک <span class="text-danger">*</span></label>
+                            <input type="text" id="chqBankName" class="form-control" placeholder="مثال: بانک ملت" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">مشتری (برای چک دریافتنی)</label>
+                            <select id="chqCustomerId" class="form-select"><option value="">-- انتخاب مشتری --</option></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">تأمین‌کننده (برای چک پرداختنی)</label>
+                            <select id="chqSupplierId" class="form-select"><option value="">-- انتخاب تأمین‌کننده --</option></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">حساب بانکی شرکت</label>
+                            <select id="chqBankAccountId" class="form-select"><option value="">-- انتخاب حساب بانکی --</option></select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="saveCheque()">ثبت چک و صدور سند</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Change Cheque Status -->
+<div class="modal fade" id="changeStatusModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تغییر وضعیت چک و صدور خودکار سند حسابداری</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="csChequeId" />
+                <div class="mb-3">
+                    <label class="form-label fw-bold">وضعیت جدید چک</label>
+                    <select id="csNewStatus" class="form-select">
+                        <option value="2">واگذاری به بانک جهت وصول (InBankForCollection)</option>
+                        <option value="3">وصول شده / پاس شده (Cleared)</option>
+                        <option value="4">برگشت خورده / واخواست (Bounced)</option>
+                        <option value="5">خرج کردن چک به تأمین‌کننده (EndorsedToSupplier)</option>
+                        <option value="6">عودت / ابطال چک (ReturnedOrCancelled)</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">حساب بانکی (برای خواباندن به حساب یا پاس شدن)</label>
+                    <select id="csTargetBankAccountId" class="form-select"><option value="">-- انتخاب حساب بانکی --</option></select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">تأمین‌کننده (در صورت خرج کردن چک)</label>
+                    <select id="csEndorsedSupplierId" class="form-select"><option value="">-- انتخاب تأمین‌کننده --</option></select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">توضیحات سند</label>
+                    <input type="text" id="csDescription" class="form-control" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-success" onclick="submitStatusChange()">اعمال تغییر وضعیت و ثبت سند</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+        const statusLabels = {
+            1: '<span class="badge bg-info text-dark">نزد صندوق</span>',
+            2: '<span class="badge bg-primary">در جریان وصول بانک</span>',
+            3: '<span class="badge bg-success">پاس شده</span>',
+            4: '<span class="badge bg-danger">برگشت خورده</span>',
+            5: '<span class="badge bg-warning text-dark">خرج شده به تأمین‌کننده</span>',
+            6: '<span class="badge bg-secondary">عودت / باطل شده</span>'
+        };
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) { return Number(n || 0).toLocaleString('en-US'); }
+
+        async function initChequesPage() {
+            try {
+                const [custRes, supRes, bankRes] = await Promise.all([
+                    fetch(`${apiBase}/Customer/GetCustomers`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/Supplier/GetSuppliers`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/BankAccount/GetAll`, { headers: getAuthHeaders() })
+                ]);
+                const custs = (await custRes.json()).data || [];
+                const sups = (await supRes.json()).data || [];
+                const banks = (await bankRes.json()).data || [];
+
+                document.getElementById('chqCustomerId').innerHTML = '<option value="">-- انتخاب مشتری --</option>' +
+                    custs.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                const supOpts = '<option value="">-- انتخاب تأمین‌کننده --</option>' +
+                    sups.map(s => `<option value="${s.id}">${s.supplierFullName}</option>`).join('');
+                document.getElementById('chqSupplierId').innerHTML = supOpts;
+                document.getElementById('csEndorsedSupplierId').innerHTML = supOpts;
+
+                const bankOpts = '<option value="">-- انتخاب حساب بانکی --</option>' +
+                    banks.map(b => `<option value="${b.id}">${b.title}</option>`).join('');
+                document.getElementById('chqBankAccountId').innerHTML = bankOpts;
+                document.getElementById('csTargetBankAccountId').innerHTML = bankOpts;
+            } catch (e) { console.error(e); }
+
+            await loadCheques();
+        }
+
+        async function loadCheques() {
+            const typeFilter = document.getElementById('cmbChequeTypeFilter').value;
+            const url = typeFilter ? `${apiBase}/Cheque/GetAll?type=${typeFilter}` : `${apiBase}/Cheque/GetAll`;
+            const tbody = document.getElementById('chequesTableBody');
+            try {
+                const res = await fetch(url, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const list = json.data || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">هیچ چکی ثبت نشده است.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.map(c => `
+                    <tr>
+                        <td><input type="checkbox" class="chq-select" value="${c.id}" checked /></td>
+                        <td>
+                            <div class="fw-bold font-monospace" dir="ltr">#${c.chequeNumber}</div>
+                            <small class="text-muted font-monospace" dir="ltr">${c.sayadiId || ''}</small>
+                        </td>
+                        <td>${c.type === 1 ? '<span class="text-success fw-bold">دریافتنی</span>' : '<span class="text-danger fw-bold">پرداختنی</span>'}</td>
+                        <td>${c.bankName}</td>
+                        <td>${c.customerName || c.supplierName || '—'}</td>
+                        <td>${c.dueDate ? new Date(c.dueDate).toLocaleDateString('fa-IR') : ''}</td>
+                        <td class="text-end font-monospace fw-bold" dir="ltr">${formatNum(c.amount)}</td>
+                        <td>${statusLabels[c.status] || c.status}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="openStatusModal(${c.id})">تغییر وضعیت</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                calculateRasGiri();
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-4">خطا در دریافت چک‌ها</td></tr>';
+            }
+        }
+
+        function toggleAllCheques(master) {
+            document.querySelectorAll('.chq-select').forEach(cb => cb.checked = master.checked);
+        }
+
+        async function calculateRasGiri() {
+            const ids = Array.from(document.querySelectorAll('.chq-select:checked')).map(cb => Number(cb.value));
+            const rate = Number(document.getElementById('rasDiscountRate').value || 0);
+            try {
+                const res = await fetch(`${apiBase}/Cheque/CalculateRasGiri`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        chequeIds: ids,
+                        monthlyDiscountRatePercent: rate
+                    })
+                });
+                const json = await res.json();
+                const d = json.data;
+                if (d) {
+                    document.getElementById('rasTotalAmount').textContent = `${formatNum(d.totalAmount)} ریال`;
+                    document.getElementById('rasWeightedDays').textContent = `${d.weightedAverageDays} روز`;
+                    document.getElementById('rasExactDate').textContent = `(${d.exactMaturityDateShamsi || ''})`;
+                    document.getElementById('rasPresentValue').textContent = `${formatNum(d.presentValueAmount)} ریال`;
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function saveCheque() {
+            const payload = {
+                type: Number(document.getElementById('chqType').value),
+                chequeNumber: document.getElementById('chqNumber').value.trim(),
+                sayadiId: document.getElementById('chqSayadi').value.trim() || null,
+                amount: Number(document.getElementById('chqAmount').value),
+                issueDateShamsi: document.getElementById('chqIssueDate').value.trim(),
+                dueDateShamsi: document.getElementById('chqDueDate').value.trim(),
+                bankName: document.getElementById('chqBankName').value.trim(),
+                customerId: Number(document.getElementById('chqCustomerId').value) || null,
+                supplierId: Number(document.getElementById('chqSupplierId').value) || null,
+                bankAccountId: Number(document.getElementById('chqBankAccountId').value) || null
+            };
+            try {
+                const res = await fetch(`${apiBase}/Cheque/Create`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ثبت چک');
+                await swal.fire({ title: 'ثبت موفق', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('addChequeModal'))?.hide();
+                loadCheques();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        function openStatusModal(chequeId) {
+            document.getElementById('csChequeId').value = chequeId;
+            new bootstrap.Modal(document.getElementById('changeStatusModal')).show();
+        }
+
+        async function submitStatusChange() {
+            const payload = {
+                chequeId: Number(document.getElementById('csChequeId').value),
+                newStatus: Number(document.getElementById('csNewStatus').value),
+                targetBankAccountId: Number(document.getElementById('csTargetBankAccountId').value) || null,
+                endorsedSupplierId: Number(document.getElementById('csEndorsedSupplierId').value) || null,
+                description: document.getElementById('csDescription').value.trim() || null
+            };
+            try {
+                const res = await fetch(`${apiBase}/Cheque/ChangeStatus`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در تغییر وضعیت چک');
+                await swal.fire({ title: 'موفقیت', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('changeStatusModal'))?.hide();
+                loadCheques();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initChequesPage);
+    </script>
+}

@@ -1,0 +1,309 @@
+﻿@using HSCrm.Dashboard.Costants
+@{
+    ViewData["AdminTitle"] = "کاردکس ریالی و تعدادی کالا";
+    ViewData["selected"] = "product-kardex";
+    string ApiAddress = ViewBag.ApiAddress;
+}
+
+@section styles {
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .select2-selection { height: 40px !important; }
+        #select2-filterProductId-container, #select2-filterWarehouseId-container { margin-top: 5px; }
+        @@media print {
+            body * { visibility: hidden; }
+            #kardexPrintableArea, #kardexPrintableArea * { visibility: visible; }
+            #kardexPrintableArea { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none !important; }
+        }
+    </style>
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts d-flex justify-content-between align-items-center">
+    <div>
+        <h1>کاردکس ریالی و تعدادی کالا (فاز ۲: میانگین موزون / FIFO)</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>انبار و کاردکس ریالی
+        </p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <button type="button" class="btn btn-outline-dark" onclick="window.print()">
+            <i class="mdi mdi-printer me-1"></i>چاپ کاردکس ریالی (A4)
+        </button>
+    </div>
+</div>
+
+<div class="row" id="kardexPrintableArea">
+    <div class="col-12">
+        <!-- کارت‌های خلاصه ریالی و تعدادی کالای انتخاب‌شده -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm border-start border-4 border-primary">
+                    <div class="card-body py-2 px-3">
+                        <div class="text-muted small">مانده تعدادی پایان دوره</div>
+                        <h5 class="fw-bold text-primary font-monospace mb-0" id="kxFinalQty">0</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm border-start border-4 border-info">
+                    <div class="card-body py-2 px-3">
+                        <div class="text-muted small">فی میانگین / نرخ واحد پایان دوره</div>
+                        <h5 class="fw-bold text-info font-monospace mb-0" id="kxFinalUnitCost">0 ریال</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm border-start border-4 border-danger">
+                    <div class="card-body py-2 px-3">
+                        <div class="text-muted small">جمع بهای تمام‌شده صادره (COGS)</div>
+                        <h5 class="fw-bold text-danger font-monospace mb-0" id="kxTotalOutCogs">0 ریال</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm border-start border-4 border-success">
+                    <div class="card-body py-2 px-3">
+                        <div class="text-muted small">ارزش ریالی موجودی انبار</div>
+                        <h5 class="fw-bold text-success font-monospace mb-0" id="kxFinalValue">0 ریال</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ec-vendor-list card card-default">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fa fa-exchange-alt me-2"></i>گزارش کاردکس ریالی و تعدادی کالا (همراه با فی واحد و ارزش موجودی)</h5>
+                </div>
+                <div class="card-body">
+                    <form id="kardexFilterForm" class="row g-3 align-items-end mb-4 no-print">
+                        <div class="col-md-4">
+                            <label for="filterProductId" class="form-label fw-bold">انتخاب کالا <span class="text-danger">*</span></label>
+                            <select id="filterProductId" class="form-select select2" required>
+                                <option value="">-- انتخاب کالا --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="filterWarehouseId" class="form-label fw-bold">انبار</label>
+                            <select id="filterWarehouseId" class="form-select select2">
+                                <option value="">همه انبارها</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="filterFromDate" class="form-label fw-bold">از تاریخ</label>
+                            <input type="text" id="filterFromDate" class="form-control persian-date-picker" placeholder="1403/01/01" autocomplete="off" />
+                        </div>
+                        <div class="col-md-2">
+                            <label for="filterToDate" class="form-label fw-bold">تا تاریخ</label>
+                            <input type="text" id="filterToDate" class="form-control persian-date-picker" placeholder="1403/12/29" autocomplete="off" />
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" id="btnFilter" class="btn btn-success">
+                                <i class="fa fa-search me-1"></i> مشاهده
+                            </button>
+                            <button type="button" id="btnReset" class="btn btn-secondary">
+                                <i class="fa fa-undo"></i>
+                            </button>
+                        </div>
+                    </form>
+                    <hr class="no-print" />
+                    <div class="table-responsive">
+                        <table id="tblKardex" class="table table-bordered table-hover no-footer align-middle small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>ردیف</th>
+                                    <th>تاریخ</th>
+                                    <th>نوع عملیات</th>
+                                    <th>مرجع / سند</th>
+                                    <th>انبار</th>
+                                    <th class="table-success text-dark">وارده (+)</th>
+                                    <th class="table-danger text-dark">صادره (-)</th>
+                                    <th class="table-info text-dark">مانده تعدادی</th>
+                                    <th class="table-warning text-dark">فی واحد (ریال)</th>
+                                    <th class="table-warning text-dark">مبلغ گردش (ریال)</th>
+                                    <th class="table-primary text-dark">فی میانگین</th>
+                                    <th class="table-primary text-dark">مانده ریالی انبار</th>
+                                    <th>توضیحات</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            const apiBaseUrl = '@ApiAddress';
+            if ($.fn.select2) {
+                $('.select2').select2({ dir: 'rtl', width: '100%', placeholder: 'انتخاب کنید...' });
+            }
+            if ($.fn.persianDatepicker) {
+                $('.persian-date-picker').persianDatepicker({ format: 'YYYY/MM/DD', initialValue: false, autoClose: true });
+            }
+            loadProducts();
+            loadWarehouses();
+
+            var table = $('#tblKardex').DataTable({
+                language: {
+                    search: 'جستجو:',
+                    lengthMenu: 'نمایش _MENU_ رکورد',
+                    info: 'نمایش _START_ تا _END_ از _TOTAL_ رکورد',
+                    infoEmpty: 'رکوردی وجود ندارد',
+                    zeroRecords: 'رکوردی پیدا نشد'
+                },
+                ordering: false,
+                pageLength: 25,
+                columns: [
+                    { data: null, render: function (data, type, row, meta) { return meta.row + 1; } },
+                    { data: 'shamsiDate', defaultContent: '-' },
+                    {
+                        data: 'transactionType',
+                        render: function (data) {
+                            let badgeClass = 'bg-secondary';
+                            if (data && (data.includes('ورود') || data.includes('خرید') || data.includes('برگشت از فروش'))) badgeClass = 'bg-success';
+                            else if (data && (data.includes('خروج') || data.includes('فروش') || data.includes('برگشت از خرید'))) badgeClass = 'bg-danger';
+                            return `<span class="badge ${badgeClass}">${data || '-'}</span>`;
+                        }
+                    },
+                    { data: 'referenceType', defaultContent: '-' },
+                    { data: 'warehouseTitle', defaultContent: '-' },
+                    {
+                        data: 'inputQuantity',
+                        render: function (data) {
+                            var val = parseFloat(data) || 0;
+                            return val > 0 ? `<span class="badge bg-success font-monospace">+${val.toLocaleString()}</span>` : '-';
+                        }
+                    },
+                    {
+                        data: 'outputQuantity',
+                        render: function (data) {
+                            var val = parseFloat(data) || 0;
+                            return val > 0 ? `<span class="badge bg-danger font-monospace">-${val.toLocaleString()}</span>` : '-';
+                        }
+                    },
+                    {
+                        data: 'runningBalance',
+                        render: function (data) {
+                            var val = parseFloat(data) || 0;
+                            return `<strong class="font-monospace ${val < 0 ? 'text-danger' : 'text-primary'}">${val.toLocaleString()}</strong>`;
+                        }
+                    },
+                    {
+                        data: 'unitCost',
+                        render: function (data) {
+                            var val = parseFloat(data) || 0;
+                            return `<span class="font-monospace">${val.toLocaleString()}</span>`;
+                        }
+                    },
+                    {
+                        data: 'totalCost',
+                        render: function (data, type, row) {
+                            var val = parseFloat(data) || 0;
+                            var isOut = (parseFloat(row.outputQuantity) || 0) > 0;
+                            return `<span class="font-monospace fw-bold ${isOut ? 'text-danger' : 'text-success'}">${val.toLocaleString()}</span>`;
+                        }
+                    },
+                    {
+                        data: 'runningUnitCost',
+                        render: function (data) {
+                            var val = parseFloat(data) || 0;
+                            return `<span class="font-monospace text-muted">${val.toLocaleString()}</span>`;
+                        }
+                    },
+                    {
+                        data: 'runningValueBalance',
+                        render: function (data) {
+                            var val = parseFloat(data) || 0;
+                            return `<strong class="font-monospace text-dark">${val.toLocaleString()}</strong>`;
+                        }
+                    },
+                    { data: 'description', defaultContent: '-' }
+                ]
+            });
+
+            $('#kardexFilterForm').on('submit', function (e) {
+                e.preventDefault();
+                var productId = $('#filterProductId').val();
+                if (!productId) {
+                    swal.fire({ icon: 'warning', title: 'هشدار', text: 'لطفاً ابتدا یک کالا را انتخاب کنید.' });
+                    return;
+                }
+                var filterData = {
+                    productId: parseInt(productId),
+                    warehouseId: $('#filterWarehouseId').val() ? parseInt($('#filterWarehouseId').val()) : null,
+                    fromDate: $('#filterFromDate').val() || null,
+                    toDate: $('#filterToDate').val() || null
+                };
+                $.ajax({
+                    url: `${apiBaseUrl}Inventory/kardex`,
+                    type: 'POST',
+                    contentType: 'application/json; charset=utf-8',
+                    headers: { Authorization: 'Bearer ' + '@User.FindFirstValue("Token")' },
+                    data: JSON.stringify(filterData),
+                    success: function (response) {
+                        var listData = response.additionalData || response.data || [];
+                        table.clear();
+                        table.rows.add(listData);
+                        table.draw();
+
+                        if (listData.length > 0) {
+                            var last = listData[listData.length - 1];
+                            var totalOutCogs = listData.reduce((s, r) => s + ((parseFloat(r.outputQuantity) || 0) > 0 ? (parseFloat(r.totalCost) || 0) : 0), 0);
+                            $('#kxFinalQty').text((parseFloat(last.runningBalance) || 0).toLocaleString());
+                            $('#kxFinalUnitCost').text((parseFloat(last.runningUnitCost) || 0).toLocaleString() + ' ریال');
+                            $('#kxTotalOutCogs').text(totalOutCogs.toLocaleString() + ' ریال');
+                            $('#kxFinalValue').text((parseFloat(last.runningValueBalance) || 0).toLocaleString() + ' ریال');
+                        } else {
+                            $('#kxFinalQty').text('0');
+                            $('#kxFinalUnitCost').text('0 ریال');
+                            $('#kxTotalOutCogs').text('0 ریال');
+                            $('#kxFinalValue').text('0 ریال');
+                        }
+                    }
+                });
+            });
+
+            function loadProducts() {
+                $.ajax({
+                    url: `${apiBaseUrl}Product/ProductDropdownList`,
+                    type: 'GET',
+                    headers: { Authorization: 'Bearer ' + '@User.FindFirstValue("Token")' },
+                    success: function (res) {
+                        if (res && res.data) {
+                            let options = '<option value="">-- انتخاب کالا --</option>';
+                            $.each(res.data, function (i, item) {
+                                options += `<option value="${item.drId ?? item.id}">${item.drName ?? item.title}</option>`;
+                            });
+                            $('#filterProductId').html(options).trigger('change');
+                        }
+                    }
+                });
+            }
+
+            function loadWarehouses() {
+                $.ajax({
+                    url: `${apiBaseUrl}Warehouse/WarehouseDropdownList`,
+                    type: 'GET',
+                    headers: { Authorization: 'Bearer ' + '@User.FindFirstValue("Token")' },
+                    success: function (res) {
+                        if (res && res.data) {
+                            let options = '<option value="">همه انبارها</option>';
+                            $.each(res.data, function (i, item) {
+                                options += `<option value="${item.drId ?? item.id}">${item.drName ?? item.title}</option>`;
+                            });
+                            $('#filterWarehouseId').html(options).trigger('change');
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+}

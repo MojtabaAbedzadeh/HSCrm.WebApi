@@ -823,6 +823,7 @@ namespace HSCrm.DataModel.Services.Repository
                 .Include(x => x.JournalVoucher)
                 .Where(x => x.BankAccountId != null
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted);
 
             if (fromDate.HasValue)
@@ -861,7 +862,38 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<ProfitAndLossReportDto> GetProfitAndLossAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
         {
-            var trialBalance = await GetTrialBalanceAsync(fromDate, toDate, ct);
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
+
+            var query = _context.JournalVoucherItems
+                .AsNoTracking()
+                .Include(x => x.Account)
+                .Include(x => x.JournalVoucher)
+                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
+                         && !x.JournalVoucher.IsDeleted
+                         && !x.IsDeleted
+                         && (x.Account.Code.StartsWith("4") || x.Account.Code.StartsWith("5")));
+
+            if (fromDate.HasValue)
+                query = query.Where(x => x.JournalVoucher.VoucherDate >= fromDate.Value.Date);
+
+            if (toDate.HasValue)
+                query = query.Where(x => x.JournalVoucher.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+            var trialBalance = await query
+                .GroupBy(x => new { x.AccountId, x.Account.Code, x.Account.Title, x.Account.Category })
+                .Select(g => new TrialBalanceRowDto
+                {
+                    AccountId = g.Key.AccountId,
+                    AccountCode = g.Key.Code,
+                    AccountTitle = g.Key.Title,
+                    AccountType = g.Key.AccountType,
+                    TurnoverDebit = g.Sum(i => i.Debit),
+                    TurnoverCredit = g.Sum(i => i.Credit)
+                })
+                .OrderBy(x => x.AccountCode)
+                .ToListAsync(ct);
 
             var revenues = trialBalance.Where(x => x.AccountCode.StartsWith("4")).ToList();
             var costsAndExpenses = trialBalance.Where(x => x.AccountCode.StartsWith("5")).ToList();
@@ -2322,6 +2354,7 @@ namespace HSCrm.DataModel.Services.Repository
                 .Where(x => x.TenantId == tenantId
                          && !x.IsDeleted
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
                          && targetAccountCodes.Contains(x.Account.Code));
 
@@ -2509,6 +2542,7 @@ namespace HSCrm.DataModel.Services.Repository
                 .Where(x => x.TenantId == tenantId
                          && !x.IsDeleted
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
                          && x.Account.Code == targetAccountCode
                          && x.JournalVoucher.VoucherDate <= baseDate.AddDays(1).AddTicks(-1))

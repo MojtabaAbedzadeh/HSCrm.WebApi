@@ -1,0 +1,225 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "حساب‌های بانکی و صندوق خزانه";
+    ViewData["selected"] = "bank_accounts";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>مدیریت حساب‌های بانکی، کارتخوان و صندوق شرکت</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            خزانه‌داری و بانک (فاز ۲)
+        </p>
+    </div>
+    <div>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBankModal">
+            <i class="mdi mdi-plus me-1"></i>تعریف حساب بانکی / صندوق جدید
+        </button>
+    </div>
+</div>
+
+<!-- Real-time Balance Summary Cards -->
+<div class="row mb-4" id="bankSummaryCards">
+    <div class="col-12 text-center py-3 text-muted">در حال دریافت موجودی لحظه‌ای حساب‌های بانکی...</div>
+</div>
+
+<!-- Bank Accounts Table -->
+<div class="card card-default">
+    <div class="card-header bg-light">
+        <h5 class="mb-0">فهرست حساب‌های بانکی و صندوق‌ها</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>عنوان حساب</th>
+                        <th>نام بانک / شعبه</th>
+                        <th>شماره حساب</th>
+                        <th>شماره کارت</th>
+                        <th>شماره شبا</th>
+                        <th class="text-end">موجودی اول دوره</th>
+                        <th>پیش‌فرض</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="bankTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Bank Account -->
+<div class="modal fade" id="addBankModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تعریف حساب بانکی / صندوق جدید (+ صدور خودکار سند افتتاحیه)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="frmAddBank">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">عنوان حساب / صندوق <span class="text-danger">*</span></label>
+                            <input type="text" id="baTitle" class="form-control" placeholder="مثال: بانک ملت - حساب جاری اصلی" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">نام بانک <span class="text-danger">*</span></label>
+                            <input type="text" id="baBankName" class="form-control" placeholder="مثال: بانک ملت" required />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">نام/کد شعبه</label>
+                            <input type="text" id="baBranchName" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">شماره حساب</label>
+                            <input type="text" id="baAccountNumber" class="form-control" dir="ltr" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">شماره کارت (۱۶ رقم)</label>
+                            <input type="text" id="baCardNumber" class="form-control" dir="ltr" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">شماره شبا (IR...)</label>
+                            <input type="text" id="baShebaNumber" class="form-control" dir="ltr" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">موجودی اول دوره (ریال)</label>
+                            <input type="number" id="baInitialBalance" class="form-control" value="0" min="0" dir="ltr" />
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="baIsDefault" />
+                                <label class="form-check-label fw-bold" for="baIsDefault">حساب پیش‌فرض شرکت برای دریافت‌ها و پرداخت‌ها</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="saveBankAccount()">ذخیره حساب بانکی</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) { return Number(n || 0).toLocaleString('en-US'); }
+
+        async function loadBanks() {
+            try {
+                const [allRes, sumRes] = await Promise.all([
+                    fetch(`${apiBase}/BankAccount/GetAll`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/BankAccount/GetBalancesSummary`, { headers: getAuthHeaders() })
+                ]);
+                const banks = (await allRes.json()).data || [];
+                const summaries = (await sumRes.json()).data || [];
+
+                const cardsDiv = document.getElementById('bankSummaryCards');
+                if (summaries.length === 0) {
+                    cardsDiv.innerHTML = '<div class="col-12 text-center text-muted">هنوز حساب بانکی ثبت نشده است.</div>';
+                } else {
+                    cardsDiv.innerHTML = summaries.map(s => `
+                        <div class="col-md-4 mb-3">
+                            <div class="card card-default p-3 h-100 border-top border-3 ${s.isDefault ? 'border-primary' : 'border-secondary'}">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="fw-bold mb-0">${s.title}</h6>
+                                    ${s.isDefault ? '<span class="badge bg-primary">پیش‌فرض</span>' : ''}
+                                </div>
+                                <small class="text-muted font-monospace mb-2" dir="ltr">${s.cardNumber || s.accountNumber || ''}</small>
+                                <div class="row text-center border-top pt-2 small">
+                                    <div class="col-4">
+                                        <span class="text-muted d-block">کل واریز</span>
+                                        <strong class="text-success font-monospace" dir="ltr">${formatNum(s.totalDeposits)}</strong>
+                                    </div>
+                                    <div class="col-4">
+                                        <span class="text-muted d-block">کل برداشت</span>
+                                        <strong class="text-danger font-monospace" dir="ltr">${formatNum(s.totalWithdrawals)}</strong>
+                                    </div>
+                                    <div class="col-4">
+                                        <span class="text-muted d-block">موجودی فعلی</span>
+                                        <strong class="text-dark font-monospace" dir="ltr">${formatNum(s.currentBalance)}</strong>
+                                    </div>
+                                </div>
+                                <div class="mt-2 text-end">
+                                    <a href="/AdminArea/Accounting/Reports?bankAccountId=${s.bankAccountId}&tab=ledger" class="btn btn-sm btn-link p-0">مشاهده ریز گردش ←</a>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                const tbody = document.getElementById('bankTableBody');
+                tbody.innerHTML = banks.map(b => `
+                    <tr>
+                        <td class="fw-bold">${b.title}</td>
+                        <td>${b.bankName} ${b.branchName ? `(${b.branchName})` : ''}</td>
+                        <td class="font-monospace" dir="ltr">${b.accountNumber || '—'}</td>
+                        <td class="font-monospace" dir="ltr">${b.cardNumber || '—'}</td>
+                        <td class="font-monospace" dir="ltr">${b.shebaNumber || '—'}</td>
+                        <td class="text-end font-monospace" dir="ltr">${formatNum(b.initialBalance)}</td>
+                        <td>${b.isDefault ? '<span class="badge bg-primary">پیش‌فرض</span>' : '—'}</td>
+                        <td>
+                            <a class="btn btn-sm btn-outline-primary" href="/AdminArea/Accounting/Reports?bankAccountId=${b.id}&tab=ledger">گردش حساب</a>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (err) { console.error(err); }
+        }
+
+        async function saveBankAccount() {
+            const payload = {
+                title: document.getElementById('baTitle').value.trim(),
+                bankName: document.getElementById('baBankName').value.trim(),
+                branchName: document.getElementById('baBranchName').value.trim() || null,
+                accountNumber: document.getElementById('baAccountNumber').value.trim() || null,
+                cardNumber: document.getElementById('baCardNumber').value.trim() || null,
+                shebaNumber: document.getElementById('baShebaNumber').value.trim() || null,
+                initialBalance: Number(document.getElementById('baInitialBalance').value || 0),
+                isDefault: document.getElementById('baIsDefault').checked,
+                isActive: true
+            };
+            if (!payload.title || !payload.bankName) {
+                swal.fire({ title: 'هشدار', text: 'عنوان و نام بانک الزامی است.', icon: 'warning', confirmButtonText: 'باشه' });
+                return;
+            }
+            try {
+                const res = await fetch(`${apiBase}/BankAccount/Create`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ثبت حساب بانکی');
+                await swal.fire({ title: 'ثبت موفق', text: json.message || 'حساب بانکی ثبت شد.', icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('addBankModal'))?.hide();
+                document.getElementById('frmAddBank').reset();
+                loadBanks();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadBanks);
+    </script>
+}

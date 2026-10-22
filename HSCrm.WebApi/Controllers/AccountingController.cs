@@ -34,6 +34,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("ChartOfAccounts")]
+        [HttpGet("Accounts")]
         [Permission(Permissions.AccountingAccounts.View)]
         public async Task<ActionResult<ApiResponse<IEnumerable<AccountingAccount>>>> GetChartOfAccounts(CancellationToken ct)
         {
@@ -112,6 +113,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateVoucher")]
+        [HttpPost("CreateManualVoucher")]
         [Permission(Permissions.JournalVouchers.Create)]
         public async Task<ActionResult<ApiResponse<JournalVoucher>>> CreateManualVoucher([FromBody] JournalVoucherCreateModel model, CancellationToken ct)
         {

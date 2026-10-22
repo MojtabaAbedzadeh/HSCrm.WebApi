@@ -39,6 +39,7 @@ namespace HSCrm.WebApi.Controllers
         /// دریافت لیست چک‌های دریافتنی و پرداختنی با قابلیت فیلتر وضعیت، مشتری، تأمین‌کننده و حساب بانکی
         /// </summary>
         [HttpGet("GetAll")]
+        [HttpGet("GetCheques")]
         [Permission(Permissions.Cheques.View)]
         public async Task<ActionResult<ApiResponse<List<Cheque>>>> GetAll(
             [FromQuery] ChequeType? type,
@@ -189,6 +190,7 @@ namespace HSCrm.WebApi.Controllers
         /// محاسبه راس‌گیری چک‌ها (میانگین موزون زمانی و ریالی سررسید چک‌ها نسبت به تاریخ مبنا + ارزش فعلی و فرجه)
         /// </summary>
         [HttpPost("RasGiri")]
+        [HttpPost("CalculateRasGiri")]
         [Permission(Permissions.Cheques.View)]
         public async Task<ActionResult<ApiResponse<ChequeRasGiriResultDto>>> CalculateRasGiri(
             [FromBody] ChequeRasGiriRequestModel model,

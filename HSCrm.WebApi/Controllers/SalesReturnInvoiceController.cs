@@ -38,6 +38,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetSalesReturnInvoices")]
+        [HttpGet("GetAll")]
         [Permission(Permissions.SalesReturnInvoices.View)]
         public ApiResponse<IEnumerable<SalesReturnInvoiceModel>> Get(
             string? customerFullName = null,
@@ -153,6 +154,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateSalesReturnInvoice")]
+        [HttpPost("Create")]
         [Permission(Permissions.SalesReturnInvoices.Create)]
         public async Task<IActionResult> Create(
             [FromBody] SalesReturnInvoiceCreateModel model,
@@ -322,6 +324,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("Confirm/{id}")]
+        [HttpPost("ConfirmInvoice/{id}")]
         [Permission(Permissions.SalesReturnInvoices.Approve)]
         public async Task<IActionResult> Confirm(int id, CancellationToken ct = default)
         {
@@ -369,6 +372,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("Cancel/{id}")]
+        [HttpPost("CancelInvoice/{id}")]
         [Permission(Permissions.SalesReturnInvoices.Cancel)]
         public async Task<IActionResult> Cancel(int id, [FromBody] string reason, CancellationToken ct = default)
         {

@@ -1,0 +1,304 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "مدیریت سال مالی، اختتامیه و افتتاحیه";
+    ViewData["selected"] = "fiscal_years";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>مدیریت سال‌های مالی، بستن حساب‌ها و سند اختتامیه/افتتاحیه (فاز ۶)</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            سال مالی و بستن حساب‌ها
+        </p>
+    </div>
+    <div>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addFiscalYearModal">
+            <i class="mdi mdi-plus me-1"></i>تعریف سال مالی جدید
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Left: Fiscal Years List -->
+    <div class="col-lg-6 mb-4">
+        <div class="card card-default h-100">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">فهرست سال‌های مالی شرکت</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>عنوان سال مالی</th>
+                                <th>بازه زمانی</th>
+                                <th>وضعیت</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fyTableBody">
+                            <tr><td colspan="4" class="text-center py-4">در حال بارگذاری سال‌های مالی...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Closing & Opening Wizard -->
+    <div class="col-lg-6 mb-4">
+        <div class="card card-default h-100 border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">ویزارد ممیزی پایان سال، بستن حساب‌های موقت و صدور اختتامیه/افتتاحیه</h5>
+            </div>
+            <div class="card-body">
+                <div id="previewAuditBox" class="mb-3 p-3 rounded border bg-light">
+                    <div class="text-muted text-center">در حال بارگذاری پیش‌نمایش ممیزی سال مالی جاری...</div>
+                </div>
+
+                <hr />
+                <h6 class="fw-bold mb-3">مشخصات سال مالی جدید (جهت صدور خودکار سند افتتاحیه):</h6>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold">عنوان سال مالی جدید</label>
+                        <input type="text" id="closeNextTitle" class="form-control form-control-sm" value="سال مالی ۱۴۰۴" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold">تاریخ شروع (شمسی)</label>
+                        <input type="text" id="closeNextStart" class="form-control form-control-sm" value="1404/01/01" dir="ltr" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold">تاریخ پایان (شمسی)</label>
+                        <input type="text" id="closeNextEnd" class="form-control form-control-sm" value="1404/12/29" dir="ltr" />
+                    </div>
+                    <div class="col-12 mt-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="closeAutoPostDrafts" checked />
+                            <label class="form-check-label small" for="closeAutoPostDrafts">
+                                قطعی‌سازی خودکار اسناد پیش‌نویس (AutoPostDraftVouchers) پیش از بستن سال مالی
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-success w-100 fw-bold" onclick="executeCloseFiscalYear()">
+                    اجرای عملیات بستن سال مالی و صدور ۳ سند (سود و زیان، اختتامیه و افتتاحیه)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Create Fiscal Year -->
+<div class="modal fade" id="addFiscalYearModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تعریف سال مالی جدید</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">عنوان سال مالی</label>
+                    <input type="text" id="fyTitle" class="form-control" placeholder="مثال: سال مالی ۱۴۰۴" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">تاریخ شروع (شمسی)</label>
+                    <input type="text" id="fyStart" class="form-control" value="1404/01/01" dir="ltr" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">تاریخ پایان (شمسی)</label>
+                    <input type="text" id="fyEnd" class="form-control" value="1404/12/29" dir="ltr" />
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="fySetAsCurrent" checked />
+                    <label class="form-check-label" for="fySetAsCurrent">تنظیم به‌عنوان سال مالی فعال سیستم</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="createFiscalYear()">ثبت سال مالی</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) { return Number(n || 0).toLocaleString('en-US'); }
+
+        async function initFiscalYears() {
+            await loadFiscalYearsList();
+            await loadClosingPreview();
+        }
+
+        async function loadFiscalYearsList() {
+            const tbody = document.getElementById('fyTableBody');
+            try {
+                const res = await fetch(`${apiBase}/FiscalYear/GetAll`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const list = json.data || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">سال مالی یافت نشد.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.map(f => `
+                    <tr>
+                        <td class="fw-bold">
+                            ${f.title}
+                            ${f.isCurrent ? '<span class="badge bg-primary ms-1">سال جاری</span>' : ''}
+                        </td>
+                        <td class="small font-monospace">${f.startDateShamsi || ''} تا ${f.endDateShamsi || ''}</td>
+                        <td>
+                            ${f.isClosed ? '<span class="badge bg-danger">بسته شده (قفل)</span>' : '<span class="badge bg-success">باز (فعال)</span>'}
+                        </td>
+                        <td>
+                            ${!f.isCurrent ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="setActiveFiscalYear(${f.id})">انتخاب به‌عنوان جاری</button>` : ''}
+                            ${f.isClosed ? `<button class="btn btn-sm btn-warning" onclick="reopenFiscalYear(${f.id})">بازگشایی (Reopen)</button>` : ''}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger py-4">خطا در دریافت سال‌های مالی</td></tr>';
+            }
+        }
+
+        async function loadClosingPreview() {
+            const box = document.getElementById('previewAuditBox');
+            try {
+                const res = await fetch(`${apiBase}/FiscalYear/PreviewClose`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const p = json.data;
+                if (!p) {
+                    box.innerHTML = `<div class="text-warning">${json.message || 'اطلاعات ممیزی در دسترس نیست'}</div>`;
+                    return;
+                }
+
+                box.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong class="text-primary">ممیزی سال مالی: ${p.fiscalYearTitle}</strong>
+                        <span class="badge ${p.isAlreadyClosed ? 'bg-danger' : 'bg-success'}">${p.isAlreadyClosed ? 'بسته شده' : 'آماده بستن'}</span>
+                    </div>
+                    <div class="row g-2 text-center small">
+                        <div class="col-4">
+                            <div class="p-2 bg-white border rounded">
+                                <span class="text-muted d-block">کل درآمد دوره</span>
+                                <strong class="font-monospace text-success" dir="ltr">${formatNum(p.totalRevenue)}</strong>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 bg-white border rounded">
+                                <span class="text-muted d-block">کل هزینه و COGS</span>
+                                <strong class="font-monospace text-danger" dir="ltr">${formatNum(p.totalExpense)}</strong>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 bg-white border rounded">
+                                <span class="text-muted d-block">سود/زیان انتقالی به 3101</span>
+                                <strong class="font-monospace text-primary" dir="ltr">${formatNum(p.netProfitOrLoss)}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 small text-muted">
+                        حساب‌های موقت: <strong>${(p.temporaryAccounts || []).length}</strong> سرفصل ·
+                        حساب‌های دائم ترازنامه‌ای: <strong>${(p.permanentAccounts || []).length}</strong> سرفصل ·
+                        اسناد پیش‌نویس: <strong>${p.draftVouchersCount || 0}</strong> سند
+                    </div>
+                `;
+            } catch (e) {
+                box.innerHTML = '<div class="text-danger small">خطا در دریافت پیش‌نمایش ممیزی سال مالی</div>';
+            }
+        }
+
+        async function executeCloseFiscalYear() {
+            const payload = {
+                nextFiscalYearTitle: document.getElementById('closeNextTitle').value.trim(),
+                nextStartDateShamsi: document.getElementById('closeNextStart').value.trim(),
+                nextEndDateShamsi: document.getElementById('closeNextEnd').value.trim(),
+                autoPostDraftVouchers: document.getElementById('closeAutoPostDrafts').checked
+            };
+            try {
+                const res = await fetch(`${apiBase}/FiscalYear/CloseAndOpenNext`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در بستن سال مالی');
+                await swal.fire({ title: 'عملیات پایان سال مالی انجام شد', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                initFiscalYears();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        async function reopenFiscalYear(id) {
+            try {
+                const res = await fetch(`${apiBase}/FiscalYear/${id}/Reopen`, { method: 'POST', headers: getAuthHeaders() });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در بازگشایی سال مالی');
+                await swal.fire({ title: 'بازگشایی موفق', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                initFiscalYears();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        async function setActiveFiscalYear(id) {
+            try {
+                const res = await fetch(`${apiBase}/FiscalYear/${id}/SetCurrent`, { method: 'PUT', headers: getAuthHeaders() });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در تغییر سال مالی فعال');
+                localStorage.setItem('ActiveFiscalYearId', String(id));
+                await swal.fire({ title: 'موفقیت', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                initFiscalYears();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        async function createFiscalYear() {
+            const payload = {
+                title: document.getElementById('fyTitle').value.trim(),
+                startDateShamsi: document.getElementById('fyStart').value.trim(),
+                endDateShamsi: document.getElementById('fyEnd').value.trim(),
+                setAsCurrent: document.getElementById('fySetAsCurrent').checked
+            };
+            try {
+                const res = await fetch(`${apiBase}/FiscalYear/Create`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ثبت سال مالی');
+                await swal.fire({ title: 'ثبت موفق', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('addFiscalYearModal'))?.hide();
+                initFiscalYears();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initFiscalYears);
+    </script>
+}

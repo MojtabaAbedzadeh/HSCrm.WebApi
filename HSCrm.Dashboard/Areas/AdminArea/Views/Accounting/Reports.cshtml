@@ -1,0 +1,315 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "تراز آزمایشی، دفتر معین و صورت سود و زیان";
+    ViewData["selected"] = "accounting_reports";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+    string initialTab = ViewBag.InitialTab?.ToString() ?? "trial-balance";
+    int? initialAccountId = ViewBag.InitialAccountId;
+    int? initialBankAccountId = ViewBag.InitialBankAccountId;
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>گزارشات مالی: تراز آزمایشی ۴ ستونی، دفتر معین و سود و زیان</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            گزارشات مالی
+        </p>
+    </div>
+    <div>
+        <a href="/AdminArea/Accounting/AgingAndStatements" class="btn btn-outline-primary">
+            مشاهده صورت‌حساب ۳۶۰ درجه و تحلیل سنی مطالبات ←
+        </a>
+    </div>
+</div>
+
+<!-- Navigation Tabs -->
+<ul class="nav nav-tabs mb-3" id="reportTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(initialTab == "trial-balance" ? "active" : "")" id="tb-tab" data-bs-toggle="tab" data-bs-target="#pane-tb" type="button" role="tab">
+            تراز آزمایشی ۴ ستونی (Trial Balance)
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(initialTab == "ledger" ? "active" : "")" id="ledger-tab" data-bs-toggle="tab" data-bs-target="#pane-ledger" type="button" role="tab">
+            دفتر معین و گردش حساب / بانک (Running Balance)
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(initialTab == "pnl" ? "active" : "")" id="pnl-tab" data-bs-toggle="tab" data-bs-target="#pane-pnl" type="button" role="tab">
+            صورت سود و زیان دوره (Profit & Loss)
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- TAB 1: TRIAL BALANCE -->
+    <div class="tab-pane fade @(initialTab == "trial-balance" ? "show active" : "")" id="pane-tb" role="tabpanel">
+        <div class="card card-default">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">تراز آزمایشی ۴ ستونی سطح معین (GetTrialBalanceAsync)</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadTrialBalance()">بروزرسانی تراز</button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>کد حساب</th>
+                                <th>عنوان حساب معین</th>
+                                <th class="text-end">گردش بدهکار (ریال)</th>
+                                <th class="text-end">گردش بستانکار (ریال)</th>
+                                <th class="text-end bg-info-subtle">مانده بدهکار (ریال)</th>
+                                <th class="text-end bg-info-subtle">مانده بستانکار (ریال)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbBody">
+                            <tr><td colspan="6" class="text-center py-4">در حال محاسبه تراز آزمایشی...</td></tr>
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="2" class="text-end">جمع کل تراز آزمایشی:</td>
+                                <td class="text-end font-monospace" id="tbSumTurnDebit" dir="ltr">0</td>
+                                <td class="text-end font-monospace" id="tbSumTurnCredit" dir="ltr">0</td>
+                                <td class="text-end font-monospace text-success" id="tbSumBalDebit" dir="ltr">0</td>
+                                <td class="text-end font-monospace text-success" id="tbSumBalCredit" dir="ltr">0</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: LEDGER -->
+    <div class="tab-pane fade @(initialTab == "ledger" ? "show active" : "")" id="pane-ledger" role="tabpanel">
+        <div class="card card-default">
+            <div class="card-header bg-light">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold mb-1">انتخاب حساب معین:</label>
+                        <select id="cmbLedgerAccount" class="form-select form-select-sm" onchange="loadLedger()">
+                            <option value="">همه حساب‌ها</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold mb-1">فیلتر حساب بانکی / صندوق:</label>
+                        <select id="cmbLedgerBank" class="form-select form-select-sm" onchange="loadLedger()">
+                            <option value="">همه بانک‌ها و صندوق‌ها</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-sm btn-primary" onclick="loadLedger()">مشاهده گردش حساب</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>سند</th>
+                                <th>تاریخ</th>
+                                <th>حساب معین</th>
+                                <th>شرح آرتیکل و تفصیلی</th>
+                                <th class="text-end">بدهکار (ریال)</th>
+                                <th class="text-end">بستانکار (ریال)</th>
+                                <th class="text-end bg-light">مانده در گردش</th>
+                                <th class="text-center bg-light">تشخیص</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ledgerBody">
+                            <tr><td colspan="8" class="text-center py-4">در حال دریافت گردش حساب...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: PROFIT & LOSS -->
+    <div class="tab-pane fade @(initialTab == "pnl" ? "show active" : "")" id="pane-pnl" role="tabpanel">
+        <div class="row mb-4" id="pnlCards">
+            <div class="col-md-3">
+                <div class="card card-default p-3 border-start border-4 border-primary">
+                    <small class="text-muted">خالص درآمد فروش (گروه ۴)</small>
+                    <h4 class="fw-bold font-monospace mt-1 mb-0" id="pnlNetSales" dir="ltr">0</h4>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card card-default p-3 border-start border-4 border-warning">
+                    <small class="text-muted">بهای تمام‌شده (COGS - ۵۱)</small>
+                    <h4 class="fw-bold font-monospace mt-1 mb-0" id="pnlCogs" dir="ltr">0</h4>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card card-default p-3 border-start border-4 border-danger">
+                    <small class="text-muted">هزینه‌های اجرایی پروژه (۵۲)</small>
+                    <h4 class="fw-bold font-monospace mt-1 mb-0" id="pnlExpenses" dir="ltr">0</h4>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card card-default p-3 border-start border-4 border-success bg-success-subtle">
+                    <small class="text-success fw-bold">سود (زیان) خالص دوره (ریال)</small>
+                    <h4 class="fw-bold font-monospace text-success mt-1 mb-0" id="pnlNetProfit" dir="ltr">0</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+        const initAccId = '@initialAccountId';
+        const initBankId = '@initialBankAccountId';
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) {
+            return Number(n || 0).toLocaleString('en-US');
+        }
+
+        async function initReports() {
+            try {
+                const [accRes, bankRes] = await Promise.all([
+                    fetch(`${apiBase}/Accounting/Accounts`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/BankAccount/GetAll`, { headers: getAuthHeaders() })
+                ]);
+                const accs = (await accRes.json()).data || [];
+                const banks = (await bankRes.json()).data || [];
+
+                const cmbAcc = document.getElementById('cmbLedgerAccount');
+                cmbAcc.innerHTML = '<option value="">همه حساب‌ها</option>' +
+                    accs.map(a => `<option value="${a.id}" ${String(a.id) === initAccId ? 'selected' : ''}>${a.code} - ${a.title}</option>`).join('');
+
+                const cmbBank = document.getElementById('cmbLedgerBank');
+                cmbBank.innerHTML = '<option value="">همه بانک‌ها و صندوق‌ها</option>' +
+                    banks.map(b => `<option value="${b.id}" ${String(b.id) === initBankId ? 'selected' : ''}>${b.title}</option>`).join('');
+            } catch (e) { console.error(e); }
+
+            loadTrialBalance();
+            loadLedger();
+            loadProfitAndLoss();
+        }
+
+        async function loadTrialBalance() {
+            const tbody = document.getElementById('tbBody');
+            try {
+                const res = await fetch(`${apiBase}/Accounting/TrialBalance`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const rows = json.data || [];
+                let td = 0, tc = 0, bd = 0, bc = 0;
+
+                if (rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">داده‌ای برای تراز آزمایشی یافت نشد.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = rows.map(r => {
+                    td += r.turnoverDebit || 0;
+                    tc += r.turnoverCredit || 0;
+                    bd += r.balanceDebit || 0;
+                    bc += r.balanceCredit || 0;
+                    return `
+                        <tr style="cursor:pointer;" onclick="openAccountLedger(${r.accountId})" title="کلیک برای مشاهده ریز گردش این حساب">
+                            <td class="fw-bold font-monospace text-primary" dir="ltr">${r.accountCode}</td>
+                            <td class="fw-bold">${r.accountTitle}</td>
+                            <td class="text-end font-monospace" dir="ltr">${formatNum(r.turnoverDebit)}</td>
+                            <td class="text-end font-monospace" dir="ltr">${formatNum(r.turnoverCredit)}</td>
+                            <td class="text-end font-monospace fw-bold bg-info-subtle" dir="ltr">${formatNum(r.balanceDebit)}</td>
+                            <td class="text-end font-monospace fw-bold bg-info-subtle" dir="ltr">${formatNum(r.balanceCredit)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                document.getElementById('tbSumTurnDebit').textContent = formatNum(td);
+                document.getElementById('tbSumTurnCredit').textContent = formatNum(tc);
+                document.getElementById('tbSumBalDebit').textContent = formatNum(bd);
+                document.getElementById('tbSumBalCredit').textContent = formatNum(bc);
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">خطا در محاسبه تراز آزمایشی</td></tr>';
+            }
+        }
+
+        function openAccountLedger(accountId) {
+            document.getElementById('cmbLedgerAccount').value = String(accountId);
+            document.getElementById('cmbLedgerBank').value = '';
+            bootstrap.Tab.getOrCreateInstance(document.getElementById('ledger-tab')).show();
+            loadLedger();
+        }
+
+        async function loadLedger() {
+            const tbody = document.getElementById('ledgerBody');
+            const accId = document.getElementById('cmbLedgerAccount').value;
+            const bankId = document.getElementById('cmbLedgerBank').value;
+            const params = new URLSearchParams();
+            if (accId) params.append('accountId', accId);
+            if (bankId) params.append('bankAccountId', bankId);
+
+            try {
+                const res = await fetch(`${apiBase}/Accounting/Ledger?${params.toString()}`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const rows = json.data || [];
+
+                if (rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">گردشی برای فیلتر انتخاب‌شده یافت نشد.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = rows.map(tx => {
+                    const dStr = tx.voucherDate ? new Date(tx.voucherDate).toLocaleDateString('fa-IR') : '';
+                    const bal = tx.runningBalance || 0;
+                    const diag = bal > 0 ? '<span class="text-primary fw-bold">بد</span>' : bal < 0 ? '<span class="text-warning fw-bold">بس</span>' : '<span class="text-muted">تسویه</span>';
+                    return `
+                        <tr>
+                            <td class="fw-bold font-monospace text-primary">#${tx.voucherNumber}</td>
+                            <td>${dStr}</td>
+                            <td><span class="font-monospace text-primary">${tx.accountCode}</span> - ${tx.accountTitle}</td>
+                            <td>
+                                <div>${tx.description || ''}</div>
+                                <small class="text-muted">
+                                    ${tx.bankAccountTitle ? `بانک: ${tx.bankAccountTitle} ` : ''}
+                                    ${tx.customerName ? `مشتری: ${tx.customerName} ` : ''}
+                                    ${tx.supplierName ? `تأمین‌کننده: ${tx.supplierName} ` : ''}
+                                    ${tx.projectTitle ? `پروژه: ${tx.projectTitle}` : ''}
+                                </small>
+                            </td>
+                            <td class="text-end font-monospace" dir="ltr">${formatNum(tx.debit)}</td>
+                            <td class="text-end font-monospace" dir="ltr">${formatNum(tx.credit)}</td>
+                            <td class="text-end font-monospace fw-bold bg-light" dir="ltr">${formatNum(Math.abs(bal))}</td>
+                            <td class="text-center bg-light">${diag}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">خطا در دریافت گردش حساب</td></tr>';
+            }
+        }
+
+        async function loadProfitAndLoss() {
+            try {
+                const res = await fetch(`${apiBase}/Accounting/ProfitAndLoss`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const d = json.data || {};
+                document.getElementById('pnlNetSales').textContent = formatNum(d.netSalesRevenue || d.totalRevenue || 0);
+                document.getElementById('pnlCogs').textContent = formatNum(d.totalCostOfGoodsSold || 0);
+                document.getElementById('pnlExpenses').textContent = formatNum(d.totalOperatingExpenses || 0);
+                document.getElementById('pnlNetProfit').textContent = formatNum(d.netProfitOrLoss || 0);
+            } catch (err) { console.error(err); }
+        }
+
+        document.addEventListener('DOMContentLoaded', initReports);
+    </script>
+}

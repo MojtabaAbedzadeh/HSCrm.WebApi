@@ -1,0 +1,264 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "درختواره و کدینگ حساب‌ها";
+    ViewData["selected"] = "accounting_accounts";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>درختواره و کدینگ حساب‌های حسابداری</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            حسابداری و کدینگ حساب‌ها
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-success" onclick="seedDefaultAccounts()">
+            <i class="mdi mdi-database-plus me-1"></i>ایجاد خودکار حساب‌های استاندارد پیش‌فرض
+        </button>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+            <i class="mdi mdi-plus me-1"></i>تعریف سرفصل حسابداری جدید
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card card-default">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">فهرست سرفصل‌های حسابداری (گروه، کل و معین)</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <input type="text" id="txtSearchAccount" class="form-control form-control-sm" placeholder="جستجوی کد یا عنوان حساب..." oninput="renderAccountsTable()" style="width:240px;" />
+                    <select id="cmbCategoryFilter" class="form-select form-select-sm" onchange="renderAccountsTable()" style="width:170px;">
+                        <option value="">همه طبقات حساب</option>
+                        <option value="1">دارایی (Asset)</option>
+                        <option value="2">بدهی (Liability)</option>
+                        <option value="3">سرمایه (Equity)</option>
+                        <option value="4">درآمد / فروش (Revenue)</option>
+                        <option value="5">هزینه / بهای تمام‌شده (Expense)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle" id="tblAccounts">
+                        <thead class="table-light">
+                            <tr>
+                                <th>کد حساب</th>
+                                <th>عنوان سرفصل</th>
+                                <th>سطح حساب</th>
+                                <th>طبقه اصلی (Category)</th>
+                                <th>ماهیت حساب (Nature)</th>
+                                <th>نوع سرفصل</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="accountsTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">در حال بارگذاری کدینگ حساب‌ها...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Account -->
+<div class="modal fade" id="addAccountModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تعریف سرفصل حسابداری جدید</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="frmAddAccount">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">کد حساب <span class="text-danger">*</span></label>
+                            <input type="text" id="accCode" class="form-control" placeholder="مثال: 1108" required dir="ltr" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">سطح حساب</label>
+                            <select id="accLevel" class="form-select">
+                                <option value="3" selected>حساب معین (Subsidiary)</option>
+                                <option value="2">حساب کل (General)</option>
+                                <option value="1">گروه حساب (Group)</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">عنوان فارسی حساب <span class="text-danger">*</span></label>
+                            <input type="text" id="accTitle" class="form-control" placeholder="مثال: تنخواه گردان کارگاه" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">طبقه اصلی (Category)</label>
+                            <select id="accCategory" class="form-select">
+                                <option value="1">دارایی (Asset)</option>
+                                <option value="2">بدهی (Liability)</option>
+                                <option value="3">حقوق صاحبان سهام (Equity)</option>
+                                <option value="4">درآمد / فروش (Revenue)</option>
+                                <option value="5">هزینه / بهای تمام‌شده (Expense)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">ماهیت حساب (Nature)</label>
+                            <select id="accNature" class="form-select">
+                                <option value="1">بدهکار (DebitOnly)</option>
+                                <option value="2">بستانکار (CreditOnly)</option>
+                                <option value="3">شناور (Both)</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">توضیحات</label>
+                            <textarea id="accDescription" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="saveNewAccount()">ثبت و ذخیره سرفصل</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+        let allAccounts = [];
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        const categoryLabels = {
+            1: 'دارایی (Asset)',
+            2: 'بدهی (Liability)',
+            3: 'سرمایه (Equity)',
+            4: 'درآمد / فروش (Revenue)',
+            5: 'هزینه / بهای تمام‌شده (Expense)'
+        };
+
+        const natureLabels = {
+            1: 'بدهکار',
+            2: 'بستانکار',
+            3: 'شناور (بد/بس)'
+        };
+
+        const levelLabels = {
+            1: 'گروه حساب',
+            2: 'حساب کل',
+            3: 'حساب معین'
+        };
+
+        async function loadAccounts() {
+            try {
+                const res = await fetch(`${apiBase}/Accounting/Accounts`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                allAccounts = json.data || [];
+                renderAccountsTable();
+            } catch (err) {
+                console.error(err);
+                document.getElementById('accountsTableBody').innerHTML =
+                    '<tr><td colspan="7" class="text-center text-danger py-4">خطا در دریافت فهرست حساب‌ها از سرور</td></tr>';
+            }
+        }
+
+        function renderAccountsTable() {
+            const q = (document.getElementById('txtSearchAccount').value || '').trim();
+            const cat = document.getElementById('cmbCategoryFilter').value;
+            const tbody = document.getElementById('accountsTableBody');
+
+            const filtered = allAccounts.filter(a => {
+                const matchQ = !q || (a.code && a.code.includes(q)) || (a.title && a.title.includes(q));
+                const matchCat = !cat || String(a.category) === cat;
+                return matchQ && matchCat;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">سرفصلی یافت نشد.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(a => `
+                <tr>
+                    <td class="fw-bold font-monospace text-primary" dir="ltr">${a.code}</td>
+                    <td class="fw-bold">${a.title}</td>
+                    <td>${levelLabels[a.level] || 'معین'}</td>
+                    <td><span class="badge bg-info text-dark">${categoryLabels[a.category] || a.category}</span></td>
+                    <td>${natureLabels[a.nature] || a.nature}</td>
+                    <td>
+                        <span class="badge ${a.isSystemAccount ? 'bg-secondary' : 'bg-success'}">
+                            ${a.isSystemAccount ? 'سیستمی (پیش‌فرض)' : 'تعریف کاربر'}
+                        </span>
+                    </td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-primary" href="/AdminArea/Accounting/Reports?accountId=${a.id}&tab=ledger">
+                            مشاهده گردش معین
+                        </a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function seedDefaultAccounts() {
+            try {
+                const res = await fetch(`${apiBase}/Accounting/SeedDefaultAccounts`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ایجاد حساب‌های پیش‌فرض');
+                await swal.fire({ title: 'موفقیت', text: json.message || 'حساب‌های پیش‌فرض ایجاد شدند', icon: 'success', confirmButtonText: 'باشه' });
+                loadAccounts();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        async function saveNewAccount() {
+            const payload = {
+                code: document.getElementById('accCode').value.trim(),
+                title: document.getElementById('accTitle').value.trim(),
+                level: Number(document.getElementById('accLevel').value),
+                category: Number(document.getElementById('accCategory').value),
+                nature: Number(document.getElementById('accNature').value),
+                description: document.getElementById('accDescription').value.trim() || null
+            };
+            if (!payload.code || !payload.title) {
+                swal.fire({ title: 'هشدار', text: 'کد و عنوان حساب الزامی است.', icon: 'warning', confirmButtonText: 'باشه' });
+                return;
+            }
+            try {
+                const res = await fetch(`${apiBase}/Accounting/CreateAccount`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ثبت سرفصل');
+                await swal.fire({ title: 'ثبت موفق', text: 'سرفصل حسابداری جدید با موفقیت ایجاد شد.', icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('addAccountModal'))?.hide();
+                document.getElementById('frmAddAccount').reset();
+                loadAccounts();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadAccounts);
+    </script>
+}

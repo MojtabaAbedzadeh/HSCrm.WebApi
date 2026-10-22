@@ -1,0 +1,364 @@
+﻿@{
+    ViewData["AdminTitle"] = "داشبورد جامع مدیریتی و مالی";
+    ViewData["selected"] = "dashboard";
+    string ApiAddress = ViewBag.ApiAddress;
+}
+
+<div class="breadcrumb-wrapper d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="fw-bold">داشبورد جامع مدیریتی، حسابداری و خزانه‌داری</h1>
+        <p class="breadcrumbs mb-0">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            <span>نمای ۳۶۰ درجه وضعیت مالی مجموعه</span>
+        </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="/AdminArea/Invoice/AddSaleInvoice" class="btn btn-sm btn-primary">
+            <i class="mdi mdi-plus me-1"></i>ثبت فاکتور فروش
+        </a>
+        <a href="/AdminArea/Receipt/Index" class="btn btn-sm btn-success">
+            <i class="mdi mdi-cash-plus me-1"></i>ثبت دریافت
+        </a>
+        <a href="/AdminArea/Payment/Index" class="btn btn-sm btn-danger">
+            <i class="mdi mdi-cash-minus me-1"></i>ثبت پرداخت
+        </a>
+        <a href="/AdminArea/Accounting/Vouchers" class="btn btn-sm btn-dark">
+            <i class="mdi mdi-book-open-page-variant me-1"></i>اسناد حسابداری
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadDashboardData()">
+            <i class="mdi mdi-refresh me-1"></i>بروزرسانی زنده
+        </button>
+    </div>
+</div>
+
+@if (ViewBag.FiscalYearStatus == "1")
+{
+    <div class="alert alert-danger d-flex justify-content-between align-items-center mb-4" role="alert">
+        <div>
+            <strong><i class="mdi mdi-alert-circle-outline me-1"></i>هشدار پایان تاریخ سال مالی:</strong>
+            تاریخ سال مالی جاری به پایان رسیده است اما سال مالی همچنان باز می‌باشد. لطفاً عملیات بستن سال مالی و صدور سند اختتامیه/افتتاحیه را انجام دهید.
+        </div>
+        <a href="/AdminArea/FiscalYear/Index" class="btn btn-sm btn-danger">بستن سال مالی (فاز ۶)</a>
+    </div>
+}
+else if (ViewBag.FiscalYearStatus == "2" || (ViewBag.FiscalYearStatus != null && ViewBag.FiscalYearStatus != "0"))
+{
+    <div class="alert alert-primary d-flex justify-content-between align-items-center mb-4" role="alert">
+        <div>
+            <strong><i class="mdi mdi-lock-outline me-1"></i>سال مالی بسته شده است:</strong>
+            سال مالی انتخاب‌شده بسته می‌باشد و سیستم در حالت «فقط مشاهده گزارشات» قرار دارد.
+        </div>
+        <a href="/AdminArea/FiscalYear/Index" class="btn btn-sm btn-primary">مدیریت سال‌های مالی</a>
+    </div>
+}
+
+<!-- ردیف اول: ۶ کارت شاخص کلیدی عملکرد مالی (KPIs) -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-4 border-primary">
+            <div class="card-body p-3">
+                <div class="text-muted small mb-1">فروش خالص دوره</div>
+                <h5 class="fw-bold text-primary mb-1 font-monospace" id="kpiNetSales">0</h5>
+                <small class="text-muted" id="kpiGrossMargin">حاشیه سود ناخالص: 0%</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-4 border-warning">
+            <div class="card-body p-3">
+                <div class="text-muted small mb-1">بهای تمام‌شده (COGS)</div>
+                <h5 class="fw-bold text-dark mb-1 font-monospace" id="kpiCogs">0</h5>
+                <small class="text-muted">کاردکس ریالی انبار</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-4 border-success">
+            <div class="card-body p-3">
+                <div class="text-muted small mb-1">سود / زیان خالص</div>
+                <h5 class="fw-bold text-success mb-1 font-monospace" id="kpiNetIncome">0</h5>
+                <small class="text-muted" id="kpiExpenseTotal">کل هزینه‌ها: 0</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-4 border-info">
+            <div class="card-body p-3">
+                <div class="text-muted small mb-1">موجودی بانک‌ها و صندوق</div>
+                <h5 class="fw-bold text-info mb-1 font-monospace" id="kpiBankBalance">0</h5>
+                <small class="text-muted" id="kpiBankCount">0 حساب فعال</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-4 border-danger">
+            <div class="card-body p-3">
+                <div class="text-muted small mb-1">مطالبات از مشتریان</div>
+                <h5 class="fw-bold text-danger mb-1 font-monospace" id="kpiCustomerReceivables">0</h5>
+                <small class="text-muted" id="kpiOverdueReceivables">معوق +۹۰ روز: 0</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-4 border-secondary">
+            <div class="card-body p-3">
+                <div class="text-muted small mb-1">بدهی به تأمین‌کنندگان</div>
+                <h5 class="fw-bold text-secondary mb-1 font-monospace" id="kpiSupplierPayables">0</h5>
+                <small class="text-muted" id="kpiPendingCheques">چک‌های در جریان: 0</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ردیف دوم: تحلیل سنی مطالبات (FIFO) و خلاصه سود و زیان -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-7">
+        <div class="card card-default shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="mdi mdi-chart-timeline-variant me-1 text-primary"></i>توزیع سنی مطالبات مشتریان (روش FIFO — فاز ۷)</h5>
+                <a href="/AdminArea/Accounting/AgingAndStatements" class="btn btn-xs btn-outline-primary">مشاهده گزارش کامل</a>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3" style="height: 24px;" id="agingProgressBar">
+                    <div class="progress-bar bg-success" style="width: 20%">جاری (۰-۳۰)</div>
+                    <div class="progress-bar bg-info" style="width: 20%">۳۱-۶۰</div>
+                    <div class="progress-bar bg-warning text-dark" style="width: 20%">۶۱-۹۰</div>
+                    <div class="progress-bar bg-orange" style="width: 20%; background-color:#fd7e14;">۹۱-۱۲۰</div>
+                    <div class="progress-bar bg-danger" style="width: 20%">+۱۲۰ روز</div>
+                </div>
+                <div class="row g-2 text-center small" id="agingBucketsSummary">
+                    <div class="col"><div class="p-2 rounded bg-light border"><div class="text-muted">۰ تا ۳۰ روز</div><strong class="text-success font-monospace" id="agB1">0</strong></div></div>
+                    <div class="col"><div class="p-2 rounded bg-light border"><div class="text-muted">۳۱ تا ۶۰ روز</div><strong class="text-info font-monospace" id="agB2">0</strong></div></div>
+                    <div class="col"><div class="p-2 rounded bg-light border"><div class="text-muted">۶۱ تا ۹۰ روز</div><strong class="text-warning font-monospace" id="agB3">0</strong></div></div>
+                    <div class="col"><div class="p-2 rounded bg-light border"><div class="text-muted">۹۱ تا ۱۲۰ روز</div><strong style="color:#fd7e14" class="font-monospace" id="agB4">0</strong></div></div>
+                    <div class="col"><div class="p-2 rounded bg-light border"><div class="text-muted">بیش از ۱۲۰ روز</div><strong class="text-danger font-monospace" id="agB5">0</strong></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card card-default shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="mdi mdi-Bank me-1 text-info"></i>موجودی تفکیکی حساب‌های بانکی و صندوق</h5>
+                <a href="/AdminArea/BankAccount/Index" class="btn btn-xs btn-outline-info">مدیریت بانک‌ها</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 210px; overflow-y: auto;">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>عنوان بانک / صندوق</th>
+                                <th>شماره حساب</th>
+                                <th class="text-end">مانده فعلی (ریال)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashBankListBody">
+                            <tr><td colspan="3" class="text-center text-muted py-3">در حال بارگذاری...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ردیف سوم: چک‌های در آستانه سررسید و مشتریان دارای مطالبات معوق -->
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card card-default shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="mdi mdi-checkbook me-1 text-warning"></i>چک‌های در جریان و نزدیک به سررسید (فاز ۴)</h5>
+                <a href="/AdminArea/Cheque/Index" class="btn btn-xs btn-outline-dark">مدیریت چک‌ها و راس‌گیری</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle small">
+                        <thead class="table-light">
+                            <tr>
+                                <th>شماره چک / صیادی</th>
+                                <th>نوع</th>
+                                <th>بانک</th>
+                                <th>سررسید</th>
+                                <th class="text-end">مبلغ (ریال)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashChequesBody">
+                            <tr><td colspan="5" class="text-center text-muted py-3">در حال بارگذاری...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card card-default shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="mdi mdi-account-alert-outline me-1 text-danger"></i>مشتریان دارای بیشترین مانده بدهی</h5>
+                <a href="/AdminArea/Accounting/AgingAndStatements?partyType=1" class="btn btn-xs btn-outline-danger">تحلیل سنی کامل</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle small">
+                        <thead class="table-light">
+                            <tr>
+                                <th>نام مشتری</th>
+                                <th class="text-end">مانده کل بدهی</th>
+                                <th class="text-end">معوق (+۹۰ روز)</th>
+                                <th class="text-center">میانگین سن</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashTopCustomersBody">
+                            <tr><td colspan="5" class="text-center text-muted py-3">در حال بارگذاری...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const dashApiBase = '@ApiAddress'.replace(/\/+$/, '');
+        const dashToken = '@ViewBag.Token';
+        const dashTenantId = '@ViewBag.TenantId';
+
+        function fmtNum(n) {
+            return Number(n || 0).toLocaleString('fa-IR');
+        }
+
+        async function loadDashboardData() {
+            const headers = { 'Authorization': 'Bearer ' + dashToken };
+            try {
+                const [pnlRes, bankRes, chequeRes, custAgingRes, suppAgingRes] = await Promise.all([
+                    fetch(`${dashApiBase}/Accounting/ProfitAndLoss`, { headers }).then(r => r.json()).catch(() => ({ data: null })),
+                    fetch(`${dashApiBase}/BankAccount/GetAll?tenantId=${dashTenantId}`, { headers }).then(r => r.json()).catch(() => ({ data: [] })),
+                    fetch(`${dashApiBase}/Cheque/GetAll`, { headers }).then(r => r.json()).catch(() => ({ data: [] })),
+                    fetch(`${dashApiBase}/Accounting/AgingReport?partyType=1&includeChequeAccounts=true`, { headers }).then(r => r.json()).catch(() => ({ data: null })),
+                    fetch(`${dashApiBase}/Accounting/AgingReport?partyType=2&includeChequeAccounts=true`, { headers }).then(r => r.json()).catch(() => ({ data: null }))
+                ]);
+
+                // 1. P&L KPIs
+                const pnl = pnlRes.data || {};
+                const netSales = pnl.netSales ?? pnl.totalRevenue ?? 0;
+                const cogs = pnl.costOfGoodsSold ?? pnl.totalCogs ?? 0;
+                const grossProfit = pnl.grossProfit ?? (netSales - cogs);
+                const expenses = pnl.totalOperatingExpenses ?? pnl.totalExpenses ?? 0;
+                const netIncome = pnl.netIncome ?? (grossProfit - expenses);
+                const marginPct = netSales > 0 ? Math.round((grossProfit / netSales) * 100) : 0;
+
+                document.getElementById('kpiNetSales').textContent = fmtNum(netSales);
+                document.getElementById('kpiCogs').textContent = fmtNum(cogs);
+                document.getElementById('kpiNetIncome').textContent = fmtNum(netIncome);
+                document.getElementById('kpiNetIncome').className = 'fw-bold mb-1 font-monospace ' + (netIncome >= 0 ? 'text-success' : 'text-danger');
+                document.getElementById('kpiGrossMargin').textContent = `حاشیه سود ناخالص: ${marginPct}%`;
+                document.getElementById('kpiExpenseTotal').textContent = `کل هزینه‌ها: ${fmtNum(expenses)}`;
+
+                // 2. Bank Accounts
+                const banks = bankRes.data || bankRes || [];
+                const totalBankBal = Array.isArray(banks) ? banks.reduce((s, b) => s + (b.currentBalance ?? b.initialBalance ?? 0), 0) : 0;
+                document.getElementById('kpiBankBalance').textContent = fmtNum(totalBankBal);
+                document.getElementById('kpiBankCount').textContent = `${Array.isArray(banks) ? banks.length : 0} حساب بانکی/صندوق`;
+
+                const bankTbody = document.getElementById('dashBankListBody');
+                if (!Array.isArray(banks) || banks.length === 0) {
+                    bankTbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">هنوز حساب بانکی تعریف نشده است.</td></tr>';
+                } else {
+                    bankTbody.innerHTML = banks.map(b => `
+                        <tr>
+                            <td class="fw-bold">${b.bankName || b.title || 'حساب بانکی'}</td>
+                            <td class="font-monospace text-muted small">${b.accountNumber || '-'}</td>
+                            <td class="text-end fw-bold font-monospace text-primary">${fmtNum(b.currentBalance ?? b.initialBalance ?? 0)}</td>
+                        </tr>
+                    `).join('');
+                }
+
+                // 3. Customer Aging & Receivables
+                const custAging = custAgingRes.data || {};
+                const custRows = custAging.rows || [];
+                const totalRec = custAging.totalReceivableOrPayable ?? custRows.reduce((s, r) => s + (r.totalBalance || 0), 0);
+                const b1 = custAging.totalBucket0To30 ?? custRows.reduce((s, r) => s + (r.bucket0To30 || 0), 0);
+                const b2 = custAging.totalBucket31To60 ?? custRows.reduce((s, r) => s + (r.bucket31To60 || 0), 0);
+                const b3 = custAging.totalBucket61To90 ?? custRows.reduce((s, r) => s + (r.bucket61To90 || 0), 0);
+                const b4 = custAging.totalBucket91To120 ?? custRows.reduce((s, r) => s + (r.bucket91To120 || 0), 0);
+                const b5 = custAging.totalBucketOver120 ?? custRows.reduce((s, r) => s + (r.bucketOver120 || 0), 0);
+
+                document.getElementById('kpiCustomerReceivables').textContent = fmtNum(totalRec);
+                document.getElementById('kpiOverdueReceivables').textContent = `معوق +۹۰ روز: ${fmtNum(b4 + b5)}`;
+                document.getElementById('agB1').textContent = fmtNum(b1);
+                document.getElementById('agB2').textContent = fmtNum(b2);
+                document.getElementById('agB3').textContent = fmtNum(b3);
+                document.getElementById('agB4').textContent = fmtNum(b4);
+                document.getElementById('agB5').textContent = fmtNum(b5);
+
+                if (totalRec > 0) {
+                    const p1 = Math.max(5, Math.round((b1 / totalRec) * 100));
+                    const p2 = Math.max(5, Math.round((b2 / totalRec) * 100));
+                    const p3 = Math.max(5, Math.round((b3 / totalRec) * 100));
+                    const p4 = Math.max(5, Math.round((b4 / totalRec) * 100));
+                    const p5 = Math.max(5, Math.round((b5 / totalRec) * 100));
+                    document.getElementById('agingProgressBar').innerHTML = `
+                        <div class="progress-bar bg-success" style="width:${p1}%">${p1}%</div>
+                        <div class="progress-bar bg-info" style="width:${p2}%">${p2}%</div>
+                        <div class="progress-bar bg-warning text-dark" style="width:${p3}%">${p3}%</div>
+                        <div class="progress-bar" style="width:${p4}%;background-color:#fd7e14;">${p4}%</div>
+                        <div class="progress-bar bg-danger" style="width:${p5}%">${p5}%</div>
+                    `;
+                }
+
+                const topCustBody = document.getElementById('dashTopCustomersBody');
+                if (custRows.length === 0) {
+                    topCustBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">هیچ مشتری بدهکاری یافت نشد.</td></tr>';
+                } else {
+                    topCustBody.innerHTML = custRows.slice(0, 6).map(r => {
+                        const overdue = (r.bucket91To120 || 0) + (r.bucketOver120 || 0);
+                        return `<tr>
+                            <td class="fw-bold">${r.partyName}</td>
+                            <td class="text-end font-monospace fw-bold">${fmtNum(r.totalBalance)}</td>
+                            <td class="text-end font-monospace ${overdue > 0 ? 'text-danger fw-bold' : 'text-muted'}">${fmtNum(overdue)}</td>
+                            <td class="text-center"><span class="badge bg-light text-dark border">${r.averageAgeDays || 0} روز</span></td>
+                            <td>
+                                <a href="/AdminArea/Accounting/AgingAndStatements?partyType=1&partyId=${r.partyId}" class="btn btn-xs btn-outline-primary">
+                                    صورت‌حساب ۳۶۰
+                                </a>
+                            </td>
+                        </tr>`;
+                    }).join('');
+                }
+
+                // 4. Supplier Payables & Cheques
+                const suppAging = suppAgingRes.data || {};
+                const suppRows = suppAging.rows || [];
+                const totalPay = suppAging.totalReceivableOrPayable ?? suppRows.reduce((s, r) => s + (r.totalBalance || 0), 0);
+                document.getElementById('kpiSupplierPayables').textContent = fmtNum(totalPay);
+
+                const cheques = chequeRes.data || [];
+                const pendingCheques = cheques.filter(c => c.status === 1 || c.status === 2);
+                document.getElementById('kpiPendingCheques').textContent = `چک‌های در جریان: ${pendingCheques.length} فقره`;
+
+                const chequeTbody = document.getElementById('dashChequesBody');
+                if (pendingCheques.length === 0) {
+                    chequeTbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">چک در جریانی ثبت نشده است.</td></tr>';
+                } else {
+                    chequeTbody.innerHTML = pendingCheques.slice(0, 6).map(c => `
+                        <tr>
+                            <td class="font-monospace fw-bold">${c.chequeNumber} <small class="text-muted d-block">${c.sayadId || ''}</small></td>
+                            <td><span class="badge ${c.type === 1 ? 'bg-success' : 'bg-danger'}">${c.type === 1 ? 'دریافتی' : 'پرداختی'}</span></td>
+                            <td>${c.bankName || '-'}</td>
+                            <td class="font-monospace">${c.dueDateShamsi || (c.dueDate ? c.dueDate.substring(0, 10) : '-')}</td>
+                            <td class="text-end font-monospace fw-bold">${fmtNum(c.amount)}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Dashboard load error:', e);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadDashboardData);
+    </script>
+}

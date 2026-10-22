@@ -1,0 +1,548 @@
+﻿@using HSCrm.BussinessLagic.Tools
+@using HSCrm.Dashboard.Costants
+@model IEnumerable<ExpenseModel>
+
+@{
+    ViewData["AdminTitle"] = "هزینه ها";
+    ViewData["selected"] = "expense_list";
+
+    string ApiAddress = ViewBag.ApiAddress;
+
+    List<ProjetcsDropDown> lstProject = ViewBag.Projects;
+    lstProject.Insert(0, new ProjetcsDropDown { DrId = "0", DrName = "انتخاب پروژه" });
+}
+
+@section styles {
+    <link href="~/assets/plugins/data-tables/datatables.bootstrap5.min.css" rel="stylesheet">
+    <link href="~/assets/plugins/data-tables/responsive.datatables.min.css" rel="stylesheet">
+    <link href="~/assets/css/ekka.css" id="ekka-css" rel="stylesheet">
+    <link href="~/lib/persiandate/persian-datepicker.css" rel="stylesheet" />
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>لیست هزینه ها</h1>
+        <p class="breadcrumbs"><span><a href="index.html">خانه</a></span> <span><i class="mdi mdi-chevron-left"></i></span>هزینه</p>
+    </div>
+    @if (ViewBag.FiscalYearStatus == "0")
+    {
+        <div>
+            @if (User.HasPermission(Permissions.Expenses.Create))
+            {
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addExpense"> افزودن هزینه </button>
+            }
+        </div>
+    }
+</div>
+@if (ViewBag.FiscalYearStatus != "0")
+{
+    <div class="alert alert-primary col-lg-8" role="alert" style="margin-top:40px; color:#084298;">
+        توجه!
+        <br>
+        سال مالی انتخاب شده بسته می باشد! شما فقط قادر به مشاهده گزارشات سیستم هستید.
+    </div>
+}
+<div class="row">
+    <div class="col-12">
+        <div class="ec-vendor-list card card-default">
+            <div class="card-body">
+                <div class="table-responsive-md">
+                    <div id="responsive-data-table_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer">
+                        <table id="responsive-data-table" class="table dataTable no-footer" aria-describedby="responsive-data-table_info">
+                            <thead>
+                                <tr>
+                                    <th>عنوان هزینه</th>
+                                    <th>پروژه</th>
+                                    <th>مبلغ</th>
+                                    <th>تاریخ</th>
+                                    <th>کاربر ثبت کننده</th>
+                                    <th>توضیحات</th>
+                                    <th>فعالیت</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>@item.ExpenseTitle</td>
+                                        <td>@item.Project.ProjectTitle</td>
+                                        <td>@item.Amount.ToString("N0")</td>
+                                        <td>@ConvertDate.ConvertMiladiToShamsi(item.ExpenseDate, "yyyy/MM/dd")</td>
+                                        <td>@item.CreatedBy.UserFirstName @item.CreatedBy.UserLastName</td>
+                                        <td>@item.Description</td>
+                                        <td>
+                                            <div class="btn-group mb-1">
+                                                <button type="button" class="btn btn-outline-success">اطلاعات</button>
+                                                <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-display="static">
+                                                    <span class="sr-only">اطلاعات</span>
+                                                </button>
+                                                @if (ViewBag.FiscalYearStatus == "0")
+                                                {
+                                                    <div class="dropdown-menu">
+                                                        @if (User.HasPermission(Permissions.Expenses.Edit))
+                                                        {
+                                                            <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">
+                                                                ویرایش
+                                                            </a>
+                                                        }
+                                                        @if (User.HasPermission(Permissions.Expenses.Delete))
+                                                        {
+                                                            <a class="dropdown-item" href="#" onclick="deleteExpense(@item.Id)">
+                                                                حذف
+                                                            </a>
+                                                        }
+                                                        <div class="dropdown-divider"></div>
+                                                        <a class="dropdown-item text-info" href="/AdminArea/Accounting/Vouchers?refType=5&refId=@item.Id">
+                                                            <i class="mdi mdi-book-open-page-variant me-1"></i> مشاهده سند حسابداری
+                                                        </a>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="dropdown-menu">
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade modal-add-contact" id="addExpense" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmExpense">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="exampleModalCenterTitle">تعریف هزینه</h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="ExpenseTitle" name="ExpenseTitle" placeholder="عنوان هزینه">
+                                <label for="ExpenseTitle" style="right:0!important; left:unset!important;">عنوان هزینه</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input type="number" class="form-control text-end" id="Amount" name="Amount" placeholder="مبلغ">
+                                <label for="Amount" style="right:0!important; left:unset!important;">مبلغ</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <select id="ProjectId" name="ProjectId" class="form-control text-end" asp-items="@(new SelectList(lstProject, "DrId", "DrName"))">
+                                </select>
+                                <label for="ProjectId" style="right:0!important; left:unset!important;">پروژه</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <select id="Type" name="Type" class="form-control text-end">
+                                    <option value="1">حمل و نقل</option>
+                                    <option value="2">غذا</option>
+                                    <option value="3">هزینه اقامت</option>
+                                    <option value="4">سایر</option>
+                                </select>
+                                <label for="Type" style="right:0!important; left:unset!important;">نوع هزینه</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 form-floating">
+                            <input autocomplete="off" id="ExpenseDate" name="ExpenseDate" class="form-control persian-date text-end" placeholder="تاریخ" />
+                            <label for="ExpenseDate" style="right:0!important; left:unset!important;">تاریخ</label>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <select id="PaymentMethod" name="PaymentMethod" class="form-control text-end">
+                                    <option value="1">نقد (صندوق/تنخواه)</option>
+                                    <option value="2">کارت به کارت / بانکی</option>
+                                    <option value="3">پایا</option>
+                                    <option value="4">ساتنا</option>
+                                    <option value="5">چک پرداختی</option>
+                                    <option value="6">نسیه (بستانکاری تأمین‌کننده)</option>
+                                </select>
+                                <label for="PaymentMethod" style="right:0!important; left:unset!important;">روش پرداخت (صدور سند خودکار)</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 mt-2">
+                            <div class="form-group form-floating">
+                                <select id="BankAccountId" name="BankAccountId" class="form-control text-end">
+                                    <option value="">-- انتخاب حساب بانکی / صندوق --</option>
+                                </select>
+                                <label for="BankAccountId" style="right:0!important; left:unset!important;">حساب بانکی / صندوق پرداخت‌کننده</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 mt-2">
+                            <div class="form-group form-floating">
+                                <select id="SupplierId" name="SupplierId" class="form-control text-end">
+                                    <option value="">-- بدون تأمین‌کننده (اختیاری) --</option>
+                                </select>
+                                <label for="SupplierId" style="right:0!important; left:unset!important;">طرف‌حساب / تأمین‌کننده (در صورت نسیه)</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 mt-2">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="ReferenceNo" name="ReferenceNo" placeholder="شماره پیگیری / فیش">
+                                <label for="ReferenceNo" style="right:0!important; left:unset!important;">شماره پیگیری / فیش</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-12 mt-3">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="Description" name="Description" placeholder="توضیحات">
+                                <label for="Description" style="right:0!important; left:unset!important;">توضیحات</label>
+                            </div>
+                        </div>
+                        <input hidden class="form-control text-end" id="UserId" name="UserId" value="@ViewBag.UserId">
+                        <input hidden class="form-control text-end" id="TenantId" name="TenantId" value="@ViewBag.TenantId">
+                        <div class="col-lg-12 alert" style="color:red">
+                            <span class="text-danger" id="spnValidate"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnExpenseSubmit" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade modal-add-contact" id="editExpense" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmEditExpense">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="exampleModalCenterTitle">ویرایش </h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-6">
+                            <div class="form-group form-floating">
+                                <input id="expenseId" name="expenseId" hidden>
+                                <input class="form-control text-end" id="ExpenseTitleE" name="ExpenseTitleE" placeholder="عنوان هزینه">
+                                <label for="ExpenseTitleE" style="right:0!important; left:unset!important;">عنوان هزینه</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="form-group form-floating">
+                                <input type="number" class="form-control text-end" id="AmountE" name="AmountE" placeholder="مبلغ">
+                                <label for="AmountE" style="right:0!important; left:unset!important;">مبلغ</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 form-floating">
+                            <select id="ProjectIdE" name="ProjectIdE" class="form-control text-end" asp-items="@(new SelectList(lstProject, "DrId", "DrName"))">
+                            </select>
+                            <label for="ProjectIdE" style="right:0!important; left:unset!important;">پروژه</label>
+                        </div>
+                        <div class="col-lg-4 form-floating">
+                            <select id="TypeE" name="TypeE" class="form-control text-end">
+                                <option value="1">حمل و نقل</option>
+                                <option value="2">غذا</option>
+                                <option value="3">هزینه اقامت</option>
+                                <option value="4">سایر</option>
+                            </select>
+                            <label for="TypeE" style="right:0!important; left:unset!important;">نوع هزینه</label>
+                        </div>
+                        <div class="col-lg-4 form-floating">
+                            <input autocomplete="off" id="ExpenseDateE" name="ExpenseDateE" class="form-control persian-date text-end" placeholder="تاریخ" />
+                            <label for="ExpenseDateE" style="right:0!important; left:unset!important;">تاریخ</label>
+                        </div>
+                        <div class="col-lg-12 mt-3">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="DescriptionE" name="DescriptionE" placeholder="توضیحات">
+                                <label for="DescriptionE" style="right:0!important; left:unset!important;">توضیحات</label>
+                            </div>
+                        </div>
+                        <input hidden class="form-control text-end" id="ModifiedByIdE" name="ModifiedByIdE" value="@ViewBag.UserId">
+                        <input hidden class="form-control text-end" id="TenantIdE" name="TenantIdE" value="@ViewBag.TenantId">
+                        <div class="col-lg-12 alert" style="color:red">
+                            <span class="text-danger" id="spnValidate"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnExpenseUpdate" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@section AdminScripts {
+    <script src="~/lib/sweetalert/sweetalert2.min.js"></script>
+    <script src="~/lib/sweetalert/sweetalert2.js"></script>
+    <script src="~/lib/persiandate/persian-date.js"></script>
+    <script src="~/lib/persiandate/persian-datepicker.js"></script>
+
+    <script>
+        $(document).ready(function () {
+            // بارگذاری حساب‌های بانکی و تأمین‌کنندگان برای اتصال خودکار هزینه به سند حسابداری (فاز ۳)
+            $.ajax({
+                type: 'GET',
+                url: '@ApiAddress' + 'BankAccount/GetAll?tenantId=@ViewBag.TenantId',
+                headers: { "Authorization": "Bearer " + "@User.FindFirstValue("Token")" },
+                success: function (res) {
+                    var list = res.data || res || [];
+                    list.forEach(function (b) {
+                        var title = (b.bankName || b.title || 'حساب') + (b.accountNumber ? ' - ' + b.accountNumber : '');
+                        $('#BankAccountId').append('<option value="' + b.id + '">' + title + '</option>');
+                    });
+                }
+            });
+            $.ajax({
+                type: 'GET',
+                url: '@ApiAddress' + 'Supplier/GetByTenant?tenantId=@ViewBag.TenantId',
+                headers: { "Authorization": "Bearer " + "@User.FindFirstValue("Token")" },
+                success: function (res) {
+                    var list = res.data || res || [];
+                    list.forEach(function (s) {
+                        var name = s.supplierFullName || s.name || ('تأمین‌کننده #' + s.id);
+                        $('#SupplierId').append('<option value="' + s.id + '">' + name + '</option>');
+                    });
+                }
+            });
+
+            $('.persian-date').persianDatepicker({
+                format: 'YYYY/MM/DD',
+                autoClose: true,
+                calendarSwitch: {
+                    "enabled": false,
+                    "format": "MMMM"
+                },
+            });
+        })
+    </script>
+
+    <script>
+        $("#btnExpenseSubmit").on('click', function (e) {
+            e.preventDefault();
+            var formData = new FormData($("#frmExpense")[0]);
+            $.ajax({
+                type: 'POST',
+                url: '@ApiAddress' + 'Expense/CreateExpense',
+                processData: false,
+                contentType: false,
+                dataType: "json",
+                data: formData,
+                headers: {
+                    "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                },
+                success: function (xhr) {
+                    if (xhr.statusCode == 200) {
+                                swal.fire({
+            title: "ثبت اطلاعات",
+            text: "ثبت اطلاعات با موفقیت انجام شد!",
+            icon: "success",
+            showCancelButton: false,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        $('#addExpense').modal('hide');
+                        window.location.reload();
+                    }
+                    if (xhr.statusCode == 500) {
+                                 swal.fire({
+            title: "خطا",
+            text: "خطا در سرور!",
+            icon: "warning",
+            showCancelButton: false,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    } else if (xhr.statusCode == 400) {
+                                swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر نیست!",
+            icon: "error",
+            showCancelButton: false,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    }
+                    else if (xhr.statusCode == 409) {
+                                swal.fire({
+            title: "خطا",
+            text: "اطلاعات تکراری می‌باشد!",
+            icon: "error",
+            showCancelButton: false,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    }
+                }
+            });
+        });
+    </script>
+
+    <script>
+        function showUpdateModal(expenseId) {
+            $.ajax({
+                type: 'GET',
+                url: '@ApiAddress' + 'Expense/GetById?expenseId=' + expenseId,
+                dataType: 'json',
+                headers: {
+                    "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                },
+                success: function (xhr) {
+                    const expense = xhr.data[0];
+
+                    $("#expenseId").val(expense.expenseId);
+                    $("#ExpenseTitleE").val(expense.expenseTitle);
+                    $("#ProjectIdE").val(expense.projectId);
+                    $("#TypeE").val(expense.type);
+                    $("#AmountE").val(expense.amount);
+                    $("#DescriptionE").val(expense.description);
+                    $("#TenantIdE").val(expense.tenantId);
+                    $("#ExpenseDateE").val(expense.expenseDate);
+                    $("#PaymentStatusE").val(expense.paymentStatus);
+                    $("#PaidAmountE").val(expense.paidAmount);
+                    $("#PaymentMethodE").val(expense.paymentMethod);
+                    $("#ReferenceNoE").val(expense.referenceNo);
+
+
+                    $("#editExpense").modal('show');
+                }
+            });
+        }
+
+        $("#btnExpenseUpdate").on('click', function (e) {
+            e.preventDefault();
+
+            var model = {
+                expenseId: $("#expenseId").val(),
+                expenseTitle: $("#ExpenseTitleE").val(),
+                projectId: $("#ProjectIdE").val(),
+                tenantId: $("#TenantIdE").val(),
+                type: parseInt($("#TypeE").val()),
+                expenseDate: $("#ExpenseDateE").val(),
+                amount: $("#AmountE").val(),
+                description: $("#DescriptionE").val(),
+                paymentStatus: $("#PaymentStatusE").val(),
+                paidAmount: $("#PaidAmountE").val(),
+                paymentMethod: $("#PaymentMethodE").val(),
+                referenceNo: $("#ReferenceNoE").val(),
+                modifiedById: $("#ModifiedByIdE").val()
+            }
+
+            $.ajax({
+                type: 'PUT',
+                url: '@ApiAddress' + 'Expense/UpdateExpense',
+                dataType: 'Json',
+                contentType: 'application/json',
+                processData: false,
+                data: JSON.stringify(model),
+                headers: {
+                    "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                },
+                success: function (xhr) {
+                    if (xhr.statusCode == '200') {
+                                swal.fire({
+            title: "ویرایش اطلاعات",
+            text: "ویرایش هزینه با موفقیت انجام شد!",
+            icon: "success",
+            showCancelButton: false,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        window.location.reload();
+                    }
+                    if (xhr.statusCode == '400') {
+                                swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر!",
+            icon: "error",
+            showCancelButton: false,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    } else if (xhr.statusCode == '409') {
+                               swal.fire({
+            title: "خطا",
+            text: "اطلاعات تکراری می‌باشد!",
+            icon: "error",
+            showCancelButton: false,
+            allowOutsideClick: false,
+            confirmButtonColor: "green",
+            confirmButtonText: "باشه",
+            timer: 1500
+        });
+                        return false;
+                    }
+                }
+            });
+        })
+    </script>
+
+    <script>
+                function calcExpenseRemaining() {
+            var amount = parseFloat($("#Amount").val() || 0);
+            var paidAmount = parseFloat($("#PaidAmount").val() || 0);
+
+            if ($("#PaymentStatus").val() == "0") {
+                $("#PaidAmount").val(0);
+                $("#PaymentMethod").val("");
+                $("#ReferenceNo").val("");
+                paidAmount = 0;
+            }
+
+            if ($("#PaymentStatus").val() == "2") {
+                $("#PaidAmount").val(amount);
+                paidAmount = amount;
+            }
+
+            if (paidAmount > amount) {
+                $("#PaidAmount").val(amount);
+                paidAmount = amount;
+            }
+
+            $("#RemainingAmount").val(amount - paidAmount);
+        }
+
+        $("#Amount, #PaidAmount, #PaymentStatus").on("input change", function () {
+            calcExpenseRemaining();
+        });
+
+        $("#PaymentStatus").on("change", function () {
+            var status = $(this).val();
+
+            if (status == "0") {
+                $("#PaidAmount").val(0);
+                $("#PaymentMethod").val("");
+                $("#ReferenceNo").val("");
+            }
+            else if (status == "2") {
+                $("#PaidAmount").val($("#Amount").val() || 0);
+            }
+
+            calcExpenseRemaining();
+        });
+
+    </script>
+}

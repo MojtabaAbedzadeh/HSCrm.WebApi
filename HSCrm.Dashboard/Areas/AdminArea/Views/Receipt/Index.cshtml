@@ -1,0 +1,184 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "دریافت‌ها و واریزی‌های مشتریان";
+    ViewData["selected"] = "receipts_list";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>دریافت‌ها و واریزی‌های خزانه (Receipts)</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            دریافت‌ها و واریز به بانک
+        </p>
+    </div>
+    <div>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addReceiptModal">
+            <i class="mdi mdi-plus me-1"></i>ثبت دریافت وجه جدید از مشتری
+        </button>
+    </div>
+</div>
+
+<div class="card card-default">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>شناسه</th>
+                        <th>فاکتور فروش</th>
+                        <th>مبلغ دریافتی (ریال)</th>
+                        <th>تاریخ دریافت</th>
+                        <th>روش دریافت</th>
+                        <th>حساب بانکی مقصد</th>
+                        <th>شماره پیگیری / مرجع</th>
+                    </tr>
+                </thead>
+                <tbody id="receiptsTableBody">
+                    <tr><td colspan="7" class="text-center py-4">در حال بارگذاری دریافت‌ها...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Receipt -->
+<div class="modal fade" id="addReceiptModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">ثبت دریافت وجه از مشتری (+ صدور خودکار سند حسابداری)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="frmAddReceipt">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-bold">انتخاب فاکتور فروش <span class="text-danger">*</span></label>
+                            <select id="recSalesInvoiceId" class="form-select" required></select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">واریز به حساب بانکی / صندوق شرکت <span class="text-danger">*</span></label>
+                            <select id="recBankAccountId" class="form-select" required></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">مبلغ دریافتی (ریال) <span class="text-danger">*</span></label>
+                            <input type="number" id="recAmount" class="form-control" min="1" required dir="ltr" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">تاریخ دریافت <span class="text-danger">*</span></label>
+                            <input type="date" id="recDate" class="form-control" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">روش دریافت</label>
+                            <select id="recMethod" class="form-select">
+                                <option value="BankTransfer">حواله بانکی (پایا/ساتنا)</option>
+                                <option value="CardToCard">کارت به کارت</option>
+                                <option value="POS">دستگاه کارتخوان (POS)</option>
+                                <option value="Cash">نقدی</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">شماره پیگیری / فیش</label>
+                            <input type="text" id="recRefNo" class="form-control" dir="ltr" />
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="saveReceipt()">ثبت دریافت و صدور سند</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) { return Number(n || 0).toLocaleString('en-US'); }
+
+        async function initReceipts() {
+            document.getElementById('recDate').value = new Date().toISOString().split('T')[0];
+            try {
+                const [recRes, invRes, bankRes] = await Promise.all([
+                    fetch(`${apiBase}/Receipt/GetReceipts`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/SalesInvoice/GetSalesInvoices`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/BankAccount/GetAll`, { headers: getAuthHeaders() })
+                ]);
+                const receipts = (await recRes.json()).data || [];
+                const invoices = (await invRes.json()).data || [];
+                const banks = (await bankRes.json()).data || [];
+
+                document.getElementById('recSalesInvoiceId').innerHTML =
+                    invoices.map(inv => `<option value="${inv.id}">فاکتور #${inv.number} - ${inv.project?.customer?.name || ''} (${formatNum(inv.total)} ریال)</option>`).join('');
+
+                document.getElementById('recBankAccountId').innerHTML =
+                    banks.map(b => `<option value="${b.id}" ${b.isDefault ? 'selected' : ''}>${b.title}</option>`).join('');
+
+                const tbody = document.getElementById('receiptsTableBody');
+                if (receipts.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">هیچ دریافتی ثبت نشده است.</td></tr>';
+                } else {
+                    tbody.innerHTML = receipts.map(r => `
+                        <tr>
+                            <td>#${r.id}</td>
+                            <td class="fw-bold">فاکتور #${r.salesInvoiceId}</td>
+                            <td class="fw-bold text-success font-monospace" dir="ltr">${formatNum(r.amount)}</td>
+                            <td>${r.receiptDate ? new Date(r.receiptDate).toLocaleDateString('fa-IR') : ''}</td>
+                            <td>${r.method || ''}</td>
+                            <td>${r.bankAccountTitle || (r.bankAccountId ? `بانک #${r.bankAccountId}` : 'حساب پیش‌فرض')}</td>
+                            <td class="font-monospace" dir="ltr">${r.referenceNo || '—'}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function saveReceipt() {
+            const payload = {
+                salesInvoiceId: Number(document.getElementById('recSalesInvoiceId').value),
+                bankAccountId: Number(document.getElementById('recBankAccountId').value) || null,
+                amount: Number(document.getElementById('recAmount').value),
+                receiptDate: document.getElementById('recDate').value,
+                method: document.getElementById('recMethod').value,
+                referenceNo: document.getElementById('recRefNo').value.trim() || null
+            };
+            if (!payload.salesInvoiceId || payload.amount <= 0) {
+                swal.fire({ title: 'هشدار', text: 'انتخاب فاکتور و مبلغ معتبر الزامی است.', icon: 'warning', confirmButtonText: 'باشه' });
+                return;
+            }
+            try {
+                const res = await fetch(`${apiBase}/Receipt/Create`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ثبت دریافت');
+                await swal.fire({ title: 'ثبت موفق', text: 'دریافت ثبت شد و سند حسابداری واریز به بانک صادر گردید.', icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('addReceiptModal'))?.hide();
+                initReceipts();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initReceipts);
+    </script>
+}

@@ -1,0 +1,393 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "اسناد حسابداری (دفتر روزنامه)";
+    ViewData["selected"] = "accounting_vouchers";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>اسناد حسابداری دوبل (دفتر روزنامه)</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            اسناد حسابداری
+        </p>
+    </div>
+    <div>
+        <button type="button" class="btn btn-primary" onclick="openManualVoucherModal()">
+            <i class="mdi mdi-plus me-1"></i>ثبت سند حسابداری دستی جدید
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Left: Vouchers List -->
+    <div class="col-lg-5 mb-4">
+        <div class="card card-default h-100">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0">فهرست اسناد صادرشده</h5>
+                    <span class="badge bg-primary" id="lblVoucherCount">0 سند</span>
+                </div>
+                <input type="text" id="txtVoucherSearch" class="form-control form-control-sm" placeholder="جستجو در شماره سند یا شرح..." oninput="renderVoucherList()" />
+            </div>
+            <div class="card-body p-2" style="max-height: 620px; overflow-y: auto;" id="vouchersListContainer">
+                <div class="text-center py-4 text-muted">در حال دریافت اسناد حسابداری...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Selected Voucher Details -->
+    <div class="col-lg-7 mb-4">
+        <div class="card card-default h-100">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0" id="lblSelectedVoucherTitle">جزئیات آرتیکل‌های سند حسابداری</h5>
+                    <small class="text-muted" id="lblSelectedVoucherMeta">یک سند را از فهرست سمت راست انتخاب کنید</small>
+                </div>
+                <span class="badge bg-success" id="lblSelectedVoucherStatus">ثبت قطعی · تراز</span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:55px;">ردیف</th>
+                                <th>کد و عنوان حساب معین</th>
+                                <th>شرح آرتیکل و تفصیلی شناور</th>
+                                <th class="text-end" style="width:140px;">بدهکار (ریال)</th>
+                                <th class="text-end" style="width:140px;">بستانکار (ریال)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="voucherItemsBody">
+                            <tr>
+                                <td colspan="5" class="text-center py-5 text-muted">سندی برای نمایش انتخاب نشده است.</td>
+                            </tr>
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="3" class="text-end">جمع کل سند حسابداری:</td>
+                                <td class="text-end text-success font-monospace" id="lblTotalDebit" dir="ltr">0</td>
+                                <td class="text-end text-success font-monospace" id="lblTotalCredit" dir="ltr">0</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Manual Voucher Creation -->
+<div class="modal fade" id="manualVoucherModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">ثبت سند حسابداری دوبل دستی (CreateManualVoucher)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">تاریخ سند</label>
+                        <input type="date" id="mvDate" class="form-control" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label fw-bold">شرح کلی سند حسابداری <span class="text-danger">*</span></label>
+                        <input type="text" id="mvDescription" class="form-control" placeholder="مثال: سند اصلاحی یا ثبت تنخواه پروژه" />
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:260px;">حساب معین</th>
+                                <th>شرح آرتیکل</th>
+                                <th style="width:160px;">بدهکار (ریال)</th>
+                                <th style="width:160px;">بستانکار (ریال)</th>
+                                <th style="width:60px;">حذف</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mvRowsBody"></tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="addManualVoucherRow()">
+                                        + افزودن ردیف آرتیکل
+                                    </button>
+                                    <span class="ms-3" id="mvBalanceBadge"></span>
+                                </td>
+                                <td class="text-end font-monospace" id="mvSumDebit" dir="ltr">0</td>
+                                <td class="text-end font-monospace" id="mvSumCredit" dir="ltr">0</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="submitManualVoucher()">ثبت قطعی سند حسابداری</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+        let vouchers = [];
+        let accounts = [];
+        let selectedVoucherId = null;
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) {
+            return Number(n || 0).toLocaleString('en-US');
+        }
+
+        async function initPage() {
+            document.getElementById('mvDate').value = new Date().toISOString().split('T')[0];
+            try {
+                const [accRes, ledgerRes] = await Promise.all([
+                    fetch(`${apiBase}/Accounting/Accounts`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/Accounting/Ledger`, { headers: getAuthHeaders() })
+                ]);
+                const accJson = await accRes.json();
+                accounts = accJson.data || [];
+
+                const ledgerJson = await ledgerRes.json();
+                const txs = ledgerJson.data || [];
+
+                // Group ledger transactions by VoucherId to build complete vouchers view
+                const map = new Map();
+                txs.forEach(tx => {
+                    if (!map.has(tx.voucherId)) {
+                        map.set(tx.voucherId, {
+                            id: tx.voucherId,
+                            voucherNumber: tx.voucherNumber,
+                            voucherDate: tx.voucherDate,
+                            referenceType: tx.referenceType,
+                            referenceId: tx.referenceId,
+                            description: tx.description,
+                            totalDebit: 0,
+                            totalCredit: 0,
+                            items: []
+                        });
+                    }
+                    const v = map.get(tx.voucherId);
+                    v.totalDebit += (tx.debit || 0);
+                    v.totalCredit += (tx.credit || 0);
+                    v.items.push(tx);
+                });
+
+                vouchers = Array.from(map.values()).sort((a, b) => b.voucherNumber - a.voucherNumber);
+                const urlParams = new URLSearchParams(window.location.search);
+                const qRefType = urlParams.get('refType');
+                const qRefId = urlParams.get('refId');
+                if (qRefType && qRefId) {
+                    const matched = vouchers.find(x => String(x.referenceType) === String(qRefType) && String(x.referenceId) === String(qRefId));
+                    if (matched) {
+                        selectedVoucherId = matched.id;
+                    } else {
+                        try {
+                            const refRes = await fetch(`${apiBase}/Accounting/GetByReference?referenceType=${qRefType}&referenceId=${qRefId}`, { headers: getAuthHeaders() });
+                            const refJson = await refRes.json();
+                            if (refJson.data && refJson.data.id) {
+                                vouchers.unshift(refJson.data);
+                                selectedVoucherId = refJson.data.id;
+                            }
+                        } catch (e) {}
+                    }
+                }
+                if (vouchers.length > 0 && !selectedVoucherId) {
+                    selectedVoucherId = vouchers[0].id;
+                }
+                renderVoucherList();
+                renderSelectedVoucher();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function renderVoucherList() {
+            const q = (document.getElementById('txtVoucherSearch').value || '').trim();
+            const container = document.getElementById('vouchersListContainer');
+            const filtered = vouchers.filter(v =>
+                !q || String(v.voucherNumber).includes(q) || (v.description && v.description.includes(q))
+            );
+            document.getElementById('lblVoucherCount').textContent = `${filtered.length} سند`;
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-muted">سندی یافت نشد.</div>';
+                return;
+            }
+
+            container.innerHTML = filtered.map(v => {
+                const active = v.id === selectedVoucherId;
+                const dStr = v.voucherDate ? new Date(v.voucherDate).toLocaleDateString('fa-IR') : '';
+                return `
+                    <div onclick="selectVoucher(${v.id})" class="p-3 mb-2 rounded border ${active ? 'border-primary bg-light' : 'border-secondary-subtle'}" style="cursor:pointer;">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="fw-bold text-primary">سند #${v.voucherNumber}</span>
+                            <small class="text-muted">${dStr}</small>
+                        </div>
+                        <div class="small text-dark mb-1 text-truncate">${v.description || 'سند حسابداری'}</div>
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>${v.items.length} آرتیکل</span>
+                            <span class="fw-bold text-success font-monospace" dir="ltr">${formatNum(v.totalDebit)} ریال</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectVoucher(id) {
+            selectedVoucherId = id;
+            renderVoucherList();
+            renderSelectedVoucher();
+        }
+
+        function renderSelectedVoucher() {
+            const v = vouchers.find(x => x.id === selectedVoucherId);
+            const tbody = document.getElementById('voucherItemsBody');
+            if (!v) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">سندی انتخاب نشده است.</td></tr>';
+                return;
+            }
+            const dStr = v.voucherDate ? new Date(v.voucherDate).toLocaleDateString('fa-IR') : '';
+            document.getElementById('lblSelectedVoucherTitle').textContent = `سند حسابداری شماره ${v.voucherNumber}`;
+            document.getElementById('lblSelectedVoucherMeta').textContent = `تاریخ: ${dStr} · تعداد آرتیکل: ${v.items.length}`;
+            document.getElementById('lblTotalDebit').textContent = formatNum(v.totalDebit);
+            document.getElementById('lblTotalCredit').textContent = formatNum(v.totalCredit);
+
+            tbody.innerHTML = v.items.map((item, idx) => `
+                <tr>
+                    <td class="text-center text-muted">${idx + 1}</td>
+                    <td>
+                        <div class="fw-bold font-monospace text-primary" dir="ltr">${item.accountCode}</div>
+                        <div>${item.accountTitle}</div>
+                    </td>
+                    <td>
+                        <div>${item.description || ''}</div>
+                        <small class="text-muted">
+                            ${item.bankAccountTitle ? `<span class="me-2 text-primary">بانک: ${item.bankAccountTitle}</span>` : ''}
+                            ${item.customerName ? `<span class="me-2">مشتری: ${item.customerName}</span>` : ''}
+                            ${item.supplierName ? `<span class="me-2">تأمین‌کننده: ${item.supplierName}</span>` : ''}
+                            ${item.projectTitle ? `<span class="me-2">پروژه: ${item.projectTitle}</span>` : ''}
+                        </small>
+                    </td>
+                    <td class="text-end font-monospace fw-bold" dir="ltr">${item.debit > 0 ? formatNum(item.debit) : '—'}</td>
+                    <td class="text-end font-monospace fw-bold" dir="ltr">${item.credit > 0 ? formatNum(item.credit) : '—'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function openManualVoucherModal() {
+            const tbody = document.getElementById('mvRowsBody');
+            tbody.innerHTML = '';
+            addManualVoucherRow();
+            addManualVoucherRow();
+            updateManualTotals();
+            new bootstrap.Modal(document.getElementById('manualVoucherModal')).show();
+        }
+
+        function addManualVoucherRow() {
+            const tbody = document.getElementById('mvRowsBody');
+            const tr = document.createElement('tr');
+            const options = accounts.map(a => `<option value="${a.id}">${a.code} - ${a.title}</option>`).join('');
+            tr.innerHTML = `
+                <td><select class="form-select form-select-sm mv-acc">${options}</select></td>
+                <td><input type="text" class="form-control form-control-sm mv-desc" placeholder="شرح ردیف..." /></td>
+                <td><input type="number" class="form-control form-control-sm mv-debit" value="0" min="0" oninput="onDebitCreditChange(this, 'debit')" dir="ltr" /></td>
+                <td><input type="number" class="form-control form-control-sm mv-credit" value="0" min="0" oninput="onDebitCreditChange(this, 'credit')" dir="ltr" /></td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); updateManualTotals();">×</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function onDebitCreditChange(input, type) {
+            const tr = input.closest('tr');
+            if (Number(input.value) > 0) {
+                if (type === 'debit') tr.querySelector('.mv-credit').value = 0;
+                else tr.querySelector('.mv-debit').value = 0;
+            }
+            updateManualTotals();
+        }
+
+        function updateManualTotals() {
+            let sumD = 0, sumC = 0;
+            document.querySelectorAll('#mvRowsBody tr').forEach(tr => {
+                sumD += Number(tr.querySelector('.mv-debit').value || 0);
+                sumC += Number(tr.querySelector('.mv-credit').value || 0);
+            });
+            document.getElementById('mvSumDebit').textContent = formatNum(sumD);
+            document.getElementById('mvSumCredit').textContent = formatNum(sumC);
+            const badge = document.getElementById('mvBalanceBadge');
+            if (sumD > 0 && sumD === sumC) {
+                badge.className = 'ms-3 badge bg-success';
+                badge.textContent = 'تراز (آماده ثبت)';
+            } else {
+                badge.className = 'ms-3 badge bg-danger';
+                badge.textContent = `اختلاف تراز: ${formatNum(Math.abs(sumD - sumC))} ریال`;
+            }
+        }
+
+        async function submitManualVoucher() {
+            const desc = document.getElementById('mvDescription').value.trim();
+            const vDate = document.getElementById('mvDate').value;
+            if (!desc) {
+                swal.fire({ title: 'هشدار', text: 'شرح کلی سند الزامی است.', icon: 'warning', confirmButtonText: 'باشه' });
+                return;
+            }
+            const items = [];
+            document.querySelectorAll('#mvRowsBody tr').forEach(tr => {
+                const debit = Number(tr.querySelector('.mv-debit').value || 0);
+                const credit = Number(tr.querySelector('.mv-credit').value || 0);
+                if (debit > 0 || credit > 0) {
+                    items.push({
+                        accountId: Number(tr.querySelector('.mv-acc').value),
+                        description: tr.querySelector('.mv-desc').value.trim() || desc,
+                        debit: debit,
+                        credit: credit
+                    });
+                }
+            });
+            try {
+                const res = await fetch(`${apiBase}/Accounting/CreateManualVoucher`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        voucherDate: vDate,
+                        description: desc,
+                        postImmediately: true,
+                        items: items
+                    })
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ثبت سند');
+                await swal.fire({ title: 'ثبت موفق', text: json.message || 'سند حسابداری ثبت شد.', icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('manualVoucherModal'))?.hide();
+                initPage();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initPage);
+    </script>
+}

@@ -1,0 +1,705 @@
+﻿@using HSCrm.Dashboard.Costants
+@model IEnumerable<PaymentModel>
+
+@{
+    ViewData["Title"] = "پرداخت‌ها";
+    ViewData["selected"] = "poayment_list";
+
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+    string fiscalYearStatus = ViewBag.FiscalYearStatus?.ToString() ?? "1"; // 0=open
+
+    string ApiAddress = ViewBag.ApiAddress;
+    string valTenantId = ViewBag.TenantId;
+    string valUserId = ViewBag.UserId;
+}
+
+@section styles {
+    <link href="~/assets/plugins/data-tables/datatables.bootstrap5.min.css" rel="stylesheet">
+    <link href="~/assets/plugins/data-tables/responsive.datatables.min.css" rel="stylesheet">
+    <link href="~/assets/css/ekka.css" id="ekka-css" rel="stylesheet">
+    <link href="~/lib/persiandate/persian-datepicker.css" rel="stylesheet" />
+}
+
+<style>
+    .stautus-row {
+        display: inline-block;
+        width: 85px;
+        font-weight: normal;
+        padding: 4px;
+        font-size: 12px;
+        border-radius: 8px;
+    }
+
+    .confirmed-row {
+        color: #009688;
+        background-color: #d8f7f4;
+    }
+
+    .rejected-row {
+        color: #F44336;
+        background-color: #f1d3d1;
+    }
+</style>
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>لیست پرداخت‌ها</h1>
+        <p class="breadcrumbs">
+            <span>
+                <a href="index.html">خانه</a>
+            </span> 
+            <span>
+                <i class="mdi mdi-chevron-left"></i>
+            </span>
+            پرداخت
+        </p>
+    </div>
+    @if (ViewBag.FiscalYearStatus == "0")
+    {
+        <div>
+            @if (User.HasPermission(Permissions.Payments.Create))
+            {
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPayment"> ثبت پرداخت جدید </button>
+            }
+        </div>
+    }
+</div>
+@if (ViewBag.FiscalYearStatus != "0")
+{
+    <div class="alert alert-primary col-lg-8" role="alert" style="margin-top:40px; color:#084298;">
+        توجه!
+        <br>
+        سال مالی انتخاب شده بسته می باشد! شما فقط قادر به مشاهده گزارشات سیستم هستید.
+    </div>
+}
+<div class="row">
+    <div class="col-12">
+        <div class="ec-vendor-list card card-default">
+            <div class="card-body">
+                <div class="table-responsive-md">
+                    <div id="responsive-data-table_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer">
+                        <table id="responsive-data-table" class="table dataTable no-footer" aria-describedby="responsive-data-table_info">
+                            <thead>
+                                <tr>
+                                    <th>عنوان</th>
+                                    <th>مبلغ پرداختی</th>
+                                    <th>تاریخ</th>
+                                    <th>نوع پرداخت</th>
+                                    <th>شماره مرجع</th>
+                                    <th>شناسه مرجع</th>
+                                    <th style="width:140px;">عملیات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>@item.Title</td>
+                                        <td>@item.Amount</td>
+                                        <td>@item.PaymentDate</td>
+                                        <td>@item.Method</td>
+                                        <td>@item.ReferenceNo</td>
+                                        <td>@item.ReferenceNo</td>
+                                        <td>
+                                            <div class="btn-group mb-1">
+                                                <button type="button" class="btn btn-outline-success">اطلاعات</button>
+                                                <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-display="static">
+                                                    <span class="sr-only">اطلاعات</span>
+                                                </button>
+                                                @if (ViewBag.FiscalYearStatus == "0")
+                                                {
+                                                    <div class="dropdown-menu">
+                                                        @if (User.HasPermission(Permissions.Products.Edit))
+                                                        {
+                                                            <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">ویرایش</a>
+                                                        }
+                                                        @if (User.HasPermission(Permissions.Products.Delete))
+                                                        {
+                                                            <a class="dropdown-item" href="#" onclick="">حذف</a>
+                                                        }
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="dropdown-menu"></div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addPayment" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="paymentModalTitle">ثبت پرداخت</h5>
+                <button style="margin: 0;" type="button" class="btn-close" data-bs-dismiss="modal" aria-label="close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentForm" method="post" autocomplete="off">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">نوع مرجع</label>
+                            <select id="referenceType" class="form-select">
+                                <option value="purchaseInvoice" selected>فاکتور خرید</option>
+                                <option value="expense">هزینه</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-8">
+                            <label class="form-label">جستجوی مرجع</label>
+                            <input type="text"
+                                   id="referenceSearch"
+                                   class="form-control"
+                                   placeholder="حداقل 2 کاراکتر وارد کنید..." />
+
+                            <input type="hidden" id="PurchaseInvoiceId" name="PurchaseInvoiceId" />
+                            <input type="hidden" id="ExpenseId" name="ExpenseId" />
+                            <input type="hidden" id="ReferenceTypeHidden" name="ReferenceType" />
+
+                            <div id="referenceSuggestions"
+                                 class="list-group position-absolute shadow-sm"
+                                 style="z-index: 1050; display:none; max-height: 280px; width: 500px; overflow:auto;"></div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">تاریخ پرداخت</label>
+                            <input type="date" class="form-control" id="PaymentDate" name="PaymentDate" />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">مبلغ</label>
+                            <input type="number" step="0.01" class="form-control" id="Amount" name="Amount" />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">روش پرداخت</label>
+                            <select class="form-select" id="Method" name="Method">
+                                <option value="Cash">نقدی</option>
+                                <option value="Card">کارت</option>
+                                <option value="Transfer">انتقال</option>
+                                <option value="Check">چک</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">شماره مرجع</label>
+                            <input type="text" class="form-control" id="ReferenceNo" name="ReferenceNo" />
+                        </div>
+
+                        <div class="col-md-6 d-flex align-items-end gap-2">
+                            <button type="button" id="btnClearReference" class="btn btn-outline-secondary">
+                                پاک کردن مرجع
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                ثبت پرداخت
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
+                @if (fiscalYearStatus == "0")
+                {
+                    @if (User.HasPermission(Permissions.Payments.Create) || User.HasPermission(Permissions.Payments.Edit))
+                    {
+                        <button type="button" class="btn btn-primary" onclick="savePayment()">ذخیره</button>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script src="~/lib/persiandate/persian-date.js"></script>
+    <script src="~/lib/persiandate/persian-datepicker.js"></script>
+    <script src="~/lib/sweetalert/sweetalert2.min.js"></script>
+
+    <script>
+        let baseAddress = '@apiAddress';
+        if (baseAddress.endsWith('/')) {
+            baseAddress = baseAddress.slice(0, -1);
+        }
+
+        // ساخت آدرس نهایی بدون اسلش دوبل
+        window.paymentApiBase = baseAddress + '/Payment';
+
+        window.fiscalYearStatus = '@fiscalYearStatus';
+    </script>
+
+    <script>
+        $(document).ready(function () {
+            // بستن Datepicker و تبدیل اتوماتیک به میلادی
+            $("#PaymentDateFa").persianDatepicker({
+                format: 'YYYY/MM/DD',
+                autoClose: true,
+                onSelect: function (unix) {
+                    try {
+                        const g = new persianDate(unix).toCalendar('gregorian').toLocale('en').format('YYYY-MM-DD');
+                        $("#PaymentDate").val(g);
+                    } catch (e) {
+                        $("#PaymentDate").val('');
+                    }
+                }
+            });
+
+            // هماهنگی فیلدهای مرجع فاکتورها و هزینه‌ها
+            $(document).on('input', '.ref-input', function () {
+                const id = $(this).attr('id');
+                const val = $(this).val();
+                if (val && val.toString().trim() !== '') {
+                    ['SalesInvoiceId', 'PurchaseInvoiceId', 'ExpenseId']
+                        .filter(x => x !== id)
+                        .forEach(x => $('#' + x).val(''));
+                }
+            });
+        });
+    </script>
+
+    <script>
+        (function () {
+            const typeSelect = document.getElementById("referenceType");
+            const searchInput = document.getElementById("referenceSearch");
+            const suggestionsBox = document.getElementById("referenceSuggestions");
+            const purchaseInvoiceIdInput = document.getElementById("PurchaseInvoiceId");
+            const expenseIdInput = document.getElementById("ExpenseId");
+            const referenceTypeHidden = document.getElementById("ReferenceTypeHidden");
+            const clearBtn = document.getElementById("btnClearReference");
+            const form = document.getElementById("paymentForm");
+
+            let debounceTimer = null;
+            let currentAbortController = null;
+
+            function escapeHtml(value) {
+                return String(value)
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll('"', "&quot;")
+                    .replaceAll("'", "&#039;");
+            }
+
+            function hideSuggestions() {
+                suggestionsBox.innerHTML = "";
+                suggestionsBox.style.display = "none";
+            }
+
+            function clearReferenceValues() {
+                purchaseInvoiceIdInput.value = "";
+                expenseIdInput.value = "";
+                referenceTypeHidden.value = "";
+            }
+
+            function setReference(item) {
+                searchInput.value = item.title;
+                referenceTypeHidden.value = item.type;
+
+                if (item.type === "purchaseInvoice") {
+                    purchaseInvoiceIdInput.value = item.id;
+                    expenseIdInput.value = "";
+                } else if (item.type === "expense") {
+                    expenseIdInput.value = item.id;
+                    purchaseInvoiceIdInput.value = "";
+                }
+
+                hideSuggestions();
+            }            
+
+            clearBtn.addEventListener("click", function () {
+                searchInput.value = "";
+                clearReferenceValues();
+                hideSuggestions();
+                searchInput.focus();
+            });
+
+            typeSelect.addEventListener("change", function () {
+                searchInput.value = "";
+                clearReferenceValues();
+                hideSuggestions();
+                searchInput.focus();
+            });
+
+            searchInput.addEventListener("input", function () {
+                const term = searchInput.value.trim();
+
+                clearReferenceValues();
+
+                if (term.length < 1) {
+                    hideSuggestions();
+                    return;
+                }
+
+                clearTimeout(debounceTimer);
+
+                debounceTimer = setTimeout(async function () {
+                    try {
+                        if (currentAbortController) {
+                            currentAbortController.abort();
+                        }
+
+                        currentAbortController = new AbortController();
+
+                        const referenceType = typeSelect.value;
+                        const url =
+                            `${window.paymentApiBase}/ReferenceAutocomplete` +
+                            `?term=${encodeURIComponent(term)}` +
+                            `&referenceType=${encodeURIComponent(referenceType)}`;
+
+                        const response = await fetch(url, {
+                            method: "GET",
+                            signal: currentAbortController.signal,
+                            headers: getAuthHeaders()
+                        });
+
+                        if (!response.ok) {
+                            console.error("Autocomplete error:", response.status, response.statusText);
+                            hideSuggestions();
+                            return;
+                        }
+
+                        const text = await response.text();
+                        if (!text) {
+                            hideSuggestions();
+                            return;
+                        }
+
+                        let result;
+                        try {
+                            result = JSON.parse(text);
+                        } catch {
+                            console.error("Invalid JSON response:", text);
+                            hideSuggestions();
+                            return;
+                        }
+
+                        if (!result || !result.status || !Array.isArray(result.data) || result.data.length === 0) {
+                            hideSuggestions();
+                            return;
+                        }
+
+                        suggestionsBox.innerHTML = result.data.map(item => `
+                            <button type="button"
+                                    class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                    data-id="${item.id}"
+                                    data-type="${escapeHtml(item.type)}"
+                                    data-title="${escapeHtml(item.title)}">
+                                <span>${escapeHtml(item.title)}</span>
+                                <small class="text-muted">${escapeHtml(item.type)}</small>
+                            </button>
+                        `).join("");
+
+                        suggestionsBox.style.display = "block";
+
+                        suggestionsBox.querySelectorAll("button").forEach(btn => {
+                            btn.addEventListener("click", function () {
+                                setReference({
+                                    id: btn.dataset.id,
+                                    type: btn.dataset.type,
+                                    title: btn.dataset.title
+                                });
+                            });
+                        });
+                    } catch (error) {
+                        if (error.name !== "AbortError") {
+                            console.error(error);
+                            hideSuggestions();
+                        }
+                    }
+                }, 250);
+            });
+
+            document.addEventListener("click", function (e) {
+                if (!suggestionsBox.contains(e.target) && e.target !== searchInput) {
+                    hideSuggestions();
+                }
+            });
+
+            form.addEventListener("submit", function (e) {
+                const hasPurchase = purchaseInvoiceIdInput.value.trim() !== "";
+                const hasExpense = expenseIdInput.value.trim() !== "";
+
+                if (hasPurchase === hasExpense) {
+                    e.preventDefault();
+                    alert("فقط یکی از مرجع‌ها باید انتخاب شود.");
+                    return;
+                }
+
+                if (!document.getElementById("PaymentDate").value) {
+                    e.preventDefault();
+                    alert("تاریخ پرداخت را وارد کنید.");
+                    return;
+                }
+
+                if (!document.getElementById("Amount").value) {
+                    e.preventDefault();
+                    alert("مبلغ را وارد کنید.");
+                    return;
+                }
+            });
+
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, "0");
+            const dd = String(today.getDate()).padStart(2, "0");
+            document.getElementById("PaymentDate").value = `${yyyy}-${mm}-${dd}`;
+        })();
+    </script>
+    <script>
+        function getAuthHeaders() {
+
+                const headers = {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    Authorization: 'Bearer ' + '@User.FindFirstValue("Token")'
+                };
+
+                const tenantId =
+                    localStorage.getItem("TenantId") ||
+                    sessionStorage.getItem("TenantId");
+
+                if (tenantId) {
+                    headers["TenantId"] = tenantId;
+                }
+
+                const fiscalYearId =
+                    localStorage.getItem("ActiveFiscalYearId") ||
+                    sessionStorage.getItem("ActiveFiscalYearId");
+
+                if (fiscalYearId) {
+                    headers["X-FiscalYear-Id"] = fiscalYearId;
+                }
+
+                return headers;
+            }
+    </script>
+    <script>
+        
+        document.addEventListener("DOMContentLoaded", async function () {
+            try {
+                const bankRes = await fetch(`${window.apiRoot}/BankAccount/GetAll`, { headers: getAuthHeaders() });
+                const bankJson = await bankRes.json();
+                const banks = bankJson.data || [];
+                const bankSel = document.getElementById("BankAccountId");
+                if (bankSel && banks.length > 0) {
+                    bankSel.innerHTML = banks.map(b => `<option value="${b.id}" ${b.isDefault ? 'selected' : ''}>${b.title}</option>`).join('');
+                }
+            } catch (e) { console.error(e); }
+        });
+
+        async function savePayment() {
+            const purchaseInvoiceIdElement = document.getElementById("PurchaseInvoiceId");
+
+            const expenseIdElement = document.getElementById("ExpenseId");
+
+            const paymentDateElement = document.getElementById("PaymentDate");
+
+            const amountElement = document.getElementById("Amount");
+
+            const methodElement = document.getElementById("Method");
+
+            const referenceNoElement = document.getElementById("ReferenceNo");
+
+            const referenceTypeElement = document.getElementById("ReferenceTypeHidden");
+
+            const purchaseInvoiceId = purchaseInvoiceIdElement.value.trim() !== "" ? Number.parseInt(purchaseInvoiceIdElement.value, 10) : null;
+
+            const expenseId = expenseIdElement.value.trim() !== "" ? Number.parseInt(expenseIdElement.value, 10) : null;
+
+            const paymentDate = paymentDateElement.value.trim();
+
+            const amount =
+                Number.parseFloat(
+                    amountElement.value
+                        .toString()
+                        .replace(/,/g, "")
+                        .trim()
+                );
+
+            const method = methodElement.value || "Cash";
+
+            const referenceNo = referenceNoElement.value.trim() || null;
+
+            // بررسی انتخاب دقیقاً یک مرجع
+            const selectedReferences = [
+                purchaseInvoiceId,
+                expenseId
+            ].filter(value => value !== null);
+
+            if (selectedReferences.length !== 1) {
+                        swal.fire({
+            title: "مرجع پرداخت",
+            text: "لطفاً دقیقاً یکی از مراجع پرداخت را انتخاب کنید!",
+            icon: "warning",
+            showConfirmButton: true,
+            confirmButtonText: "متوجه شدم"
+        });
+                return;
+            }
+
+            if (!paymentDate) {
+                        swal.fire({
+            title: "تاریخ پرداخت",
+            text: "تاریخ پرداخت را وارد کنید!",
+            icon: "warning",
+            showConfirmButton: true,
+            confirmButtonText: "متوجه شدم"
+        });
+
+                return;
+            }
+
+            if (!Number.isFinite(amount) || amount <= 0) {
+                        swal.fire({
+            title: "مبلغ پرداخت",
+            text: "مبلغ پرداخت باید بزرگ‌تر از صفر باشد!",
+            icon: "warning",
+            showConfirmButton: true,
+            confirmButtonText: "متوجه شدم"
+        });
+
+                        amountElement.focus();
+                return;
+            }
+
+            const bankAccountEl = document.getElementById("BankAccountId");
+            const bankAccountId = bankAccountEl && bankAccountEl.value ? Number.parseInt(bankAccountEl.value, 10) : null;
+            const payload = {
+                salesInvoiceId: null,
+                purchaseInvoiceId: purchaseInvoiceId,
+                expenseId: expenseId,
+                bankAccountId: bankAccountId,
+                paymentDate: paymentDate,
+                amount: amount,
+                method: method,
+                referenceNo: referenceNo
+            };
+
+            const saveButton =
+                document.querySelector(
+                    '#addPayment button[onclick="savePayment()"]'
+                );
+
+            try {
+                if (saveButton) {
+                    saveButton.disabled = true;
+                    saveButton.innerHTML =
+                        '<span class="spinner-border spinner-border-sm me-1" role="status"></span> در حال ذخیره...';
+                }
+
+                const response = await fetch(
+                    `${window.paymentApiBase}/Create`,
+                    {
+                        method: "POST",
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify(payload)
+                    }
+                );
+
+                const responseText = await response.text();
+
+                let result = null;
+
+                if (responseText && responseText.trim() !== "") {
+                    try {
+                        result = JSON.parse(responseText);
+                    } catch (parseError) {
+                        console.error(
+                            "Invalid JSON response:",
+                            responseText,
+                            parseError
+                        );
+                    }
+                }
+                console.log("Response id: " + responseText);
+                if (!response.ok) {
+                    let errorMessage = "ثبت پرداخت انجام نشد.";
+
+                    if (response.status === 401) {
+                        errorMessage =
+                            "دسترسی شما منقضی شده است. لطفاً دوباره وارد شوید.";
+                    } else if (response.status === 403) {
+                        errorMessage =
+                            "شما مجوز ثبت پرداخت را ندارید.";
+                    } else if (result) {
+                        errorMessage =
+                            result.message ||
+                            result.error ||
+                            result.title ||
+                            errorMessage;
+                    } else if (responseText) {
+                        errorMessage = responseText;
+                    }
+
+                    throw new Error(errorMessage);
+                }
+
+                // در صورت استفاده از ApiResponse
+                if (result && result.status === false) {
+                    throw new Error(
+                        result.message || "ثبت پرداخت انجام نشد."
+                    );
+                }
+
+                        await swal.fire({
+            title: "ثبت موفق",
+            text: "پرداخت با موفقیت ثبت شد!",
+            icon: "success",
+            showConfirmButton: true,
+            confirmButtonText: "باشه"
+        });
+
+                // بستن modal با Bootstrap 5
+                const modalElement =
+                    document.getElementById("addPayment");
+
+                const modalInstance =
+                    bootstrap.Modal.getInstance(modalElement) ||
+                    new bootstrap.Modal(modalElement);
+
+                modalInstance.hide();
+
+                // پاک‌سازی فرم
+                document.getElementById("paymentForm").reset();
+
+                document.getElementById("PurchaseInvoiceId").value = "";
+                document.getElementById("ExpenseId").value = "";
+                document.getElementById("ReferenceTypeHidden").value = "";
+                document.getElementById("referenceSearch").value = "";
+
+                const suggestionsBox =
+                    document.getElementById("referenceSuggestions");
+
+                suggestionsBox.innerHTML = "";
+                suggestionsBox.style.display = "none";
+
+                // تازه‌سازی لیست پرداخت‌ها
+                window.location.reload();
+            } catch (error) {
+                console.error("Save payment error:", error);
+                        swal.fire({
+            title: "خطا",
+            text: error.message || "خطایی هنگام ثبت پرداخت رخ داد.",
+            icon: "error",
+            showConfirmButton: true,
+            confirmButtonText: "باشه"
+        });
+            } finally {
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.innerHTML = "ذخیره";
+                }
+            }
+        }
+    </script>
+
+}

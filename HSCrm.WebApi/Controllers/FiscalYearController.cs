@@ -32,6 +32,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetFiscalYears")]
+        [HttpGet("GetAll")]
         [Permission(Permissions.FiscalYears.View)]
         public ApiResponse<IEnumerable<FiscalYear>> Get()
         {
@@ -66,6 +67,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateFiscalYear")]
+        [HttpPost("Create")]
         [Permission(Permissions.FiscalYears.Create)]
         public async Task<ActionResult<ApiResponse<FiscalYear>>> CreateFiscalYear(
             [FromBody] FiscalYearCreateModel model,
@@ -87,11 +89,10 @@ namespace HSCrm.WebApi.Controllers
 
             if (model.IsCurrent)
             {
-                var currentYears = _context.fiscalYearUW.Get(f => f.TenantId == tenantId && f.IsCurrent).ToList();
+                var currentYears = _context.fiscalYearUW.Get(f => f.TenantId == tenantId && f.IsCurrent, asNoTracking: false).ToList();
                 foreach (var cy in currentYears)
                 {
                     cy.IsCurrent = false;
-                    _context.fiscalYearUW.Update(cy);
                 }
             }
 
@@ -120,6 +121,8 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("SetActiveFiscalYear/{id:int}")]
+        [HttpPost("SetActive/{id:int}")]
+        [HttpPut("SetActive/{id:int}")]
         [Permission(Permissions.FiscalYears.Edit)]
         public async Task<ActionResult<ApiResponse>> SetActiveFiscalYear(int id, CancellationToken ct)
         {
@@ -135,11 +138,10 @@ namespace HSCrm.WebApi.Controllers
                 });
             }
 
-            var allYears = _context.fiscalYearUW.Get(f => f.TenantId == tenantId).ToList();
+            var allYears = _context.fiscalYearUW.Get(f => f.TenantId == tenantId, asNoTracking: false).ToList();
             foreach (var y in allYears)
             {
                 y.IsCurrent = (y.Id == id);
-                _context.fiscalYearUW.Update(y);
             }
 
             await _context.SaveAsync();
@@ -156,6 +158,7 @@ namespace HSCrm.WebApi.Controllers
         /// ممیزی و پیش‌نمایش کنترلی قبل از بستن سال مالی (لیست حساب‌های موقت، سود و زیان خالص، حساب‌های دائم و هشدارهای کنترلی)
         /// </summary>
         [HttpGet("PreviewFiscalYearClosing")]
+        [HttpGet("PreviewClose")]
         [Permission(Permissions.FiscalYears.View)]
         public async Task<ActionResult<ApiResponse<FiscalYearClosingPreviewDto>>> PreviewFiscalYearClosing(
             [FromQuery] int? fiscalYearId,
@@ -187,6 +190,7 @@ namespace HSCrm.WebApi.Controllers
         /// اجرای عملیات پایان سال مالی: بستن حساب‌های موقت، انتقال سود/زیان به سرمایه، صدور سند اختتامیه و صدور سند افتتاحیه در سال جدید
         /// </summary>
         [HttpPost("CloseFiscalYearAndGenerateOpening")]
+        [HttpPost("CloseAndOpenNext")]
         [Permission(Permissions.FiscalYears.Close)]
         public async Task<ActionResult<ApiResponse<CloseFiscalYearResultDto>>> CloseFiscalYearAndGenerateOpening(
             [FromBody] CloseFiscalYearRequestModel model,
@@ -218,6 +222,7 @@ namespace HSCrm.WebApi.Controllers
         /// بازگشایی سال مالی بسته شده و حذف خودکار اسناد اختتامیه و افتتاحیه جهت انجام اصلاحات
         /// </summary>
         [HttpPost("ReopenFiscalYear/{id:int}")]
+        [HttpPost("Reopen/{id:int}")]
         [Permission(Permissions.FiscalYears.Reopen)]
         public async Task<ActionResult<ApiResponse<ReopenFiscalYearResultDto>>> ReopenFiscalYear(
             int id,

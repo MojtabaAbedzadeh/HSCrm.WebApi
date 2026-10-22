@@ -1,0 +1,305 @@
+﻿@using System.Security.Claims
+@{
+    var userImageUrl = User.FindFirst("UserImageUrl")?.Value;
+    var firstName = User.FindFirst("UserFirstName")?.Value;
+    var lastName = User.FindFirst("UserLastName")?.Value;
+    var email = User.FindFirst(ClaimTypes.Email)?.Value;
+    var mobile = User.FindFirst(ClaimTypes.MobilePhone)?.Value;
+    var tenantId = User.FindFirst("TenantId")?.Value ?? ViewBag.TenantId;
+    var token = User.FindFirst("Token")?.Value ?? ViewBag.Token;
+    var activeFyId = User.FindFirst("FiscalYearId")?.Value ?? Context.Request.Cookies["ActiveFiscalYearId"] ?? "0";
+    var activeFyStatus = User.FindFirst("FiscalYearStatus")?.Value ?? "0";
+    var activeFyTitle = User.FindFirst("FiscalYearTitle")?.Value ?? "سال مالی فعال";
+    var apiAddr = ViewBag.ApiAddress as string ?? "";
+
+    var fullName = $"{firstName} {lastName}".Trim();
+    if (string.IsNullOrWhiteSpace(fullName))
+    {
+        fullName = User.Identity?.Name ?? "کاربر سیستم";
+    }
+
+    var avatarSrc = string.IsNullOrWhiteSpace(userImageUrl)
+        ? Url.Content("~/assets/img/user/img-user.jpg")
+        : (userImageUrl.StartsWith("http") ? userImageUrl : $"https://localhost:7001{userImageUrl}");
+}
+
+<header class="ec-main-header" id="header">
+    <nav class="navbar navbar-static-top navbar-expand-lg">
+        <button id="sidebar-toggler" class="sidebar-toggle"></button>
+
+        <div class="search-form d-lg-inline-block">
+            <div class="input-group">
+                <input name="query" id="search-input" class="form-control" placeholder="جستجو در منوها و صفحات..." autocomplete="off">
+                <button type="button" name="search" id="search-btn" class="btn btn-flat">
+                    <i class="mdi mdi-magnify"></i>
+                </button>
+            </div>
+            <div id="search-results-container">
+                <ul id="search-results"></ul>
+            </div>
+        </div>
+
+        <div class="navbar-right d-flex align-items-center gap-2">
+            <!-- انتخابگر سریع سال مالی فعال -->
+            <div class="dropdown d-inline-block me-2">
+                <button class="btn btn-sm @(activeFyStatus == "0" ? "btn-outline-success" : "btn-outline-danger") dropdown-toggle d-flex align-items-center gap-1"
+                        type="button" id="hdrFiscalYearBtn" data-bs-toggle="dropdown" aria-expanded="false"
+                        title="تغییر سریع سال مالی فعال بدون خروج از حساب">
+                    <i class="mdi mdi-calendar-clock"></i>
+                    <span id="hdrFiscalYearTitle">@activeFyTitle</span>
+                    <span class="badge @(activeFyStatus == "0" ? "bg-success" : "bg-danger") ms-1" id="hdrFiscalYearBadge">
+                        @(activeFyStatus == "0" ? "باز" : "بسته")
+                    </span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm p-2" style="min-width: 260px;" id="hdrFiscalYearList">
+                    <li class="dropdown-header fw-bold text-dark border-bottom pb-1 mb-1">
+                        <i class="mdi mdi-calendar-check me-1"></i>انتخاب سال مالی فعال
+                    </li>
+                    <li class="text-center py-2 text-muted small" id="hdrFyLoading">در حال بارگذاری سال‌های مالی...</li>
+                </ul>
+            </div>
+
+            <!-- زنگوله هشدار چک‌های سررسید نزدیک و مطالبات معوق -->
+            <div class="dropdown notifications-menu d-inline-block me-2">
+                <button class="dropdown-toggle nav-link ec-drop position-relative btn btn-link text-dark p-1" data-bs-toggle="dropdown" aria-expanded="false" title="هشدارهای مالی و چک‌های سررسید نزدیک">
+                    <i class="mdi mdi-bell-ring-outline fs-4"></i>
+                    <span id="hdrAlertBadge" class="badge bg-danger rounded-pill position-absolute top-0 start-0 d-none" style="font-size: 10px;">0</span>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end shadow p-0" style="width: 340px; max-height: 420px; overflow-y: auto;">
+                    <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center">
+                        <strong class="text-dark small"><i class="mdi mdi-bell-alert-outline me-1 text-warning"></i>هشدارهای خزانه‌داری و مطالبات</strong>
+                        <a href="/AdminArea/Cheque/Index" class="text-primary small">مدیریت چک‌ها</a>
+                    </div>
+                    <div id="hdrAlertContainer" class="list-group list-group-flush small">
+                        <div class="p-3 text-center text-muted">در حال بررسی سررسید چک‌ها و مطالبات...</div>
+                    </div>
+                </div>
+            </div>
+
+            <ul class="nav navbar-nav">
+                <li class="dropdown user-menu">
+                    <button class="dropdown-toggle nav-link ec-drop" data-bs-toggle="dropdown" aria-expanded="false">
+                        <img src="@avatarSrc" class="user-image" alt="User Image">
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-right ec-dropdown-menu">
+                        <li class="dropdown-header align-items-center">
+                            <div class="d-flex align-items-center">
+                                <img src="@avatarSrc" class="img-circle" alt="User Image" style="width: 40px; height: 40px;">
+                                <div class="d-flex flex-column ms-2">
+                                    <strong>@fullName</strong>
+                                    <small class="text-muted">شناسه مجموعه: #@tenantId</small>
+                                </div>
+                            </div>
+                            <small class="pt-1"><a>@email</a></small>
+                        </li>
+                        <li>
+                            <a href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#hdrUserProfileModal">
+                                <i class="mdi mdi-account"></i>پروفایل و نشست کاربری
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/AdminArea/FiscalYear/Index">
+                                <i class="mdi mdi-calendar-Lock"></i>مدیریت و بستن سال مالی
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/AdminArea/Accounting/Reports">
+                                <i class="mdi mdi-finance"></i>تراز آزمایشی و سود و زیان
+                            </a>
+                        </li>
+                        <li class="dropdown-footer">
+                            <a href="/Account/Logout"><i class="mdi mdi-logout"></i> خروج از سیستم</a>
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </nav>
+</header>
+
+<!-- مودال اطلاعات پروفایل کاربر -->
+<div class="modal fade" id="hdrUserProfileModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="mdi mdi-account-circle me-1"></i>اطلاعات پروفایل و نشست فعال</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center gap-3 mb-3 pb-3 border-bottom">
+                    <img src="@avatarSrc" class="rounded-circle border" style="width: 64px; height: 64px; object-fit: cover;" />
+                    <div>
+                        <h6 class="fw-bold mb-1">@fullName</h6>
+                        <div class="text-muted small">@email</div>
+                        <div class="text-muted small">@mobile</div>
+                    </div>
+                </div>
+                <div class="row g-2 small">
+                    <div class="col-6">
+                        <div class="p-2 bg-light rounded border">
+                            <div class="text-muted">شناسه تننت (TenantId):</div>
+                            <strong class="font-monospace">@tenantId</strong>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 bg-light rounded border">
+                            <div class="text-muted">وضعیت سال مالی فعال:</div>
+                            <strong class="@(activeFyStatus == "0" ? "text-success" : "text-danger")">
+                                @(activeFyStatus == "0" ? "باز (مجاز به ثبت سند)" : "بسته (فقط مشاهده گزارشات)")
+                            </strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">بستن</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const hdrApiBase = '@apiAddr'.replace(/\/+$/, '');
+        const hdrToken = '@token';
+        const hdrTenantId = '@tenantId';
+        const currentFyId = '@activeFyId';
+
+        // تزریق خودکار هدر X-FiscalYear-Id و Authorization در تمام درخواست‌های jQuery AJAX
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.jQuery && currentFyId && currentFyId !== '0') {
+                $.ajaxSetup({
+                    beforeSend: function (xhr) {
+                        xhr.setRequestHeader('X-FiscalYear-Id', currentFyId);
+                    }
+                });
+            }
+            if (!hdrApiBase || !hdrToken) return;
+
+            const headers = {
+                'Authorization': 'Bearer ' + hdrToken,
+                'X-FiscalYear-Id': currentFyId
+            };
+
+            // ۱. بارگذاری لیست سال‌های مالی جهت سوییچ سریع در هدر
+            fetch(`${hdrApiBase}/FiscalYear/GetAll?tenantId=${hdrTenantId}`, { headers })
+                .then(r => r.json())
+                .then(res => {
+                    const list = res.data || res || [];
+                    const ul = document.getElementById('hdrFiscalYearList');
+                    if (!ul) return;
+                    let html = `<li class="dropdown-header fw-bold text-dark border-bottom pb-1 mb-1">
+                                    <i class="mdi mdi-calendar-check me-1"></i>انتخاب سال مالی فعال
+                                </li>`;
+                    if (!Array.isArray(list) || list.length === 0) {
+                        html += `<li><a class="dropdown-item small text-muted" href="/AdminArea/FiscalYear/Index">مدیریت سال‌های مالی</a></li>`;
+                    } else {
+                        list.forEach(fy => {
+                            const isClosed = fy.isClosed === true || fy.status === 2 || fy.status === 1;
+                            const isCurrent = String(fy.id) === String(currentFyId);
+                            const title = fy.title || fy.name || ('سال مالی #' + fy.id);
+                            if (isCurrent) {
+                                const lbl = document.getElementById('hdrFiscalYearTitle');
+                                if (lbl) lbl.textContent = title;
+                            }
+                            html += `<li>
+                                <a class="dropdown-item d-flex justify-content-between align-items-center py-2 ${isCurrent ? 'bg-light fw-bold text-primary' : ''}"
+                                   href="javascript:void(0)"
+                                   onclick="window.switchActiveFiscalYear(${fy.id}, ${isClosed ? 2 : 0}, '${title.replace(/'/g, "")}')">
+                                    <span>${isCurrent ? '✓ ' : ''}${title}</span>
+                                    <span class="badge ${isClosed ? 'bg-danger' : 'bg-success'}">${isClosed ? 'بسته' : 'باز'}</span>
+                                </a>
+                            </li>`;
+                        });
+                        html += `<li><hr class="dropdown-divider my-1"></li>
+                                 <li><a class="dropdown-item small text-primary text-center" href="/AdminArea/FiscalYear/Index">
+                                    <i class="mdi mdi-cog-outline me-1"></i>عملیات پایان سال مالی و سند اختتامیه
+                                 </a></li>`;
+                    }
+                    ul.innerHTML = html;
+                })
+                .catch(() => {});
+
+            // ۲. بارگذاری هشدار چک‌های در آستانه سررسید (۷ روز آینده) و مطالبات معوق (+۹۰ روز)
+            Promise.all([
+                fetch(`${hdrApiBase}/Cheque/GetAll`, { headers }).then(r => r.json()).catch(() => ({ data: [] })),
+                fetch(`${hdrApiBase}/Accounting/AgingReport?partyType=1&includeChequeAccounts=true`, { headers }).then(r => r.json()).catch(() => ({ data: null }))
+            ]).then(([chequeRes, agingRes]) => {
+                const cheques = chequeRes.data || [];
+                const agingRows = (agingRes.data && agingRes.data.rows) ? agingRes.data.rows : [];
+                const now = new Date();
+                const in7Days = new Date(now.getTime() + 7 * 86400000);
+
+                const dueCheques = cheques.filter(c => {
+                    if (c.status !== 1 && c.status !== 2) return false; // فقط در جریان / واگذارشده به بانک
+                    const d = new Date(c.dueDate);
+                    return d <= in7Days;
+                });
+
+                const riskyCustomers = agingRows.filter(r => (r.bucket91To120 || 0) + (r.bucketOver120 || 0) > 0);
+                const totalAlerts = dueCheques.length + riskyCustomers.length;
+
+                const badge = document.getElementById('hdrAlertBadge');
+                const container = document.getElementById('hdrAlertContainer');
+                if (!container) return;
+
+                if (totalAlerts > 0 && badge) {
+                    badge.textContent = totalAlerts;
+                    badge.classList.remove('d-none');
+                }
+
+                if (totalAlerts === 0) {
+                    container.innerHTML = `<div class="p-3 text-center text-success">
+                        <i class="mdi mdi-check-circle-outline fs-4 d-block mb-1"></i>
+                        هیچ چک سررسید نزدیک یا مطالبه بحرانی (+۹۰ روز) وجود ندارد.
+                    </div>`;
+                    return;
+                }
+
+                let alertHtml = '';
+                dueCheques.slice(0, 5).forEach(c => {
+                    const typeFa = c.type === 1 ? 'چک دریافتی' : 'چک پرداختی';
+                    alertHtml += `<a href="/AdminArea/Cheque/Index" class="list-group-item list-group-item-action py-2">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-danger">${typeFa} #${c.chequeNumber}</strong>
+                            <span class="badge bg-warning text-dark">${c.dueDateShamsi || ''}</span>
+                        </div>
+                        <div class="text-muted mt-1">مبلغ: ${Number(c.amount || 0).toLocaleString('fa-IR')} ریال (${c.bankName || ''})</div>
+                    </a>`;
+                });
+
+                riskyCustomers.slice(0, 4).forEach(r => {
+                    const overdue = (r.bucket91To120 || 0) + (r.bucketOver120 || 0);
+                    alertHtml += `<a href="/AdminArea/Accounting/AgingAndStatements?partyType=1&partyId=${r.partyId}" class="list-group-item list-group-item-action py-2">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-dark">${r.partyName}</strong>
+                            <span class="badge bg-danger">معوق +۹۰ روز</span>
+                        </div>
+                        <div class="text-muted mt-1">مانده معوق: ${Number(overdue).toLocaleString('fa-IR')} ریال</div>
+                    </a>`;
+                });
+
+                container.innerHTML = alertHtml;
+            });
+        });
+
+        window.switchActiveFiscalYear = function (fyId, fyStatus, fyTitle) {
+            const formData = new URLSearchParams();
+            formData.append('fiscalYearId', fyId);
+            formData.append('fiscalYearStatus', fyStatus);
+            formData.append('fiscalYearTitle', fyTitle);
+
+            fetch('/Account/SwitchFiscalYear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData.toString()
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res && res.status) {
+                    window.location.reload();
+                }
+            });
+        };
+    })();
+</script>

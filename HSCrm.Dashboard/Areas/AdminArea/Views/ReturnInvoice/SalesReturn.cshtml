@@ -1,0 +1,253 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "فاکتورهای برگشت از فروش";
+    ViewData["selected"] = "sales_return_invoices";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>فاکتورهای برگشت از فروش (Sales Returns - فاز ۵)</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            برگشت از فروش
+        </p>
+    </div>
+    <div>
+        <button type="button" class="btn btn-primary" onclick="openCreateSalesReturnModal()">
+            <i class="mdi mdi-plus me-1"></i>ثبت فاکتور برگشت از فروش جدید
+        </button>
+    </div>
+</div>
+
+<div class="card card-default">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>شماره برگشتی</th>
+                        <th>تاریخ</th>
+                        <th>پروژه / مشتری</th>
+                        <th>انبار مقصد</th>
+                        <th class="text-end">مبلغ کل (ریال)</th>
+                        <th>وضعیت</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="srTableBody">
+                    <tr><td colspan="7" class="text-center py-4">در حال بارگذاری فاکتورهای برگشت از فروش...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Create Sales Return -->
+<div class="modal fade" id="createSalesReturnModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">ثبت فاکتور برگشت از فروش جدید</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">شماره فاکتور برگشتی <span class="text-danger">*</span></label>
+                        <input type="text" id="srNumber" class="form-control" value="SRN-1001" dir="ltr" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">تاریخ برگشت (شمسی) <span class="text-danger">*</span></label>
+                        <input type="text" id="srDate" class="form-control" value="1403/08/05" dir="ltr" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">پروژه / مشتری <span class="text-danger">*</span></label>
+                        <select id="srProjectId" class="form-select"></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">انبار ورود کالا <span class="text-danger">*</span></label>
+                        <select id="srWarehouseId" class="form-select"></select>
+                    </div>
+                </div>
+                <table class="table table-sm table-bordered align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>کالا / محصول</th>
+                            <th style="width:120px;">تعداد برگشتی</th>
+                            <th style="width:160px;">فی واحد (ریال)</th>
+                            <th style="width:140px;">تخفیف</th>
+                            <th style="width:140px;">مالیات</th>
+                            <th style="width:60px;">حذف</th>
+                        </tr>
+                    </thead>
+                    <tbody id="srItemsBody"></tbody>
+                </table>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addSrItemRow()">+ افزودن ردیف کالا</button>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="submitSalesReturn()">ذخیره پیش‌نویس فاکتور برگشتی</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+        let products = [];
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) { return Number(n || 0).toLocaleString('en-US'); }
+
+        async function initSalesReturns() {
+            try {
+                const [projRes, whRes, prodRes] = await Promise.all([
+                    fetch(`${apiBase}/Project/GetProjects`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/Warehouse/GetWarehouses`, { headers: getAuthHeaders() }),
+                    fetch(`${apiBase}/Product/GetProducts`, { headers: getAuthHeaders() })
+                ]);
+                const projs = (await projRes.json()).data || [];
+                const whs = (await whRes.json()).data || [];
+                products = (await prodRes.json()).data || [];
+
+                document.getElementById('srProjectId').innerHTML = projs.map(p => `<option value="${p.id}">${p.projectTitle}</option>`).join('');
+                document.getElementById('srWarehouseId').innerHTML = whs.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+            } catch (e) { console.error(e); }
+
+            loadSalesReturns();
+        }
+
+        async function loadSalesReturns() {
+            const tbody = document.getElementById('srTableBody');
+            try {
+                const res = await fetch(`${apiBase}/SalesReturnInvoice/GetAll`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const list = json.data || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">فاکتور برگشت از فروشی ثبت نشده است.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.map(r => {
+                    const statusBadge = r.status === 1
+                        ? '<span class="badge bg-success">تأیید نهایی (ثبت در انبار و حسابداری)</span>'
+                        : r.status === 2
+                        ? '<span class="badge bg-danger">ابطال شده</span>'
+                        : '<span class="badge bg-warning text-dark">پیش‌نویس</span>';
+
+                    return `
+                        <tr>
+                            <td class="fw-bold font-monospace" dir="ltr">${r.number}</td>
+                            <td>${r.returnDate ? new Date(r.returnDate).toLocaleDateString('fa-IR') : ''}</td>
+                            <td>${r.project?.projectTitle || `پروژه #${r.projectId}`}</td>
+                            <td>${r.warehouse?.name || `انبار #${r.warehouseId}`}</td>
+                            <td class="text-end font-monospace fw-bold" dir="ltr">${formatNum(r.total)}</td>
+                            <td>${statusBadge}</td>
+                            <td>
+                                ${r.status === 0 ? `<button class="btn btn-sm btn-success me-1" onclick="confirmSalesReturn(${r.id})">تأیید نهایی و صدور سند</button>` : ''}
+                                ${r.status !== 2 ? `<button class="btn btn-sm btn-outline-danger" onclick="cancelSalesReturn(${r.id})">ابطال</button>` : ''}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">خطا در بارگذاری اطلاعات</td></tr>';
+            }
+        }
+
+        function openCreateSalesReturnModal() {
+            document.getElementById('srItemsBody').innerHTML = '';
+            addSrItemRow();
+            new bootstrap.Modal(document.getElementById('createSalesReturnModal')).show();
+        }
+
+        function addSrItemRow() {
+            const tr = document.createElement('tr');
+            const prodOpts = products.map(p => `<option value="${p.id}">${p.productName}</option>`).join('');
+            tr.innerHTML = `
+                <td><select class="form-select form-select-sm sr-prod">${prodOpts}</select></td>
+                <td><input type="number" class="form-control form-control-sm sr-qty" value="1" min="1" dir="ltr" /></td>
+                <td><input type="number" class="form-control form-control-sm sr-price" value="1000000" min="0" dir="ltr" /></td>
+                <td><input type="number" class="form-control form-control-sm sr-disc" value="0" min="0" dir="ltr" /></td>
+                <td><input type="number" class="form-control form-control-sm sr-tax" value="0" min="0" dir="ltr" /></td>
+                <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">×</button></td>
+            `;
+            document.getElementById('srItemsBody').appendChild(tr);
+        }
+
+        async function submitSalesReturn() {
+            const items = [];
+            document.querySelectorAll('#srItemsBody tr').forEach(tr => {
+                items.push({
+                    productId: Number(tr.querySelector('.sr-prod').value),
+                    quantity: Number(tr.querySelector('.sr-qty').value),
+                    unitPrice: Number(tr.querySelector('.sr-price').value),
+                    discount: Number(tr.querySelector('.sr-disc').value || 0),
+                    tax: Number(tr.querySelector('.sr-tax').value || 0)
+                });
+            });
+            const payload = {
+                number: document.getElementById('srNumber').value.trim(),
+                returnDateShamsi: document.getElementById('srDate').value.trim(),
+                projectId: Number(document.getElementById('srProjectId').value),
+                warehouseId: Number(document.getElementById('srWarehouseId').value),
+                items: items
+            };
+            try {
+                const res = await fetch(`${apiBase}/SalesReturnInvoice/Create`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ثبت');
+                await swal.fire({ title: 'ثبت موفق', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                bootstrap.Modal.getInstance(document.getElementById('createSalesReturnModal'))?.hide();
+                loadSalesReturns();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        async function confirmSalesReturn(id) {
+            try {
+                const res = await fetch(`${apiBase}/SalesReturnInvoice/${id}/Confirm`, { method: 'POST', headers: getAuthHeaders() });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در تأیید نهایی');
+                await swal.fire({ title: 'تأیید نهایی', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                loadSalesReturns();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        async function cancelSalesReturn(id) {
+            try {
+                const res = await fetch(`${apiBase}/SalesReturnInvoice/${id}/Cancel`, { method: 'POST', headers: getAuthHeaders() });
+                const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در ابطال');
+                await swal.fire({ title: 'ابطال موفق', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                loadSalesReturns();
+            } catch (err) {
+                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initSalesReturns);
+    </script>
+}

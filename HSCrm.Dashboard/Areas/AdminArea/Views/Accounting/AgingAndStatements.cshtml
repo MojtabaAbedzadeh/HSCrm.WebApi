@@ -1,0 +1,339 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@{
+    ViewData["Title"] = "صورت‌حساب جامع ۳۶۰ درجه و تحلیل سنی مطالبات/بدهی‌ها";
+    ViewData["selected"] = "accounting_aging";
+    string apiAddress = ViewBag.ApiAddress?.ToString() ?? "";
+    int initialPartyType = ViewBag.InitialPartyType ?? 1;
+    int? initialPartyId = ViewBag.InitialPartyId;
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>تحلیل سنی مطالبات و بدهی‌ها (FIFO Aging) و صورت‌حساب ۳۶۰ درجه طرف‌حساب‌ها</h1>
+        <p class="breadcrumbs">
+            <span><a href="/AdminArea/Home/Index">خانه</a></span>
+            <span><i class="mdi mdi-chevron-left"></i></span>
+            تحلیل سنی و صورت‌حساب جامع (فاز ۷)
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" id="btnTypeCustomer" class="btn @(initialPartyType == 1 ? "btn-primary" : "btn-outline-primary")" onclick="switchPartyType(1)">
+            مشتریان (حساب دریافتنی 1103)
+        </button>
+        <button type="button" id="btnTypeSupplier" class="btn @(initialPartyType == 2 ? "btn-primary" : "btn-outline-primary")" onclick="switchPartyType(2)">
+            تأمین‌کنندگان (حساب پرداختنی 2101)
+        </button>
+    </div>
+</div>
+
+<!-- KPI Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card card-default p-3">
+            <small class="text-muted" id="lblGrandOpenTitle">کل مطالبات/بدهی باز دفتری</small>
+            <h4 class="fw-bold font-monospace mt-1 mb-0" id="kpiGrandOpen" dir="ltr">0</h4>
+            <small class="text-muted mt-1" id="kpiActiveCount">0 طرف‌حساب دارای مانده</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card card-default p-3 border-start border-4 border-success">
+            <small class="text-success fw-bold">بازه جاری (۰ تا ۳۰ روز)</small>
+            <h4 class="fw-bold font-monospace text-success mt-1 mb-0" id="kpiBucket0_30" dir="ltr">0</h4>
+            <small class="text-muted mt-1">خوش‌حساب و در سررسید جاری</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card card-default p-3 border-start border-4 border-warning">
+            <small class="text-warning fw-bold">بازه میان‌مدت (۳۱ تا ۹۰ روز)</small>
+            <h4 class="fw-bold font-monospace text-warning mt-1 mb-0" id="kpiBucket31_90" dir="ltr">0</h4>
+            <small class="text-muted mt-1">نیازمند پیگیری وصول / تسویه</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card card-default p-3 border-start border-4 border-danger">
+            <small class="text-danger fw-bold">معوق و پرریسک (+۹۰ روز)</small>
+            <h4 class="fw-bold font-monospace text-danger mt-1 mb-0" id="kpiBucketOver90" dir="ltr">0</h4>
+            <small class="text-muted mt-1">مطالبات راکد / مشکوک‌الوصول</small>
+        </div>
+    </div>
+</div>
+
+<!-- FIFO Aging Report Table -->
+<div class="card card-default mb-4">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-0">گزارش تحلیل سنی در ۵ بازه زمانی به روش FIFO (GET /api/Accounting/AgingReport)</h5>
+            <small class="text-muted">روی هر ردیف کلیک کنید تا صورت‌حساب ۳۶۰ درجه همان طرف‌حساب در پایین صفحه نمایش داده شود</small>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>نام طرف‌حساب</th>
+                        <th class="text-end">مانده باز دفتری</th>
+                        <th class="text-end bg-success-subtle">۰ تا ۳۰ روز</th>
+                        <th class="text-end">۳۱ تا ۶۰ روز</th>
+                        <th class="text-end">۶۱ تا ۹۰ روز</th>
+                        <th class="text-end bg-warning-subtle">۹۱ تا ۱۸۰ روز</th>
+                        <th class="text-end bg-danger-subtle">+۱۸۰ روز</th>
+                        <th class="text-center">قدیمی‌ترین فاکتور باز</th>
+                        <th class="text-center">میانگین سن</th>
+                        <th class="text-end">چک در جریان</th>
+                        <th>وضعیت اعتباری</th>
+                    </tr>
+                </thead>
+                <tbody id="agingTableBody">
+                    <tr><td colspan="11" class="text-center py-4">در حال محاسبه تحلیل سنی...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 360-Degree Party Statement Section -->
+<div class="card card-default">
+    <div class="card-header bg-light d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <h5 class="mb-0" id="lblStatementHeader">صورت‌حساب جامع ۳۶۰ درجه طرف‌حساب</h5>
+            <small class="text-muted">شامل مانده اول دوره، فاکتورها، برگشتی‌ها، دریافت/پرداخت‌ها، چک‌های صیادی و مانده خطی</small>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <select id="cmbPartySelector" class="form-select form-select-sm" style="width:240px;" onchange="loadPartyStatement(this.value)">
+                <option value="">-- انتخاب طرف‌حساب --</option>
+            </select>
+            <div class="form-check ms-2">
+                <input class="form-check-input" type="checkbox" id="chkIncludeCheques" checked onchange="reloadCurrentStatement()" />
+                <label class="form-check-label small" for="chkIncludeCheques">لحاظ آرتیکل‌های چک (1102/1107/2103)</label>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <!-- Statement Summary Strip -->
+        <div class="row g-2 mb-3" id="statementSummaryRow" style="display:none;">
+            <div class="col-md-2">
+                <div class="p-2 border rounded bg-light">
+                    <small class="text-muted d-block">جمع فاکتورها</small>
+                    <strong class="font-monospace" id="stTotalInvoices" dir="ltr">0</strong>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="p-2 border rounded bg-light">
+                    <small class="text-muted d-block">جمع برگشتی‌ها</small>
+                    <strong class="font-monospace text-warning" id="stTotalReturns" dir="ltr">0</strong>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="p-2 border rounded bg-light">
+                    <small class="text-muted d-block">تسویه نقد/بانک</small>
+                    <strong class="font-monospace text-success" id="stTotalSettlements" dir="ltr">0</strong>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="p-2 border rounded bg-light">
+                    <small class="text-muted d-block">چک در جریان وصول</small>
+                    <strong class="font-monospace text-primary" id="stPendingCheques" dir="ltr">0</strong>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="p-2 border rounded bg-light">
+                    <small class="text-muted d-block">مانده دفتری نهایی</small>
+                    <strong class="font-monospace" id="stFinalBookBalance" dir="ltr">0</strong>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="p-2 border rounded bg-info-subtle">
+                    <small class="text-dark fw-bold d-block">تعهد / ریسک کل</small>
+                    <strong class="font-monospace text-primary" id="stEffectiveExposure" dir="ltr">0</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>سند</th>
+                        <th>تاریخ شمسی</th>
+                        <th>حساب معین</th>
+                        <th>نوع عملیات</th>
+                        <th>شرح تراکنش و پروژه</th>
+                        <th class="text-end">بدهکار (ریال)</th>
+                        <th class="text-end">بستانکار (ریال)</th>
+                        <th class="text-end bg-light">مانده خطی</th>
+                        <th class="text-center bg-light">ماهیت</th>
+                    </tr>
+                </thead>
+                <tbody id="statementTableBody">
+                    <tr><td colspan="9" class="text-center py-4 text-muted">یک طرف‌حساب را از جدول بالا یا لیست انتخاب کنید.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section AdminScripts {
+    <script>
+        const apiBase = '@apiAddress'.replace(/\/+$/, '');
+        let currentPartyType = Number('@initialPartyType') || 1;
+        let currentPartyId = '@initialPartyId' ? Number('@initialPartyId') : null;
+
+        function getAuthHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + '@User.FindFirstValue("Token")'
+            };
+            const tenantId = localStorage.getItem('TenantId') || '@ViewBag.TenantId';
+            if (tenantId) headers['TenantId'] = tenantId;
+            return headers;
+        }
+
+        function formatNum(n) {
+            return Number(n || 0).toLocaleString('en-US');
+        }
+
+        async function switchPartyType(type) {
+            currentPartyType = type;
+            currentPartyId = null;
+            document.getElementById('btnTypeCustomer').className = type === 1 ? 'btn btn-primary' : 'btn btn-outline-primary';
+            document.getElementById('btnTypeSupplier').className = type === 2 ? 'btn btn-primary' : 'btn btn-outline-primary';
+            await loadPartiesDropdown();
+            await loadAgingReport();
+        }
+
+        async function loadPartiesDropdown() {
+            const cmb = document.getElementById('cmbPartySelector');
+            try {
+                const endpoint = currentPartyType === 1 ? 'Customer/GetCustomers' : 'Supplier/GetSuppliers';
+                const res = await fetch(`${apiBase}/${endpoint}`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const list = json.data || [];
+                cmb.innerHTML = '<option value="">-- انتخاب طرف‌حساب --</option>' +
+                    list.map(p => {
+                        const name = currentPartyType === 1 ? p.name : p.supplierFullName;
+                        const sel = currentPartyId && p.id === currentPartyId ? 'selected' : '';
+                        return `<option value="${p.id}" ${sel}>${name}</option>`;
+                    }).join('');
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadAgingReport() {
+            const tbody = document.getElementById('agingTableBody');
+            try {
+                const res = await fetch(`${apiBase}/Accounting/AgingReport?partyType=${currentPartyType}`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const d = json.data || {};
+                const rows = d.rows || [];
+
+                document.getElementById('kpiGrandOpen').textContent = formatNum(d.grandTotalOpenBalance || 0);
+                document.getElementById('kpiActiveCount').textContent = `${d.activePartiesCount || 0} طرف‌حساب دارای مانده باز`;
+                document.getElementById('kpiBucket0_30').textContent = formatNum(d.totalBucket0To30 || 0);
+                document.getElementById('kpiBucket31_90').textContent = formatNum((d.totalBucket31To60 || 0) + (d.totalBucket61To90 || 0));
+                document.getElementById('kpiBucketOver90').textContent = formatNum((d.totalBucket91To180 || 0) + (d.totalBucketOver180 || 0));
+
+                if (rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">هیچ مانده بازی برای تحلیل سنی یافت نشد.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = rows.map(r => `
+                    <tr style="cursor:pointer;" onclick="selectPartyFromAging(${r.partyId})">
+                        <td class="fw-bold text-primary">${r.partyName}</td>
+                        <td class="text-end font-monospace fw-bold" dir="ltr">${formatNum(r.totalOpenBalance)}</td>
+                        <td class="text-end font-monospace bg-success-subtle" dir="ltr">${formatNum(r.bucket0To30)}</td>
+                        <td class="text-end font-monospace" dir="ltr">${formatNum(r.bucket31To60)}</td>
+                        <td class="text-end font-monospace" dir="ltr">${formatNum(r.bucket61To90)}</td>
+                        <td class="text-end font-monospace bg-warning-subtle" dir="ltr">${formatNum(r.bucket91To180)}</td>
+                        <td class="text-end font-monospace bg-danger-subtle" dir="ltr">${formatNum(r.bucketOver180)}</td>
+                        <td class="text-center font-monospace">${r.oldestOpenDateShamsi || '—'}</td>
+                        <td class="text-center fw-bold">${r.weightedAverageAgeDays || 0} روز</td>
+                        <td class="text-end font-monospace text-primary" dir="ltr">${formatNum(r.pendingChequesAmount)}</td>
+                        <td><span class="badge bg-secondary">${r.creditRiskStatus || ''}</span></td>
+                    </tr>
+                `).join('');
+
+                if (!currentPartyId && rows.length > 0) {
+                    selectPartyFromAging(rows[0].partyId);
+                } else if (currentPartyId) {
+                    loadPartyStatement(currentPartyId);
+                }
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-4">خطا در دریافت گزارش تحلیل سنی</td></tr>';
+            }
+        }
+
+        function selectPartyFromAging(partyId) {
+            currentPartyId = partyId;
+            document.getElementById('cmbPartySelector').value = String(partyId);
+            loadPartyStatement(partyId);
+        }
+
+        function reloadCurrentStatement() {
+            if (currentPartyId) loadPartyStatement(currentPartyId);
+        }
+
+        async function loadPartyStatement(partyId) {
+            if (!partyId) return;
+            currentPartyId = Number(partyId);
+            const includeCheques = document.getElementById('chkIncludeCheques').checked;
+            const endpoint = currentPartyType === 1
+                ? `Accounting/CustomerStatement/${currentPartyId}?includeChequeAccounts=${includeCheques}`
+                : `Accounting/SupplierStatement/${currentPartyId}?includeChequeAccounts=${includeCheques}`;
+
+            const tbody = document.getElementById('statementTableBody');
+            try {
+                const res = await fetch(`${apiBase}/${endpoint}`, { headers: getAuthHeaders() });
+                const json = await res.json();
+                const d = json.data;
+                if (!d) throw new Error(json.message || 'اطلاعات یافت نشد');
+
+                document.getElementById('lblStatementHeader').textContent =
+                    `صورت‌حساب جامع ۳۶۰ درجه: «${d.partyName}» (${d.partyTypeTitle || ''})`;
+                document.getElementById('statementSummaryRow').style.display = 'flex';
+                document.getElementById('stTotalInvoices').textContent = formatNum(d.totalInvoicesAmount);
+                document.getElementById('stTotalReturns').textContent = formatNum(d.totalReturnsAmount);
+                document.getElementById('stTotalSettlements').textContent = formatNum(d.totalCashAndBankSettlements);
+                document.getElementById('stPendingCheques').textContent = formatNum(d.pendingChequesAmount);
+                document.getElementById('stFinalBookBalance').textContent = formatNum(Math.abs(d.finalBookBalance));
+                document.getElementById('stEffectiveExposure').textContent = formatNum(d.effectiveExposureAmount);
+
+                const txs = d.transactions || [];
+                if (txs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">هیچ تراکنشی برای این طرف‌حساب ثبت نشده است.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = txs.map(t => {
+                    const bal = t.runningBalance || 0;
+                    const diag = bal > 0 ? '<span class="text-primary fw-bold">بد</span>' : bal < 0 ? '<span class="text-warning fw-bold">بس</span>' : '<span class="text-muted">تسویه</span>';
+                    return `
+                        <tr>
+                            <td class="fw-bold font-monospace text-primary">#${t.voucherNumber}</td>
+                            <td class="font-monospace">${t.voucherDateShamsi || ''}</td>
+                            <td><span class="font-monospace text-primary">${t.accountCode}</span> - ${t.accountTitle}</td>
+                            <td>${t.referenceTypeTitle || ''}</td>
+                            <td>
+                                <div>${t.description || ''}</div>
+                                ${t.projectTitle ? `<small class="text-muted">پروژه: ${t.projectTitle}</small>` : ''}
+                            </td>
+                            <td class="text-end font-monospace" dir="ltr">${formatNum(t.debit)}</td>
+                            <td class="text-end font-monospace" dir="ltr">${formatNum(t.credit)}</td>
+                            <td class="text-end font-monospace fw-bold bg-light" dir="ltr">${formatNum(Math.abs(bal))}</td>
+                            <td class="text-center bg-light">${diag}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-4">${err.message}</td></tr>`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadPartiesDropdown();
+            await loadAgingReport();
+        });
+    </script>
+}

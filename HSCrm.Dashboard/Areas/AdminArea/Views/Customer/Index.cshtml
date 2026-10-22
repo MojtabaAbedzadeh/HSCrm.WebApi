@@ -1,0 +1,419 @@
+﻿@using System.Security.Claims
+@using HSCrm.Dashboard.Costants
+@model IEnumerable<CustomerModel>
+
+@{
+    ViewData["AdminTitle"] = "مشتری ها";
+    ViewData["selected"] = "customer_list";
+
+    string ApiAddress = ViewBag.ApiAddress;
+    string UserId = ViewBag.UserId;
+}
+
+@section styles {
+    <link href="~/assets/plugins/data-tables/datatables.bootstrap5.min.css" rel="stylesheet">
+    <link href="~/assets/plugins/data-tables/responsive.datatables.min.css" rel="stylesheet">
+    <link href="~/assets/css/ekka.css" id="ekka-css" rel="stylesheet">
+    <link href="~/lib/persiandate/persian-datepicker.css" rel="stylesheet" />
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>لیست مشتریان</h1>
+        <p class="breadcrumbs"><span><a href="index.html">خانه</a></span> <span><i class="mdi mdi-chevron-left"></i></span>مشتری</p>
+    </div>
+    <div>
+        @if (User.HasPermission(Permissions.Customers.Create))
+        {
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomer"> اضافه کردن مشتری </button>
+        }
+    </div>
+</div>
+<div class="row">
+    <div class="col-12">
+        <div class="ec-vendor-list card card-default">
+            <div class="card-body">
+                <div class="table-responsive-md">
+                    <div id="responsive-data-table_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer">
+                        <table id="responsive-data-table" class="table dataTable no-footer" aria-describedby="responsive-data-table_info">
+                            <thead>
+                                <tr>
+                                    <th>نام و نام خانوادگی</th>
+                                    <th>شماره همراه</th>
+                                    <th>ایمیل</th>
+                                    <th>آدرس</th>
+                                    <th>فعالیت</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>@item.Name</td>
+                                        <td>@item.Phone</td>
+                                        <td>@item.Email</td>
+                                        <td>@item.Address</td>
+                                        <td>
+                                            <div class="btn-group mb-1">
+                                                <a class="btn btn-outline-success" href="@("customerprofile?customerId=" + item.Id)">پروفایل</a>
+                                                <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-display="static">
+                                                    <span class="sr-only">پروفایل</span>
+                                                </button>
+                                                <div class="dropdown-menu">
+                                                    <a class="dropdown-item text-primary fw-bold" href="/AdminArea/Accounting/AgingAndStatements?partyType=1&partyId=@item.Id">صورت‌حساب جامع ۳۶۰ درجه</a>
+                                                    @if (User.HasPermission(Permissions.Customers.Edit))
+                                                    {
+                                                        <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">ویرایش</a>
+                                                    }
+                                                    @if (User.HasPermission(Permissions.Customers.Delete))
+                                                    {
+                                                        <a class="dropdown-item" href="#">حذف</a>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade modal-add-customer" id="addCustomer" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmCustomer">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="exampleModalCenterTitle">تعریف مشتری جدید</h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-3" style="margin-top:10px">
+                            <div class="ec-vendor-img-upload" style="margin-bottom:-10px; position:sticky;top:30px;">
+                                <div class="ec-vendor-main-img">
+                                    <div class="avatar-upload"
+                                         style="margin-bottom: 10px; position:relative;">
+                                        <div class="avatar-edit"
+                                             style="position:absolute; left:25px; z-index:1; top:25px">
+                                            <input type="file" id="UserImagesC" name="UserImagesC" class="ec-image-upload" accept=".png, .jpg, .jpeg" style="opacity:0; width:40px;height:40px;padding:0;border-radius:50%; position:absolute;z-index:1">
+                                            <input id="UserImageUrlC" name="UserImageUrlC" hidden />
+                                            <label for="imageUpload"
+                                                   style="display:flex; -webkit-box-align:center; align-items:center; -webkit-box-pack:center;justify-content:center;width:40px; height:40px;padding:10px;margin-bottom:auto;border-radius:10px;background:#ffffff;border: 1px solid #eeeeee;box-shadow: 0px 0px 8px 0px rgba(0, 0, 0, 0.15); cursor: pointer; font-weight: normal; transition: all 0.2s ease-in-out;">
+                                                <img src="~/assets/img/icons/edit.svg" class="svg_img header_svg" alt="edit"
+                                                     style="width:25px;opacity:0.6;">
+                                            </label>
+                                        </div>
+                                        <div class="avatar-preview ec-preview"
+                                             style="width:100%;height:100%;padding:15px;position:relative;border:1px solid #eeeeee;border-radius:15px;">
+                                            <div class="imagePreview ec-div-preview"
+                                                 style="width:100%;height:100%;display:flex;background-size: cover;background-repeat: no-repeat;background-position: center;">
+                                                <img id="imgUserC" name="imgUserC" class="ec-image-preview" src="~/assets/img/user/default-user.png" alt="User"
+                                                     style="margin:auto;vertical-align:middle;max-width:100%;border-radius:10px">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-9">
+                            <div class="ec-vendor-upload-detail">
+                                <div class="row mb-2">
+                                    <div class="col-lg-6">
+                                        <div class="form-group form-floating">
+                                            <input class="form-control text-end" id="UserFirstName" name="UserFirstName" placeholder="نام">
+                                            <label for="UserFirstName" style="right:0!important; left:unset!important;">نام</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="form-group form-floating">
+                                            <input class="form-control text-end" id="UserLastName" name="UserLastName" placeholder="نام خانوادگی">
+                                            <label for="UserLastName" style="right:0!important; left:unset!important;">نام خانوادگی</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="form-group form-floating">
+                                            <input class="form-control text-end" id="UserName" name="UserName" placeholder="نام کاربری">
+                                            <label for="UserName" style="right:0!important; left:unset!important;">نام کاربری</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="form-group form-floating">
+                                            <input class="form-control text-end" id="Password" name="Password" placeholder="رمز عبور">
+                                            <label for="Password" style="right:0!important; left:unset!important;">رمز عبور</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="form-group form-floating">
+                                            <input class="form-control text-end" id="Email" name="Email" placeholder="ایمیل">
+                                            <label for="Email" style="right:0!important; left:unset!important;">ایمیل</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="form-group form-floating">
+                                            <input class="form-control text-end" id="Phone" name="Phone" placeholder="شماره همراه">
+                                            <label for="Phone" style="right:0!important; left:unset!important;">شماره همراه</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-12">
+                                        <div class="form-group form-floating">
+                                            <input class="form-control text-end" id="Address" name="Address" placeholder="آدرس">
+                                            <label for="Address" style="right:0!important; left:unset!important;">آدرس</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-12 alert" style="color:red">
+                                        <span class="text-danger" id="spnValidate"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnCustomerSubmit" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                    <div id="divMessage" class="text-center hidden position-absolute" style="left:50px;"></div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade modal-add-contact" id="editCustomer" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <form id="frmEditCustomer">
+                <div class="modal-header px-4">
+                    <h5 class="modal-title" id="customerModalCenterTitle">تعریف مشتری جدید</h5>
+                </div>
+                <div class="modal-body px-4">
+                    <div class="row mb-2">
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input id="customerId" name="customerId" hidden>
+                                <input class="form-control text-end" id="NameU" name="NameU" placeholder=" نام و نام خانوادگی">
+                                <label for="NameU" style="right:0!important; left:unset!important;">نام و نام خانوادگی</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="PhoneU" name="PhoneU" placeholder=" شماره تماس">
+                                <label for="PhoneU" style="right:0!important; left:unset!important;">شماره تماس</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="EmailU" name="EmailU" placeholder="ایمیل">
+                                <label for="EmailU" style="right:0!important; left:unset!important;">ایمیل</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-12">
+                            <div class="form-group form-floating">
+                                <input class="form-control text-end" id="AddressU" name="AddressU" placeholder="آدرس">
+                                <label for="AddressU" style="right:0!important; left:unset!important;">آدرس</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-12 alert" style="color:red">
+                            <span class="text-danger" id="spnValidate"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer px-4">
+                    <button type="button" class="btn btn-secondary btn-pill" data-bs-dismiss="modal">
+                        لغو
+                    </button>
+                    <button id="btnCustomerUpdate" type="button" class="btn btn-primary btn-pill">ذخیره </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@section AdminScripts {
+    <script src="~/lib/sweetalert/sweetalert2.js"></script>
+
+    <script>
+        $("#btnCustomerSubmit").on('click', function (e) {
+            e.preventDefault();
+
+            var password = $("#Password").val();
+
+            if (!password || password.length < 6) {
+                        swal.fire({
+            title: "خطا",
+            text: "رمز عبور باید حداقل ۶ کاراکتر باشد",
+            icon: "error",
+            showConfirmButton: false,
+            timer: 2000
+        });
+                return false;
+            }
+
+            var formData = new FormData($("#frmCustomer")[0]);
+
+            console.log(formData);
+
+            $.ajax({
+                type: 'POST',
+                url: '@ApiAddress' + 'Customer/CreateCustomer',
+                processData: false,
+                contentType: false,
+                dataType: "json",
+                data: formData,
+                headers: {
+                    "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                },
+                success: function (response) {
+                    for (var pair of formData.entries()) {
+                        console.log(pair[0] + ': ' + pair[1]);
+                    }
+                    if (response.status || response.statusCode == 200) {
+                                swal.fire({
+            title: "موفقیت",
+            text: "اطلاعات مشتری با موفقیت ثبت شد!",
+            icon: "success",
+            confirmButtonText: "تایید",
+            confirmButtonColor: "#28a745",
+            timer: 1500
+        });
+                            $('#addCustomer').modal('hide');
+                            window.location.reload();
+                    } else if (response.statusCode == 401) {
+                               swal.fire({
+            title: "عدم احراز هویت",
+            text: "نشست شما منقضی شده، لطفاً دوباره وارد شوید!",
+            icon: "error",
+            confirmButtonText: "تایید",
+            confirmButtonColor: "#28a745",
+            timer: 1500
+        });
+                    } else if (response.statusCode == 403) {
+                                swal.fire({
+            title: "عدم دسترسی",
+            text: "شما مجوز انجام این عملیات را ندارید!",
+            icon: "error",
+            confirmButtonText: "تایید",
+            confirmButtonColor: "#28a745",
+            timer: 1500
+        });
+                    } else if (response.statusCode == 400) {
+                                swal.fire({
+            title: "خطا",
+            text: "اطلاعات ارسالی معتبر نیست!",
+            icon: "error",
+            confirmButtonText: "تایید",
+            confirmButtonColor: "#28a745",
+            timer: 1500
+        });
+                    } else if (response.statusCode == 409) {
+                                swal.fire({
+            title: "خطا",
+            text: "این اطلاعات قبلاً در سیستم ثبت شده است!",
+            icon: "error",
+            confirmButtonText: "تایید",
+            confirmButtonColor: "#28a745",
+            timer: 1500
+        });
+                    }else if (response.statusCode == 500) {
+                        swal.fire({
+                            title: "خطا",
+                            text: "سمت سرور خطایی رخ داده است!",
+                            icon: "error",
+                            confirmButtonText: "تایید",
+                            confirmButtonColor: "#28a745",
+                            timer: 1500
+                        });
+                    }
+                }
+            });
+        });
+    </script>
+
+    <script>
+        function showUpdateModal(customerId) {
+            $("#customerModalCenterTitle").text("ویرایش اطلاعات");
+
+            $.ajax({
+                type: 'GET',
+                url: '@ApiAddress' + 'Customer/GetById?customerId=' + customerId,
+                dataType: 'json',
+                headers: {
+                    "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                },
+                success: function (xhr) {
+                    $("#customerId").val(xhr.data.id);
+                    $("#NameU").val(xhr.data.name);
+                    $("#PhoneU").val(xhr.data.phone);
+                    $("#EmailU").val(xhr.data.email);
+                    $("#AddressU").val(xhr.data.address);
+                    $("#TenantIdU").val(xhr.data.tenantId);
+
+                    $("#ModifiedByIdU").val("@UserId");
+
+                    $("#editCustomer").modal('show');
+                }
+            });
+        }
+
+        $("#btnCustomerUpdate").on('click', function (e) {
+            e.preventDefault();
+
+            var model = {
+                customerId: $("#customerId").val(),
+                name: $("#NameU").val(),
+                phone: $("#PhoneU").val(),
+                email: $("#EmailU").val(),
+                address: $("#AddressU").val(),
+                modifiedById: $("#ModifiedByIdU").val(),
+                tenantId: $("#TenantIdU").val(),
+            }
+
+            $.ajax({
+                type: 'PUT',
+                url: '@ApiAddress' + 'Customer/UpdateCustomer',
+                dataType: 'Json',
+                headers: {
+                    "Authorization": "Bearer " + "@User.FindFirstValue("Token")"
+                },
+                contentType: 'application/json',
+                processData: false,
+                data: JSON.stringify(model),
+                success: function (xhr) {
+                    if (xhr.statusCode == '200') {
+                                swal.fire({
+            title: "ویرایش اطلاعات",
+            text: "ویرایش حساب با موفقیت انجام شد!",
+            icon: "success",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        window.location.reload();
+                    }
+                    if (xhr.statusCode == '400') {
+                                swal.fire({
+            title: "خطا",
+            text: "پارامترهای ارسالی معتبر نیست!",
+            icon: "error",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        return false;
+                    } else if (xhr.statusCode == '409') {
+                                swal.fire({
+            title: "خطا",
+            text: "اطلاعات تکراری می‌باشد!",
+            icon: "error",
+            showConfirmButton: false,
+            timer: 1500
+        });
+                        return false;
+                    }
+                }
+            });
+        })
+    </script>
+}

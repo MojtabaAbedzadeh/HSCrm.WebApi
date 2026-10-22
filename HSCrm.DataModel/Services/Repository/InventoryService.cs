@@ -43,7 +43,11 @@ namespace HSCrm.DataModel.Services.Repository
 
             foreach (var item in invoice.Items)
             {
-                var inventory = _context.Inventories.FirstOrDefault(x =>
+                var inventory = _context.Inventories.Local.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId)
+                    ?? _context.Inventories.FirstOrDefault(x =>
                     x.ProductId == item.ProductId &&
                     x.TenantId == invoice.TenantId &&
                     x.WarehouseId == invoice.WarehouseId);
@@ -165,7 +169,11 @@ namespace HSCrm.DataModel.Services.Repository
 
             foreach (var item in invoice.Items)
             {
-                var inventory = _context.Inventories.FirstOrDefault(x =>
+                var inventory = _context.Inventories.Local.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId)
+                    ?? _context.Inventories.FirstOrDefault(x =>
                     x.ProductId == item.ProductId &&
                     x.TenantId == invoice.TenantId &&
                     x.WarehouseId == invoice.WarehouseId);
@@ -220,7 +228,11 @@ namespace HSCrm.DataModel.Services.Repository
 
             foreach (var item in invoice.Items)
             {
-                var inventory = await _context.Inventories.FirstOrDefaultAsync(x =>
+                var inventory = _context.Inventories.Local.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId)
+                    ?? await _context.Inventories.FirstOrDefaultAsync(x =>
                     x.ProductId == item.ProductId &&
                     x.TenantId == invoice.TenantId &&
                     x.WarehouseId == invoice.WarehouseId);
@@ -304,7 +316,11 @@ namespace HSCrm.DataModel.Services.Repository
 
             foreach (var item in returnInvoice.Items)
             {
-                var inventory = await _context.Inventories.FirstOrDefaultAsync(x =>
+                var inventory = _context.Inventories.Local.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == returnInvoice.TenantId &&
+                    x.WarehouseId == returnInvoice.WarehouseId)
+                    ?? await _context.Inventories.FirstOrDefaultAsync(x =>
                     x.ProductId == item.ProductId &&
                     x.TenantId == returnInvoice.TenantId &&
                     x.WarehouseId == returnInvoice.WarehouseId, ct);
@@ -435,7 +451,11 @@ namespace HSCrm.DataModel.Services.Repository
 
             foreach (var item in returnInvoice.Items)
             {
-                var inventory = await _context.Inventories.FirstOrDefaultAsync(x =>
+                var inventory = _context.Inventories.Local.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == returnInvoice.TenantId &&
+                    x.WarehouseId == returnInvoice.WarehouseId)
+                    ?? await _context.Inventories.FirstOrDefaultAsync(x =>
                     x.ProductId == item.ProductId &&
                     x.TenantId == returnInvoice.TenantId &&
                     x.WarehouseId == returnInvoice.WarehouseId, ct);
@@ -569,7 +589,11 @@ namespace HSCrm.DataModel.Services.Repository
 
             foreach (var item in invoice.Items)
             {
-                var inventory = _context.Inventories.FirstOrDefault(x =>
+                var inventory = _context.Inventories.Local.FirstOrDefault(x =>
+                    x.ProductId == item.ProductId &&
+                    x.TenantId == invoice.TenantId &&
+                    x.WarehouseId == invoice.WarehouseId)
+                    ?? _context.Inventories.FirstOrDefault(x =>
                     x.ProductId == item.ProductId &&
                     x.TenantId == invoice.TenantId &&
                     x.WarehouseId == invoice.WarehouseId);

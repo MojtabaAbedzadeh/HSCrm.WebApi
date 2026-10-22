@@ -1,0 +1,429 @@
+﻿@using HSCrm.Dashboard.Costants
+@using static HSCrm.Common.PublicTools.Enums
+@model IEnumerable<PurchaseInvoiceModel>
+@{
+    ViewData["Title"] = "فاکتورهای خرید";
+    ViewData["selected"] = "invoice_purchase_list";
+
+    // محاسبات خلاصه مالی بالای صفحه
+    var totalPurchase = Model.Sum(x => x.Total);
+    var totalPaid = Model.Sum(x => x.PaidAmount);
+    var totalRemaining = Model.Sum(x => x.RemainingAmount);
+
+}
+
+@section styles {
+    <link href="~/assets/plugins/data-tables/datatables.bootstrap5.min.css" rel="stylesheet">
+    <link href="~/assets/plugins/data-tables/responsive.datatables.min.css" rel="stylesheet">
+    <link href="~/assets/css/ekka.css" id="ekka-css" rel="stylesheet">
+    <link href="~/lib/persiandate/persian-datepicker.css" rel="stylesheet" />
+}
+
+<div class="breadcrumb-wrapper breadcrumb-contacts">
+    <div>
+        <h1>لیست فاکتورهای خرید</h1>
+        <p class="breadcrumbs">
+            <span>
+                <a href="index.html">خانه</a>
+            </span>
+            <span>
+                <i class="mdi mdi-chevron-left"></i>
+            </span>فاکتور خرید
+        </p>
+    </div>
+    @if (ViewBag.FiscalYearStatus == "0")
+    {
+        <div>
+            @if (User.HasPermission(Permissions.PurchaseInvoices.Create))
+            {
+                <a type="button" class="btn btn-primary" href="/adminarea/invoice/AddPurchaseInvoice">افزودن فاکتور خرید </a>
+            }
+        </div>
+    }
+</div>
+<div class="row mb-4">
+    <div class="col-xl-4 col-sm-6 p-b-15">
+        <div class="card card-mini bg-primary text-white">
+            <div class="card-body">
+                <h2 class="mb-1">@totalPurchase.ToString("N0") تومان</h2>
+                <p>جمع کل فاکتورها</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4 col-sm-6 p-b-15">
+        <div class="card card-mini bg-success text-white">
+            <div class="card-body">
+                <h2 class="mb-1">@totalPaid.ToString("N0") تومان</h2>
+                <p>جمع کل پرداخت‌شده</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4 col-sm-6 p-b-15">
+        <div class="card card-mini bg-danger text-white">
+            <div class="card-body">
+                <h2 class="mb-1">@totalRemaining.ToString("N0") تومان</h2>
+                <p>جمع کل مانده بدهی</p>
+            </div>
+        </div>
+    </div>
+</div>
+@if (ViewBag.FiscalYearStatus != "0")
+{
+    <div class="alert alert-primary col-lg-8" role="alert" style="margin-top:40px; color:#084298;">
+        توجه!
+        <br>
+        سال مالی انتخاب شده بسته می باشد! شما فقط قادر به مشاهده گزارشات سیستم هستید.
+    </div>
+}
+<div class="row">
+    <div class="col-12">
+        <div class="ec-vendor-list card card-default">
+            <div class="card-body">
+                <div class="table-responsive-md">
+                    <div id="responsive-data-table_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer">
+                        <form method="get" asp-area="AdminArea" asp-controller="Invoice" asp-action="PurchaseInvoice" class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0">فیلتر فاکتورهای خرید</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-2">
+                                        <label for="supplierFullName" class="form-label">
+                                            نام تأمین‌کننده
+                                        </label>
+
+                                        <input type="text" id="supplierFullName" name="supplierFullName" class="form-control" placeholder="جستجوی نام..." value="@Context.Request.Query["supplierFullName"]" />
+                                    </div>
+
+                                    <div class="col-md-2">
+                                        <label for="fromDate" class="form-label">
+                                            از تاریخ
+                                        </label>
+
+                                        <input type="date"
+                                               id="fromDate"
+                                               name="fromDate"
+                                               class="form-control"
+                                               value="@Context.Request.Query["fromDate"]" />
+                                    </div>
+
+                                    <div class="col-md-2">
+                                        <label for="toDate" class="form-label">
+                                            تا تاریخ
+                                        </label>
+
+                                        <input type="date"
+                                               id="toDate"
+                                               name="toDate"
+                                               class="form-control"
+                                               value="@Context.Request.Query["toDate"]" />
+                                    </div>
+
+                                    <div class="col-md-2">
+                                        <label for="minTotal" class="form-label">
+                                            حداقل مبلغ
+                                        </label>
+
+                                        <input type="number"
+                                               id="minTotal"
+                                               name="minTotal"
+                                               class="form-control"
+                                               value="@Context.Request.Query["minTotal"]"
+                                               min="0"
+                                               step="1" />
+                                    </div>
+
+                                    <div class="col-md-2">
+                                        <label for="maxTotal" class="form-label">
+                                            حداکثر مبلغ
+                                        </label>
+
+                                        <input type="number"
+                                               id="maxTotal"
+                                               name="maxTotal"
+                                               class="form-control"
+                                               value="@Context.Request.Query["maxTotal"]"
+                                               min="0"
+                                               step="1" />
+                                    </div>
+
+                                </div>
+                            </div>
+
+                            <div class="card-footer d-flex gap-2">
+                                <button type="submit" class="btn btn-primary" style="margin-left: 8px;">
+                                    <i class="fa fa-filter"></i>
+                                    اعمال فیلتر
+                                </button>
+
+                                <a asp-area="AdminArea"
+                                   asp-controller="Invoice"
+                                   asp-action="PurchaseInvoice"
+                                   class="btn btn-outline-secondary">
+                                    حذف فیلترها
+                                </a>
+                            </div>
+                        </form>
+
+                        <table id="responsive-data-table" class="table no-footer" aria-describedby="responsive-data-table_info">
+                            <thead>
+                                <tr>
+                                    <th>شماره فاکتور</th>
+                                    <th>تاریخ فاکتور</th>
+                                    <th>تامین کننده</th>
+                                    <th>جمع فاکتور</th>
+                                    <th>پرداخت شده</th>
+                                    <th>مانده حساب</th>
+                                    <th>وضعیت فاکتور</th>
+                                    <th>وضعیت پرداخت</th>
+                                    <th>عملیات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    var remaining = item.Total - item.PaidAmount;
+
+                                    <tr>
+                                        <td>@item.Number</td>
+                                        <td>@item.IssueDate.ToString("yyyy/MM/dd")</td>
+                                        <td>@item.Supplier.SupplierFullName</td>
+                                        <td class="text-primary font-weight-bold">@item.Total.ToString("N0")</td>
+                                        <td class="text-success">@item.PaidAmount.ToString("N0")</td>
+                                        <td class="text-danger">@item.RemainingAmount.ToString("N0")</td>
+                                        <td>
+                                            @switch (item.Status)
+                                            {
+                                                case InvoiceStatus.Proforma:
+                                                    <span class="badge bg-warning text-dark">پیش‌نویس</span>
+                                                    break;
+                                                case InvoiceStatus.Final:
+                                                    <span class="badge bg-success">نهایی</span>
+                                                    break;
+                                                case InvoiceStatus.Rejected:
+                                                    <span class="badge bg-danger">رد شده</span>
+                                                    break;
+                                                case InvoiceStatus.Cancelled:
+                                                    <span class="badge bg-secondary">ابطال</span>
+                                                    break;
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (item.RemainingAmount <= 0)
+                                            {
+                                                <span class="badge bg-success text-white">تسویه شده</span>
+                                            }
+                                            else if (item.PaidAmount > 0)
+                                            {
+                                                <span class="badge bg-warning text-dark">پرداخت شده (بخشی)</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger text-white">پرداخت نشده</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="btn-group mb-1">
+                                                <button type="button" class="btn btn-outline-success">نمایش فاکتور</button>
+                                                <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-display="static">
+                                                    <span class="sr-only">اطلاعات</span>
+                                                </button>
+                                                @if (ViewBag.FiscalYearStatus == "0")
+                                                {
+                                                    <div class="dropdown-menu">
+                                                        <!-- ویرایش: فقط برای پیش‌نویس -->
+                                                        @if (item.Status == InvoiceStatus.Proforma && User.HasPermission(Permissions.PurchaseInvoices.Edit))
+                                                        {
+                                                            <a class="dropdown-item" asp-area="AdminArea" asp-controller="Invoice" asp-action="EditPurchaseInvoice" asp-route-id="@item.Id">
+                                                                <i class="mdi mdi-pencil-outline me-1"></i> ویرایش
+                                                            </a>
+                                                        }
+                                                        @if (User.HasPermission(Permissions.PurchaseInvoices.Delete))
+                                                        {
+                                                            <a class="dropdown-item text-danger" href="#" onclick="deletePurchaseInvoice(@item.Id)">
+                                                                <i class="mdi mdi-delete me-1"></i> حذف
+                                                            </a>
+                                                        }
+                                                        <hr />
+                                                        <!-- عملیات‌های تائید، رد، کنسل: فقط برای پیش‌نویس -->
+                                                        @if (item.Status == InvoiceStatus.Proforma)
+                                                        {
+                                                            @if (User.HasPermission(Permissions.PurchaseInvoices.Approve))
+                                                            {
+                                                                <a class="dropdown-item" href="#" onclick="confirmPurchaseInvoice(@item.Id)">
+                                                                    <i class="mdi mdi-check me-1"></i> تائید فاکتور
+                                                                </a>
+                                                            }
+                                                            @if (User.HasPermission(Permissions.PurchaseInvoices.Reject))
+                                                            {
+                                                                <a class="dropdown-item" href="#" onclick="rejectPurchaseInvoice(@item.Id)">
+                                                                    <i class="mdi mdi-close me-1"></i> رد فاکتور
+                                                                </a>
+                                                                <a class="dropdown-item" href="#" onclick="cancelPurchaseInvoice(@item.Id)">
+                                                                    <i class="mdi mdi-block-helper me-1"></i> ابطال
+                                                                </a>
+                                                            }
+                                                        }
+
+                                                        <!-- عملیات‌های معکوس: اگر فاکتور تائید شده یا رد شده بود -->
+                                                        @if (item.Status != InvoiceStatus.Proforma)
+                                                        {
+                                                            <a class="dropdown-item" href="#" onclick="draftPurchaseInvoice(@item.Id)">
+                                                                <i class="mdi mdi-refresh me-1"></i> بازگشت به پیش‌نویس
+                                                            </a>
+                                                            @if (item.Status == InvoiceStatus.Final)
+                                                            {
+                                                                <hr />
+                                                                <a class="dropdown-item text-primary" href="/AdminArea/Payment/Index?invoiceId=@item.Id">
+                                                                    <i class="mdi mdi-cash-minus me-1"></i> ثبت پرداخت به تأمین‌کننده
+                                                                </a>
+                                                                <a class="dropdown-item text-warning" href="/AdminArea/ReturnInvoice/PurchaseReturn?invoiceId=@item.Id">
+                                                                    <i class="mdi mdi-keyboard-return me-1"></i> ثبت برگشت از خرید
+                                                                </a>
+                                                                <a class="dropdown-item text-info" href="/AdminArea/Accounting/Vouchers?refType=2&refId=@item.Id">
+                                                                    <i class="mdi mdi-book-open-page-variant me-1"></i> مشاهده سند حسابداری
+                                                                </a>
+                                                                <a class="dropdown-item text-dark" href="javascript:void(0)" onclick="window.print()">
+                                                                    <i class="mdi mdi-printer me-1"></i> چاپ رسمی فاکتور خرید (A4)
+                                                                </a>
+                                                            }
+                                                        }                                                      
+                                                       
+                                                    </div>
+                                                    @* <div class="dropdown-menu">
+
+                                                        @if (User.HasPermission(Permissions.PurchaseInvoices.Edit))
+                                                        {
+                                                            <a class="dropdown-item" asp-area="AdminArea" asp-controller="Invoice" asp-action="EditPurchaseInvoice" asp-route-id="@item.Id">
+                                                                <i class="mdi mdi-pencil-outline me-1"></i>
+                                                                ویرایش
+                                                            </a>
+
+                                                        }
+
+                                                        @if (User.HasPermission(Permissions.PurchaseInvoices.Delete))
+                                                        {
+                                                            <a class="dropdown-item text-danger btnRemove" href="#" onclick="deletePurchaseInvoice(@item.Id)">
+                                                                <i class="mdi mdi-delete me-1"></i>
+                                                                حذف
+                                                            </a>
+                                                            <hr />
+                                                        }
+
+                                                        @if (User.HasPermission(Permissions.PurchaseInvoices.Approve))
+                                                        {
+                                                            <a class="btn-confirm-invoice dropdown-item" href="#" onclick="confirmPurchaseInvoice(@item.Id)" data-id="@item.Id">
+                                                                <i class="mdi mdi-check me-1"></i>
+                                                                تائید فاکتور
+                                                            </a>
+                                                        }
+                                                        @if (User.HasPermission(Permissions.PurchaseInvoices.Reject))
+                                                        {
+                                                            <a class="dropdown-item" href="#" onclick="rejectPurchaseInvoice(@item.Id)">
+                                                                <i class="mdi mdi-close me-1"></i>
+                                                                رد فاکتور
+                                                            </a>
+                                                            <a class="dropdown-item" href="#" onclick="cancelPurchaseInvoice(@item.Id)">
+                                                                <i class="mdi mdi-close me-1"></i>
+                                                                کنسل
+                                                            </a>
+
+                                                            <a class="dropdown-item" href="#" onclick="draftPurchaseInvoice(@item.Id)">
+                                                                <i class="mdi mdi-close me-1"></i>
+                                                                بازگشت به پیش‌نویس
+                                                            </a>
+
+                                                            <a class="dropdown-item" href="#" onclick="deletePurchaseInvoice(@item.Id)">
+                                                                <i class="mdi mdi-close me-1"></i>
+                                                                حذف
+                                                            </a>
+
+                                                            <hr />
+                                                        }
+
+                                                        @if (item.RemainingAmount > 0 && ViewBag.FiscalYearStatus == "0")
+                                                        {
+                                                            <a class="dropdown-item text-primary" href="javascript:void(0)" onclick="openAddPaymentModal(@item.Id, @item.RemainingAmount)">
+                                                                <i class="mdi mdi-cash-register me-1"></i>
+                                                                ثبت پرداخت
+                                                            </a>
+                                                        }
+                                                        <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">
+                                                            <i class="mdi mdi-cash-multiple me-1"></i>
+                                                            لیست پرداخت‌ها
+                                                        </a>
+                                                        <hr />
+                                                        <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">
+                                                            <i class="mdi mdi-printer me-1"></i>
+                                                            چاپ
+                                                        </a>
+                                                        <a class="dropdown-item" href="#" onclick="showUpdateModal(@item.Id)">
+                                                            <i class="mdi mdi-file-pdf me-1"></i>
+                                                            خروجی PDF
+                                                        </a>
+                                                    </div> *@
+                                                }
+                                                else
+                                                {
+                                                    <div class="dropdown-menu">
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@section AdminScripts {
+    <script src="~/js/site.js"></script>
+
+    <script>
+        $(document).ready(function () {
+            const tableElement = $('#responsive-data-table');
+
+            if ($.fn.DataTable.isDataTable('#responsive-data-table')) {
+                tableElement.DataTable().destroy();
+            }
+
+            tableElement.DataTable({
+                order: [[1, 'desc']],
+                columnDefs: [
+                    {
+                        targets: [5],
+                        orderable: false
+                    }
+                ],
+                language: {
+                    search: 'جستجو:',
+                    lengthMenu: 'نمایش _MENU_ رکورد',
+                    info: 'نمایش _START_ تا _END_ از _TOTAL_ رکورد',
+                    infoEmpty: 'رکوردی وجود ندارد',
+                    zeroRecords: 'رکوردی پیدا نشد',
+                    paginate: {
+                        first: 'اول',
+                        last: 'آخر',
+                        next: 'بعدی',
+                        previous: 'قبلی'
+                    }
+                }
+            });
+        });
+    </script>
+
+    <script>
+        window.AppContext = {
+            apiAddress: '@ViewBag.ApiAddress',
+            tenantId: '@ViewBag.TenantId',
+            userId: '@ViewBag.UserId',
+            token: '@ViewBag.Token'
+        };
+    </script>
+
+    <script src="~/js/views/invoice/purchase-invoice-list.js"></script>
+}
