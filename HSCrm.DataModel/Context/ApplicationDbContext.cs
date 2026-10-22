@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;
@@ -15,8 +15,8 @@ namespace HSCrm.DataModel.Context
     {
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
-        private int CurrentTenantId => _currentUserService?.TenantId ?? 0;
-        private int? CurrentFiscalYearId => _currentFiscalYearService?.FiscalYearId;
+        public int CurrentTenantId => _currentUserService?.TenantId ?? 0;
+        public int? CurrentFiscalYearId => _currentFiscalYearService?.FiscalYearId;
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUserService currentUserService, ICurrentFiscalYearService currentFiscalYearService) : base(options)
         {
             _currentUserService = currentUserService;
@@ -36,6 +36,7 @@ namespace HSCrm.DataModel.Context
         public DbSet<Receipt> Receipts { get; set; }
         public DbSet<Payment> Payments { get; set; }
         public DbSet<Attachment> Attachments { get; set; }        public DbSet<Inventory> Inventories { get; set; }
+        public DbSet<Warehouse> Warehouses { get; set; }
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
         public DbSet<FiscalYear> FiscalYears { get; set; }
         public DbSet<Permission> Permissions { get; set; }

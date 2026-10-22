@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -888,7 +888,7 @@ namespace HSCrm.DataModel.Services.Repository
                     AccountId = g.Key.AccountId,
                     AccountCode = g.Key.Code,
                     AccountTitle = g.Key.Title,
-                    AccountType = g.Key.AccountType,
+                    CategoryTitle = g.Key.Category.ToString(),
                     TurnoverDebit = g.Sum(i => i.Debit),
                     TurnoverCredit = g.Sum(i => i.Credit)
                 })

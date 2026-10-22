@@ -1,4 +1,4 @@
-﻿using HSCrm.Common.PublicTools;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
@@ -118,7 +118,7 @@ namespace HSCrm.UnitTests
             context.SaveChanges();
 
             var uow = new UnitOfWork(context);
-            var accounting = new AccountingService(context, uow, currentFy, currentUser);
+            var accounting = new AccountingService(context, uow, currentUser, currentFy);
             var inventory = new InventoryService(context, uow, currentFy, currentUser);
 
             return (context, uow, accounting, inventory, currentUser, currentFy);
@@ -133,13 +133,13 @@ namespace HSCrm.UnitTests
             await accounting.EnsureDefaultChartOfAccountsAsync(1); // فراخوانی مجدد برای تست Idempotency
 
             var accounts = await context.AccountingAccounts.Where(a => a.TenantId == 1 && !a.IsDeleted).ToListAsync();
-            Assert.Equal(20, accounts.Count);
-            Assert.Contains(accounts, a => a.Code == "1101" && a.AccountType == AccountingAccountType.Asset);
-            Assert.Contains(accounts, a => a.Code == "1104" && a.Title.Contains("موجودی کالا"));
-            Assert.Contains(accounts, a => a.Code == "2101" && a.AccountType == AccountingAccountType.Liability);
-            Assert.Contains(accounts, a => a.Code == "3101" && a.AccountType == AccountingAccountType.Equity);
-            Assert.Contains(accounts, a => a.Code == "4102" && a.Title.Contains("برگشت از فروش"));
-            Assert.Contains(accounts, a => a.Code == "5102" && a.Title.Contains("بهای تمام‌شده"));
+            Assert.Equal(16, accounts.Count);
+            Assert.Contains(accounts, a => a.Code == "1101" && a.Category == AccountCategory.Asset);
+            Assert.Contains(accounts, a => a.Code == "1105" && a.Title.Contains("موجودی کالا"));
+            Assert.Contains(accounts, a => a.Code == "2101" && a.Category == AccountCategory.Liability);
+            Assert.Contains(accounts, a => a.Code == "3101" && a.Category == AccountCategory.Equity);
+            Assert.Contains(accounts, a => a.Code == "4103" && a.Title.Contains("برگشت از فروش"));
+            Assert.Contains(accounts, a => a.Code == "5101" && a.Title.Contains("بهای تمام‌شده"));
         }
 
         [Fact(DisplayName = "02. کنترل تراز بودن سند روزنامه دستی (رد سند ناتراز و ثبت موفق سند تراز)")]
@@ -387,7 +387,7 @@ namespace HSCrm.UnitTests
             // بررسی گزارش ارزش‌گذاری انبار: ۸ عدد باقی‌مانده از پارت ۲ به ارزش FIFO معادل ۱۶,۰۰۰,۰۰۰ ریال و میانگین موزون ۱۲,۰۰۰,۰۰۰ ریال
             var valuation = await inventory.GetInventoryValuationAsync(1);
             Assert.Single(valuation);
-            Assert.Equal(8m, valuation[0].OnHandQuantity);
+            Assert.Equal(8m, valuation[0].CurrentQuantity);
             Assert.Equal(16_000_000m, valuation[0].FifoTotalValue);
             Assert.Equal(12_000_000m, valuation[0].WeightedAverageTotalValue);
         }
@@ -535,7 +535,7 @@ namespace HSCrm.UnitTests
             var expense = new Expense
             {
                 TenantId = 1, FiscalYearId = 1, ProjectId = 1, ExpenseTitle = "دستمزد اکیپ نصب ریل و کابین",
-                Type = ExpenseType.Installation, Amount = 18_000_000m, ExpenseDate = new DateTime(2025, 5, 1)
+                Type = ExpenseType.Other, Amount = 18_000_000m, ExpenseDate = new DateTime(2025, 5, 1)
             };
             context.Expenses.Add(expense);
             await context.SaveChangesAsync();
@@ -678,24 +678,31 @@ namespace HSCrm.UnitTests
         [Fact(DisplayName = "15. ماشین‌حساب رأس‌گیری چک‌ها: میانگین موزون زمانی/ریالی، تاریخ دقیق رأس و ارزش فعلی (NPV)")]
         public async Task Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue()
         {
-            var (_, _, accounting, _, _, _) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
 
             var baseDate = new DateTime(2025, 4, 1);
             var baseDateShamsi = ConvertDate.ConvertMiladiToShamsi(baseDate, "yyyy/MM/dd");
-            var due1Shamsi = ConvertDate.ConvertMiladiToShamsi(baseDate.AddDays(30), "yyyy/MM/dd");
-            var due2Shamsi = ConvertDate.ConvertMiladiToShamsi(baseDate.AddDays(70), "yyyy/MM/dd");
 
-            // چک ۱: ۱۰۰ میلیون به سررسید ۳۰ روز | چک ۲: ۳۰۰ میلیون به سررسید ۷۰ روز
-            // میانگین موزون = (100M * 30 + 300M * 70) / 400M = 24,000,000,000 / 400,000,000 = 60 روز
+            var c1 = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "1001", Amount = 100_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(30),
+                BankName = "ط¨ط§ظ†ع© ظ…ظ„طھ", CustomerId = 1
+            };
+            var c2 = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "1002", Amount = 300_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(70),
+                BankName = "ط¨ط§ظ†ع© ظ…ظ„طھ", CustomerId = 1
+            };
+            context.Cheques.AddRange(c1, c2);
+            await context.SaveChangesAsync();
+
             var result = await accounting.CalculateChequesRasGiriAsync(new ChequeRasGiriRequestModel
             {
                 BaseDateShamsi = baseDateShamsi,
-                MonthlyDiscountRatePercent = 3m, // ۳ درصد ماهانه
-                AdHocCheques = new List<ChequeRasGiriAdHocItemModel>
-                {
-                    new() { ChequeNumber = "1001", Amount = 100_000_000m, DueDateShamsi = due1Shamsi },
-                    new() { ChequeNumber = "1002", Amount = 300_000_000m, DueDateShamsi = due2Shamsi }
-                }
+                MonthlyDiscountRatePercent = 3m,
+                ChequeIds = new List<int> { c1.Id, c2.Id }
             });
 
             Assert.Equal(2, result.ChequeCount);
@@ -834,7 +841,7 @@ namespace HSCrm.UnitTests
             var expense = new Expense
             {
                 TenantId = 1, FiscalYearId = 1, ProjectId = 1, ExpenseTitle = "هزینه نصب",
-                Type = ExpenseType.Installation, Amount = 20_000_000m, ExpenseDate = new DateTime(2025, 6, 10)
+                Type = ExpenseType.Other, Amount = 20_000_000m, ExpenseDate = new DateTime(2025, 6, 10)
             };
             context.Expenses.Add(expense);
             await context.SaveChangesAsync();

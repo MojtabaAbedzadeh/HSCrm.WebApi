@@ -1,10 +1,10 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace HSCrm.Entities.Entities
 {
     public abstract class AuditedEntity : EntityBase
     {
-        public required DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public string? CreatedById { get; set; }
         public ApplicationUser CreatedBy { get; set; } = default!;
         public DateTime? ModifiedAt { get; set; }
