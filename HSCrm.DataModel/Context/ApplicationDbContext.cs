@@ -244,6 +244,7 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<SalesReturnInvoiceItem>(builder);
             ConfigureAuditedEntity<PurchaseReturnInvoice>(builder);
             ConfigureAuditedEntity<PurchaseReturnInvoiceItem>(builder);
+            ConfigureAuditedEntity<Warehouse>(builder);
 
             // ======================= Tenant =======================
             builder.Entity<Tenant>(e =>
@@ -581,6 +582,13 @@ namespace HSCrm.DataModel.Context
                 .Property(x => x.RowVersion)
                 .IsRowVersion()
                 .IsConcurrencyToken();
+            // ========= Warehouse =========
+            builder.Entity<Warehouse>(entity =>
+            {
+                entity.ToTable("Warehouse");
+                entity.HasIndex(x => new { x.TenantId, x.Title, x.IsDeleted });
+            });
+
             // ========= Inventory =========
             builder.Entity<Inventory>(entity =>
             {

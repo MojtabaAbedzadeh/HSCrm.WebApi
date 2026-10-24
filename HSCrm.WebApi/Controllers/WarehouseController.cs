@@ -1,4 +1,4 @@
-﻿using Common.Permissions;
+using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities;
@@ -166,38 +166,50 @@ namespace HSCrm.WebApi.Controllers
 
   
         [HttpGet("WarehouseDropdownList")]
-        public ApiResponse WarehouseDropdownList()
+        public ApiResponse<IEnumerable<DropdownDto>> WarehouseDropdownList()
         {
-            var claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList();
-
             var tenantId = User.GetTenantId();
 
             if (!tenantId.HasValue)
             {
-                return new ApiResponse
+                return new ApiResponse<IEnumerable<DropdownDto>>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "شناسه مستاجر (TenantId) در درخواست موجود نیست."
+                    Message = "شناسه مستاجر (TenantId) در درخواست موجود نیست.",
+                    Data = Enumerable.Empty<DropdownDto>()
                 };
             }
 
-            var warehouseList = _context.warehouseUW
-                .Get(p => p.TenantId == tenantId.Value)
-                .Select(p => new DropdownDto
-                {
-                    DrId = p.Id,
-                    DrName = p.Title
-                })
-                .ToList();
-
-            return new ApiResponse<IEnumerable<DropdownDto>>
+            try
             {
-                Status = true,
-                StatusCode = ApiResultStatusCode.Success,
-                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = warehouseList
-            };
+                var warehouseList = _context.warehouseUW
+                    .Get(p => p.TenantId == tenantId.Value && !p.IsDeleted && p.IsActive)
+                    .Select(p => new DropdownDto
+                    {
+                        DrId = p.Id,
+                        DrName = p.Title
+                    })
+                    .ToList();
+
+                return new ApiResponse<IEnumerable<DropdownDto>>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = warehouseList
+                };
+            }
+            catch (Exception)
+            {
+                return new ApiResponse<IEnumerable<DropdownDto>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = "خطا در دریافت لیست انبارها از پایگاه داده.",
+                    Data = Enumerable.Empty<DropdownDto>()
+                };
+            }
         }
     }
 }

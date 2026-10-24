@@ -1,5 +1,8 @@
-﻿namespace HSCrm.Entities.Entities
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace HSCrm.Entities.Entities
 {
+    [Table("Warehouse")]
     public class Warehouse : TenantScopedEntity
     {
         public required string Title { get; set; }
