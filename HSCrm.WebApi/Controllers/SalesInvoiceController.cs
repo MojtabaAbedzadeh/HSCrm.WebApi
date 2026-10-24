@@ -1,4 +1,4 @@
-﻿using Common.Permissions;
+using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Exceptions;
 using HSCrm.DataModel.Services.Interface;
@@ -22,13 +22,20 @@ namespace HSCrm.WebApi.Controllers
         private readonly IInventoryService _inventory;
         private readonly IAccountingService _accountingService;
         private readonly IPaymentSettlementService _paymentSettlementService;
+        private readonly ICurrentFiscalYearService? _currentFiscalYearService;
 
-        public SalesInvoiceController(IUnitOfWork context, IInventoryService inventory, IPaymentSettlementService paymentSettlementService, IAccountingService accountingService)
+        public SalesInvoiceController(
+            IUnitOfWork context,
+            IInventoryService inventory,
+            IPaymentSettlementService paymentSettlementService,
+            IAccountingService accountingService,
+            ICurrentFiscalYearService? currentFiscalYearService = null)
         {
             _context = context;
             _inventory = inventory;
             _paymentSettlementService = paymentSettlementService;
             _accountingService = accountingService;
+            _currentFiscalYearService = currentFiscalYearService;
         }
 
         [HttpGet("SettlementSummary/{id}")]
@@ -89,6 +96,16 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.Create)]
         public async Task<ApiResponse> CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model, [FromQuery] InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage)
         {
+            if (model == null)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "اطلاعات فاکتور ارسال نشده است."
+                };
+            }
+
             if (model.Items == null || model.Items.Count == 0) return new ApiResponse
             {
                 Status = false,
@@ -96,15 +113,37 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.NoContent.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            using var transaction = _context.BeginTransaction();
+            var tenantId = User?.GetTenantId() ?? (model.TenantId > 0 ? model.TenantId : (int?)null);
+            if (!tenantId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "شناسه مستاجر (TenantId) در درخواست موجود نیست."
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "شماره فاکتور الزامی است."
+                };
+            }
+
+            var transaction = _context.BeginTransaction();
 
             try
             {
-                bool invoiceNumberExists = _context.salesInvoiceUW.Get().Any(i => i.Number == model.InvoiceNumber && i.TenantId == model.TenantId);
+                var existingQuery = _context.salesInvoiceUW?.Get(i => i.Number == model.InvoiceNumber && i.TenantId == tenantId.Value);
+                bool invoiceNumberExists = existingQuery != null && existingQuery.Any();
 
                 if (invoiceNumberExists)
                 {
-                    transaction.Rollback();
+                    transaction?.Rollback();
 
                     return new ApiResponse
                     {
@@ -114,6 +153,12 @@ namespace HSCrm.WebApi.Controllers
                     };
                 }
 
+                int fiscalYearId = _currentFiscalYearService?.FiscalYearId
+                    ?? _context.fiscalYearUW?.Get(f => f.TenantId == tenantId.Value && f.IsCurrent && !f.IsClosed)
+                                           .Select(f => f.Id)
+                                           .FirstOrDefault()
+                    ?? 1;
+
                 decimal subtotal = model.Items.Sum(i => i.Quantity * i.UnitPrice);
                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
 
@@ -122,21 +167,37 @@ namespace HSCrm.WebApi.Controllers
                 if (finalTotal < 0)
                     finalTotal = 0;
 
+                DateTime issueDate = DateTime.Now;
+                if (!string.IsNullOrWhiteSpace(model.IssueDate))
+                {
+                    try
+                    {
+                        issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
+                    }
+                    catch
+                    {
+                        issueDate = DateTime.Now;
+                    }
+                }
+
+                var userId = User?.GetUserId() ?? model.SellerUserId;
+
                 var invoice = new SalesInvoice
                 {
-                    TenantId = User.GetTenantId().Value,
+                    TenantId = tenantId.Value,
+                    FiscalYearId = fiscalYearId,
                     WarehouseId = model.WarehouseId,
                     ProjectId = model.ProjectId,
                     Number = model.InvoiceNumber,
-                    IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
+                    IssueDate = issueDate,
                     Status = model.Status,
                     Subtotal = subtotal,
                     Discount = model.InvoiceDiscount,
                     Tax = model.InvoiceTax,
                     Total = finalTotal,
                     SellerUserId = model.SellerUserId,
-                    CreatedById = User.GetUserId(),
-                    Description = "فاکتور فروش شماره" + model.InvoiceNumber,
+                    CreatedById = userId,
+                    Description = "فاکتور فروش شماره " + model.InvoiceNumber,
                     CreatedAt = DateTime.Now
                 };
 
@@ -150,8 +211,8 @@ namespace HSCrm.WebApi.Controllers
                         Discount = item.Discount,
                         Tax = item.Tax,
                         CreatedAt = DateTime.Now,
-                        CreatedById = User.GetUserId(),
-                        TenantId = User.GetTenantId().Value,
+                        CreatedById = userId,
+                        TenantId = tenantId.Value,
                         LineTotal = (item.Quantity * item.UnitPrice) - item.Discount + item.Tax
                     });
                 }
@@ -166,18 +227,19 @@ namespace HSCrm.WebApi.Controllers
                     await _context.SaveAsync();
                 }
 
-                transaction.Commit();
+                transaction?.Commit();
 
                 return new ApiResponse<SalesInvoice>
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = invoice
                 };
             }
             catch (NotEnoughInventoryException)
             {
-                transaction.Rollback();
+                transaction?.Rollback();
 
                 return new ApiResponse
                 {
@@ -188,7 +250,7 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception)
             {
-                transaction.Rollback();
+                transaction?.Rollback();
 
                 return new ApiResponse
                 {
@@ -196,6 +258,10 @@ namespace HSCrm.WebApi.Controllers
                     StatusCode = ApiResultStatusCode.ServerError,
                     Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
                 };
+            }
+            finally
+            {
+                transaction?.Dispose();
             }
         }
 
@@ -287,9 +353,9 @@ namespace HSCrm.WebApi.Controllers
                         Quantity = item.Quantity,
                         UnitPriceSell = item.UnitPrice,
                         LineTotal = item.UnitPrice * item.Quantity,
-                        TenantId = User.GetTenantId().Value,
+                        TenantId = User?.GetTenantId() ?? invoice.TenantId,
                         CreatedAt = DateTime.UtcNow,
-                        CreatedById = User.GetUserId()
+                        CreatedById = User?.GetUserId()
                     });
                 }
 
@@ -335,8 +401,12 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                var tenantId = User.GetTenantId().Value;
-                var userId = User.GetUserId();
+                var tenantIdOpt = User?.GetTenantId();
+                if (!tenantIdOpt.HasValue)
+                    return BadRequest("شناسه مستاجر (TenantId) نامعتبر است.");
+
+                var tenantId = tenantIdOpt.Value;
+                var userId = User?.GetUserId();
 
                 var invoice = (await _context.salesInvoiceUW.GetAsync(
                     x => x.Id == invoiceId && x.TenantId == tenantId,
