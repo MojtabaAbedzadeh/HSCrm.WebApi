@@ -422,5 +422,39 @@ namespace HSCrm.UnitTests
             Assert.Equal(10, data[0].DrId);
             Assert.Equal("انبار فعال ۱", data[0].DrName);
         }
+
+        [Fact(DisplayName = "9. ایجاد فاکتور فروش در صورت null بودن سال مالی جاری: نباید خطای InvalidOperationException بدهد")]
+        public async Task CreateSalesInvoice_WhenCurrentFiscalYearIsNull_DoesNotThrowInvalidOperationExceptionAndCreatesSuccessfully()
+        {
+            // Arrange
+            var env = CreateTestEnvironment("SalesNullFiscal");
+            // سال مالی جاری را عمداً نال قرار می‌دهیم
+            env.CurrentFiscalYear.FiscalYearId = null;
+
+            var controller = CreateController(env.Uow, env.InventoryMock, env.AccountingMock, env.SettlementMock, env.CurrentFiscalYear);
+
+            var model = new SalesInvoiceCreateModel
+            {
+                TenantId = 1,
+                WarehouseId = 1,
+                ProjectId = 1,
+                InvoiceNumber = "SI-NULL-FY",
+                IssueDate = "1404/01/25",
+                SellerUserId = "user-100",
+                Status = InvoiceStatus.Proforma,
+                Items = new List<SalesInvoiceItemCreateModel>
+                {
+                    new() { ProductId = 1, Quantity = 1, UnitPrice = 5_000_000m }
+                }
+            };
+
+            // Act - بررسی عدم پرتاب خطای System.InvalidOperationException: 'Nullable object must have a value.'
+            var response = await controller.CreateSalesInvoice(model);
+
+            // Assert
+            Assert.NotNull(response);
+            Assert.True(response.Status);
+            Assert.Equal(ApiResultStatusCode.Success, response.StatusCode);
+        }
     }
 }

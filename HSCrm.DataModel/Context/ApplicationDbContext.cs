@@ -884,14 +884,14 @@ namespace HSCrm.DataModel.Context
                     var fiscalProp = Expression.Property(parameter, nameof(IFiscalYearScoped.FiscalYearId));
                     var currentFiscal = Expression.Property(Expression.Constant(this), nameof(CurrentFiscalYearId));
 
-                    // مدیریت null بودن FiscalYear
-                    var hasValue = Expression.Property(currentFiscal, nameof(Nullable<int>.HasValue));
-                    var value = Expression.Property(currentFiscal, nameof(Nullable<int>.Value));
+                    // مقایسه ایمن بر مبنای Nullable<int> بدون دسترسی مستقیم به Property Value
+                    var nullableFiscalProp = Expression.Convert(fiscalProp, typeof(int?));
+                    var nullConstant = Expression.Constant(null, typeof(int?));
 
-                    var fiscalFilter = Expression.OrElse(
-                        Expression.Not(hasValue),
-                        Expression.Equal(fiscalProp, value)
-                    );
+                    var isNullFiscal = Expression.Equal(currentFiscal, nullConstant);
+                    var isEqualFiscal = Expression.Equal(nullableFiscalProp, currentFiscal);
+
+                    var fiscalFilter = Expression.OrElse(isNullFiscal, isEqualFiscal);
 
                     combinedBody = combinedBody == null
                         ? fiscalFilter
