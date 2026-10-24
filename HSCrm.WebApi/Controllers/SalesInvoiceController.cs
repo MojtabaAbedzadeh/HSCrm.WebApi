@@ -138,6 +138,7 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
+                // کوئری مستقیم و بهینه در SQL Server بدون احتمال خطای NullReference
                 var existingQuery = _context.salesInvoiceUW?.Get(i => i.Number == model.InvoiceNumber && i.TenantId == tenantId.Value);
                 bool invoiceNumberExists = existingQuery != null && existingQuery.Any();
 
@@ -153,6 +154,7 @@ namespace HSCrm.WebApi.Controllers
                     };
                 }
 
+                // انتساب سال مالی فعال به صورت خودکار
                 int fiscalYearId = _currentFiscalYearService?.FiscalYearId
                     ?? _context.fiscalYearUW?.Get(f => f.TenantId == tenantId.Value && f.IsCurrent && !f.IsClosed)
                                            .Select(f => f.Id)
@@ -163,21 +165,13 @@ namespace HSCrm.WebApi.Controllers
                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
 
                 decimal finalTotal = itemsTotal - model.InvoiceDiscount + model.InvoiceTax;
-
-                if (finalTotal < 0)
-                    finalTotal = 0;
+                if (finalTotal < 0) finalTotal = 0;
 
                 DateTime issueDate = DateTime.Now;
                 if (!string.IsNullOrWhiteSpace(model.IssueDate))
                 {
-                    try
-                    {
-                        issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
-                    }
-                    catch
-                    {
-                        issueDate = DateTime.Now;
-                    }
+                    try { issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate); }
+                    catch { issueDate = DateTime.Now; }
                 }
 
                 var userId = User?.GetUserId() ?? model.SellerUserId;
@@ -240,7 +234,6 @@ namespace HSCrm.WebApi.Controllers
             catch (NotEnoughInventoryException)
             {
                 transaction?.Rollback();
-
                 return new ApiResponse
                 {
                     Status = false,
@@ -251,7 +244,6 @@ namespace HSCrm.WebApi.Controllers
             catch (Exception)
             {
                 transaction?.Rollback();
-
                 return new ApiResponse
                 {
                     Status = false,
