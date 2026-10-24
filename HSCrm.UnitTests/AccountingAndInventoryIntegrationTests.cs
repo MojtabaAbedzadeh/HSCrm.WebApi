@@ -48,7 +48,9 @@ namespace HSCrm.UnitTests
             context.Tenants.Add(new Tenant
             {
                 Id = 1,
+                TenantCode = "TNT01",
                 TenantTitle = "شرکت مهندسی آسانسور هگمتانه",
+                IsActive = true,
                 CreatedAt = DateTime.UtcNow
             });
 
@@ -137,9 +139,9 @@ namespace HSCrm.UnitTests
             Assert.Contains(accounts, a => a.Code == "1101" && a.Category == AccountCategory.Asset);
             Assert.Contains(accounts, a => a.Code == "1105" && a.Title.Contains("موجودی کالا"));
             Assert.Contains(accounts, a => a.Code == "2101" && a.Category == AccountCategory.Liability);
-            Assert.Contains(accounts, a => a.Code == "3101" && a.Category == AccountCategory.Equity);
+            Assert.Contains(accounts, a => a.Code == "3101" && a.Category == AccountCategory.Equity);            
             Assert.Contains(accounts, a => a.Code == "4103" && a.Title.Contains("برگشت از فروش"));
-            Assert.Contains(accounts, a => a.Code == "5101" && a.Title.Contains("بهای تمام‌شده"));
+            Assert.Contains(accounts, a => a.Code == "5101" && a.Category == AccountCategory.Expense);
         }
 
         [Fact(DisplayName = "02. کنترل تراز بودن سند روزنامه دستی (رد سند ناتراز و ثبت موفق سند تراز)")]
@@ -681,7 +683,7 @@ namespace HSCrm.UnitTests
             var (context, _, accounting, _, _, _) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
 
             var baseDate = new DateTime(2025, 4, 1);
-            var baseDateShamsi = ConvertDate.ConvertMiladiToShamsi(baseDate, "yyyy/MM/dd");
+            var baseDateShamsi = "1404/01/12";
 
             var c1 = new Cheque
             {
