@@ -1,4 +1,4 @@
-﻿@using System.Security.Claims
+@using System.Security.Claims
 @using HSCrm.Dashboard.Costants
 @{
     ViewData["Title"] = "اسناد حسابداری (دفتر روزنامه)";
@@ -367,6 +367,31 @@
                     });
                 }
             });
+
+            if (items.length < 2) {
+                swal.fire({
+                    icon: 'warning',
+                    title: 'تعداد ناکافی آرتیکل‌ها',
+                    text: 'هر سند حسابداری دوبل الزاماً باید حداقل دارای ۲ آرتیکل (یک بدهکار و یک بستانکار) با مبالغ معتبر باشد.',
+                    confirmButtonText: 'متوجه شدم'
+                });
+                return;
+            }
+
+            const totalDebit = items.reduce((sum, item) => sum + item.debit, 0);
+            const totalCredit = items.reduce((sum, item) => sum + item.credit, 0);
+
+            if (totalDebit !== totalCredit || totalDebit <= 0) {
+                const diff = Math.abs(totalDebit - totalCredit);
+                swal.fire({
+                    icon: 'warning',
+                    title: 'سند حسابداری تراز نیست',
+                    html: `جمع بدهکار: <b>${formatNum(totalDebit)} ریال</b><br/>جمع بستانکار: <b>${formatNum(totalCredit)} ریال</b><br/>اختلاف تراز: <b class="text-danger">${formatNum(diff)} ریال</b><br/>در سیستم حسابداری دوبل، جمع بدهکار و بستانکار سند باید دقیقاً برابر باشد.`,
+                    confirmButtonText: 'اصلاح آرتیکل‌ها'
+                });
+                return;
+            }
+
             try {
                 const res = await fetch(`${apiBase}/Accounting/CreateManualVoucher`, {
                     method: 'POST',

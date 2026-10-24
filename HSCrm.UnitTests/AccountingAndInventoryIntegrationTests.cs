@@ -689,21 +689,23 @@ namespace HSCrm.UnitTests
             {
                 TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
                 ChequeNumber = "1001", Amount = 100_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(30),
-                BankName = "ط¨ط§ظ†ع© ظ…ظ„طھ", CustomerId = 1
+                BankName = "بانک ملت", CustomerId = 1
             };
             var c2 = new Cheque
             {
                 TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
                 ChequeNumber = "1002", Amount = 300_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(70),
-                BankName = "ط¨ط§ظ†ع© ظ…ظ„طھ", CustomerId = 1
+                BankName = "بانک ملت", CustomerId = 1
             };
             context.Cheques.AddRange(c1, c2);
             await context.SaveChangesAsync();
 
+            // چک ۱: ۱۰۰ میلیون به سررسید ۳۰ روز | چک ۲: ۳۰۰ میلیون به سررسید ۷۰ روز
+            // میانگین موزون = (100M * 30 + 300M * 70) / 400M = 24,000,000,000 / 400,000,000 = 60 روز
             var result = await accounting.CalculateChequesRasGiriAsync(new ChequeRasGiriRequestModel
             {
                 BaseDateShamsi = baseDateShamsi,
-                MonthlyDiscountRatePercent = 3m,
+                MonthlyDiscountRatePercent = 3m, // ۳ درصد ماهانه
                 ChequeIds = new List<int> { c1.Id, c2.Id }
             });
 

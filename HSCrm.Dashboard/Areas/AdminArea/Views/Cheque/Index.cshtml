@@ -1,4 +1,4 @@
-﻿@using System.Security.Claims
+@using System.Security.Claims
 @using HSCrm.Dashboard.Costants
 @{
     ViewData["Title"] = "مدیریت چک‌های صیادی و رأس‌گیری";
@@ -295,6 +295,17 @@
         async function calculateRasGiri() {
             const ids = Array.from(document.querySelectorAll('.chq-select:checked')).map(cb => Number(cb.value));
             const rate = Number(document.getElementById('rasDiscountRate').value || 0);
+
+            if (ids.length === 0) {
+                swal.fire({
+                    icon: 'warning',
+                    title: 'چکی انتخاب نشده است',
+                    text: 'لطفاً حداقل یک یا چند چک را از جدول زیر تیک بزنید تا رأس‌گیری، میانگین وزنی روزها و ارزش فعلی محاسبه شوند.',
+                    confirmButtonText: 'متوجه شدم'
+                });
+                return;
+            }
+
             try {
                 const res = await fetch(`${apiBase}/Cheque/CalculateRasGiri`, {
                     method: 'POST',
@@ -305,14 +316,29 @@
                     })
                 });
                 const json = await res.json();
+                if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در محاسبه رأس‌گیری');
                 const d = json.data;
                 if (d) {
                     document.getElementById('rasTotalAmount').textContent = `${formatNum(d.totalAmount)} ریال`;
                     document.getElementById('rasWeightedDays').textContent = `${d.weightedAverageDays} روز`;
                     document.getElementById('rasExactDate').textContent = `(${d.exactMaturityDateShamsi || ''})`;
                     document.getElementById('rasPresentValue').textContent = `${formatNum(d.presentValueAmount)} ریال`;
+
+                    swal.fire({
+                        icon: 'success',
+                        title: 'محاسبه رأس‌گیری انجام شد',
+                        html: `تعداد چک‌های محاسبه‌شده: <b>${ids.length} فقره</b><br/>رأس سررسید: <b>${d.weightedAverageDays} روز</b> (${d.exactMaturityDateShamsi || ''})<br/>ارزش فعلی خالص: <b>${formatNum(d.presentValueAmount)} ریال</b>`,
+                        confirmButtonText: 'عالی'
+                    });
                 }
-            } catch (e) { console.error(e); }
+            } catch (err) {
+                swal.fire({
+                    title: 'خطا در محاسبه رأس‌گیری',
+                    text: err.message || 'خطایی در ارتباط با سرور رخ داد.',
+                    icon: 'error',
+                    confirmButtonText: 'باشه'
+                });
+            }
         }
 
         async function saveCheque() {

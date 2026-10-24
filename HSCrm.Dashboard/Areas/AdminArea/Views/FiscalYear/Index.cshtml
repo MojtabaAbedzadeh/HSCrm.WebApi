@@ -1,4 +1,4 @@
-﻿@using System.Security.Claims
+@using System.Security.Claims
 @using HSCrm.Dashboard.Costants
 @{
     ViewData["Title"] = "مدیریت سال مالی، اختتامیه و افتتاحیه";
@@ -230,6 +230,22 @@
         }
 
         async function executeCloseFiscalYear() {
+            const confirmResult = await swal.fire({
+                title: 'آیا از بستن سال مالی اطمینان دارید؟',
+                html: `با تأیید این عملیات:<br/>
+                       ۱. کلیه حساب‌های موقت (درآمد و هزینه) به حساب ۳۱۰۱ بسته می‌شوند.<br/>
+                       ۲. سند اختتامیه سال جاری صادر و وضعیت سال مالی به <b>بسته</b> تغییر می‌یابد.<br/>
+                       ۳. سال مالی جدید تعریف شده و سند افتتاحیه آن به صورت خودکار صادر می‌گردد.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#198754',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'بله، عملیات بستن سال مالی انجام شود',
+                cancelButtonText: 'انصراف'
+            });
+
+            if (!confirmResult.isConfirmed) return;
+
             const payload = {
                 nextFiscalYearTitle: document.getElementById('closeNextTitle').value.trim(),
                 nextStartDateShamsi: document.getElementById('closeNextStart').value.trim(),
@@ -244,14 +260,37 @@
                 });
                 const json = await res.json();
                 if (!res.ok || json.status === false) throw new Error(json.message || 'خطا در بستن سال مالی');
-                await swal.fire({ title: 'عملیات پایان سال مالی انجام شد', text: json.message, icon: 'success', confirmButtonText: 'باشه' });
+                await swal.fire({
+                    title: 'عملیات پایان سال مالی با موفقیت انجام شد',
+                    html: `<b>${json.message || ''}</b><br/>اسناد بستن حساب‌های موقت، اختتامیه و افتتاحیه سال جدید با موفقیت در سیستم حسابداری ثبت گردیدند.`,
+                    icon: 'success',
+                    confirmButtonText: 'متوجه شدم'
+                });
                 initFiscalYears();
             } catch (err) {
-                swal.fire({ title: 'خطا', text: err.message, icon: 'error', confirmButtonText: 'باشه' });
+                swal.fire({
+                    title: 'خطا در بستن سال مالی',
+                    text: err.message || 'عملیات با خطا مواجه شد. لطفاً تراز بودن حساب‌ها را در گزارش تراز آزمایشی کنترل فرمایید.',
+                    icon: 'error',
+                    confirmButtonText: 'باشه'
+                });
             }
         }
 
         async function reopenFiscalYear(id) {
+            const confirmResult = await swal.fire({
+                title: 'آیا از بازگشایی سال مالی اطمینان دارید؟',
+                text: 'با بازگشایی سال مالی، امکان ویرایش و ثبت اسناد جدید در این دوره مجدداً فعال خواهد شد.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#0d6efd',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'بله، بازگشایی شود',
+                cancelButtonText: 'انصراف'
+            });
+
+            if (!confirmResult.isConfirmed) return;
+
             try {
                 const res = await fetch(`${apiBase}/FiscalYear/${id}/Reopen`, { method: 'POST', headers: getAuthHeaders() });
                 const json = await res.json();
