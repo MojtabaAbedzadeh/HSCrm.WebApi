@@ -441,10 +441,13 @@ namespace HSCrm.WebApi.Controllers
                     return BadRequest("شناسه مستاجر (TenantId) نامعتبر است.");
 
                 var tenantId = tenantIdOpt.Value;
+                var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+                if (!fiscalYearId.HasValue)
+                    return BadRequest("سال مالی فعال یافت نشد.");
                 var userId = User?.GetUserId();
 
                 var invoice = (await _context.salesInvoiceUW.GetAsync(
-                    x => x.Id == invoiceId && x.TenantId == tenantId,
+                    x => x.Id == invoiceId && x.TenantId == tenantId && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted,
                     asNoTracking: false,
                     includes: x => x.Items
                 )).FirstOrDefault();
@@ -461,7 +464,7 @@ namespace HSCrm.WebApi.Controllers
                 foreach (var item in invoice.Items)
                 {
                     var inventory = (await _context.inventoryUW.GetAsync(
-                        x => x.TenantId == tenantId && x.ProductId == item.ProductId,
+                        x => x.TenantId == tenantId && x.WarehouseId == invoice.WarehouseId && x.ProductId == item.ProductId && !x.IsDeleted,
                         asNoTracking: false
                     )).FirstOrDefault();
 
@@ -521,7 +524,8 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoiceItem>> GetDetail(int invoiceId)
         {
-            var invoice = _context.salesInvoiceItemUW.Get(i => i.SalesInvoiceId == invoiceId);
+            var tenantId = User.GetTenantId();
+            var invoice = _context.salesInvoiceItemUW.Get(i => i.SalesInvoiceId == invoiceId && i.TenantId == tenantId && !i.IsDeleted);
 
             if (invoice == null) return new ApiResponse<IEnumerable<SalesInvoiceItem>>
             {
