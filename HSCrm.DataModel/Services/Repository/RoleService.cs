@@ -10,14 +10,12 @@ namespace HSCrm.DataModel.Services.Repository
     {
         private readonly ApplicationDbContext _context;
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly RoleManager<ApplicationRole> _roleManager;
         private readonly ICurrentUserService _currentUser;
 
-        public RoleService(ApplicationDbContext context, UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager, ICurrentUserService currentUser)
+        public RoleService(ApplicationDbContext context, UserManager<ApplicationUser> userManager, ICurrentUserService currentUser)
         {
             _context = context;
             _userManager = userManager;
-            _roleManager = roleManager;
             _currentUser = currentUser;
         }
 
