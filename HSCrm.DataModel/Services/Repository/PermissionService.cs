@@ -16,22 +16,40 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<bool> HasPermissionAsync(string userId, string permissionName)
         {
+            var tenantId = await _context.Users
+                .Where(user => user.Id == userId)
+                .Select(user => (int?)user.TenantId)
+                .SingleOrDefaultAsync();
+
+            if (!tenantId.HasValue)
+                return false;
+
             return await _context.UserRoles
-                .Include(ur => ur.Role)
-                .ThenInclude(r => r.RolePermissions)
-                .ThenInclude(rp => rp.Permission)
-                .Where(ur => ur.UserId == userId)
-                .SelectMany(ur => ur.Role.RolePermissions)
-                .AnyAsync(rp => rp.Permission.Name == permissionName);
+                .Where(userRole => userRole.UserId == userId
+                    && userRole.User.TenantId == tenantId.Value
+                    && (userRole.Role.TenantId == tenantId.Value
+                        || (userRole.Role.TenantId == 1 && userRole.Role.Name == "Owner")))
+                .SelectMany(userRole => userRole.Role.RolePermissions)
+                .AnyAsync(rolePermission => rolePermission.Permission.Name == permissionName);
         }
 
         public async Task<List<string>> GetUserPermissionsAsync(string userId)
         {
-            // استخراج تمام نام‌های Permission برای یک کاربر به صورت Distinct
+            var tenantId = await _context.Users
+                .Where(user => user.Id == userId)
+                .Select(user => (int?)user.TenantId)
+                .SingleOrDefaultAsync();
+
+            if (!tenantId.HasValue)
+                return new List<string>();
+
             return await _context.UserRoles
-                .Where(ur => ur.UserId == userId)
-                .SelectMany(ur => ur.Role.RolePermissions)
-                .Select(rp => rp.Permission.Name)
+                .Where(userRole => userRole.UserId == userId
+                    && userRole.User.TenantId == tenantId.Value
+                    && (userRole.Role.TenantId == tenantId.Value
+                        || (userRole.Role.TenantId == 1 && userRole.Role.Name == "Owner")))
+                .SelectMany(userRole => userRole.Role.RolePermissions)
+                .Select(rolePermission => rolePermission.Permission.Name)
                 .Distinct()
                 .ToListAsync();
         }

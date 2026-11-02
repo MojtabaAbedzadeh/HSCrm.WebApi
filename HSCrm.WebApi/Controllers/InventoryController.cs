@@ -1,6 +1,6 @@
 using Common.Permissions;
 using Framework.Authorization;
-﻿using HSCrm.DataModel.Services.Interface;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models.Dto;
 using HSCrm.Framework.Extensions;
