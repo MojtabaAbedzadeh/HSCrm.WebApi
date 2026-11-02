@@ -6,6 +6,7 @@ The repository intentionally does not contain production credentials. Configure 
 - `Jwt__Key`: a cryptographically random signing key containing at least 32 UTF-8 bytes. Treat any previously committed key as compromised and rotate it.
 - `Jwt__Issuer` and `Jwt__Audience`: non-empty values matching the API token issuer and intended client audience.
 - `Cors__AllowedOrigins__0`, `Cors__AllowedOrigins__1`, ...: exact browser origins allowed to call the API (scheme and host, plus port when applicable). Do not use wildcard origins.
+- `PublicBaseUrl` (optional): the public API origin, for example `https://api.example.com`. It must be an absolute HTTP(S) origin without credentials, path, query, or fragment. When omitted, image URLs are returned as relative paths.
 
 The API now requires an authenticated user by default. Only endpoints explicitly marked with `[AllowAnonymous]` remain public: tenant registration, credential check, login, and the limited fiscal-year dropdown. Other API calls require a valid JWT; endpoints marked with `[Permission]` additionally require that permission.
 
@@ -21,4 +22,5 @@ Image uploads require the user-edit permission and are limited to five PNG/JPEG 
 2. Set the environment variables above in every environment before deployment. The IP-based rate limits rely on `RemoteIpAddress`; when running behind a reverse proxy, configure trusted forwarded headers at the hosting layer so limits are applied per client IP (do not trust arbitrary forwarded headers).
 3. Configure the exact frontend origins in CORS.
 4. Review the existing Git history and repository forks/clones. The current change removes secrets from the latest tracked settings file but does not rewrite Git history.
-5. Run the full .NET build and unit/integration test suite in CI before merging.
+5. Ensure `App_Data/UserImages` is on persistent storage and included in backup/restore procedures.
+6. Run the full .NET build and unit/integration test suite in CI before merging.
