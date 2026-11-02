@@ -936,7 +936,7 @@ namespace HSCrm.UnitTests
                 Id = 42,
                 TenantCode = "TENANT42",
                 TenantTitle = "Tenant 42",
-                IsActive = true,
+                IsActive = false,
                 CreatedAt = DateTime.UtcNow
             });
             await context.SaveChangesAsync();
