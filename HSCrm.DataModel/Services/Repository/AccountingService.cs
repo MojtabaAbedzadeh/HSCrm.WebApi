@@ -495,6 +495,16 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForReceiptAsync(Receipt receipt, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(receipt.TenantId, receipt.FiscalYearId, ct);
+            if (receipt.Amount <= 0
+                || (receipt.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == receipt.BankAccountId.Value && x.TenantId == receipt.TenantId && !x.IsDeleted, ct))
+                || (receipt.CustomerId.HasValue && !await _context.Customers.AnyAsync(x => x.Id == receipt.CustomerId.Value && x.TenantId == receipt.TenantId && !x.IsDeleted, ct)))
+                throw new UnauthorizedAccessException("حساب بانکی، مشتری یا مبلغ دریافت معتبر نیست.");
+
+            if (receipt.SalesInvoiceId.HasValue
+                && !await _context.SalesInvoices.AnyAsync(x => x.Id == receipt.SalesInvoiceId.Value && x.TenantId == receipt.TenantId && x.FiscalYearId == receipt.FiscalYearId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور فروش مرجع متعلق به شرکت/سال مالی دریافت نیست.");
+
             var accCashBank = await GetSystemAccountAsync(receipt.TenantId, ACC_CASH_BANK, ct);
             var accReceivable = await GetSystemAccountAsync(receipt.TenantId, ACC_RECEIVABLE, ct);
             var bankAcc = await ResolveBankAccountAsync(receipt.TenantId, receipt.BankAccountId, ct);
@@ -550,6 +560,18 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForPaymentAsync(Payment payment, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(payment.TenantId, payment.FiscalYearId, ct);
+            if (payment.Amount <= 0
+                || (payment.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == payment.BankAccountId.Value && x.TenantId == payment.TenantId && !x.IsDeleted, ct)))
+                throw new UnauthorizedAccessException("حساب بانکی یا مبلغ پرداخت معتبر نیست.");
+
+            if (payment.PurchaseInvoiceId.HasValue
+                && !await _context.PurchaseInvoices.AnyAsync(x => x.Id == payment.PurchaseInvoiceId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور خرید مرجع متعلق به شرکت/سال مالی پرداخت نیست.");
+            if (payment.ExpenseId.HasValue
+                && !await _context.Expenses.AnyAsync(x => x.Id == payment.ExpenseId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("هزینه مرجع متعلق به شرکت/سال مالی پرداخت نیست.");
+
             var accPayable = await GetSystemAccountAsync(payment.TenantId, ACC_PAYABLE, ct);
             var accCashBank = await GetSystemAccountAsync(payment.TenantId, ACC_CASH_BANK, ct);
 
@@ -560,14 +582,14 @@ namespace HSCrm.DataModel.Services.Repository
             {
                 var pInv = await _context.Set<PurchaseInvoice>()
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == payment.PurchaseInvoiceId.Value && x.TenantId == payment.TenantId && !x.IsDeleted, ct);
+                    .FirstOrDefaultAsync(x => x.Id == payment.PurchaseInvoiceId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct);
                 supplierId = pInv?.SupplierId;
             }
             else if (payment.ExpenseId.HasValue)
             {
                 var exp = await _context.Set<Expense>()
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == payment.ExpenseId.Value && x.TenantId == payment.TenantId && !x.IsDeleted, ct);
+                    .FirstOrDefaultAsync(x => x.Id == payment.ExpenseId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct);
                 projectId = exp?.ProjectId;
             }
 
@@ -627,6 +649,12 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForExpenseAsync(Expense expense, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(expense.TenantId, expense.FiscalYearId, ct);
+            if (expense.Amount <= 0
+                || (expense.ProjectId > 0 && !await _context.Projects.AnyAsync(x => x.Id == expense.ProjectId && x.TenantId == expense.TenantId && !x.IsDeleted, ct))
+                || (expense.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == expense.BankAccountId.Value && x.TenantId == expense.TenantId && !x.IsDeleted, ct)))
+                throw new UnauthorizedAccessException("پروژه، حساب بانکی یا مبلغ هزینه معتبر نیست.");
+
             var accExpense = await GetSystemAccountAsync(expense.TenantId, ACC_PROJECT_EXPENSE, ct);
             var accPayable = await GetSystemAccountAsync(expense.TenantId, ACC_PAYABLE, ct);
 
