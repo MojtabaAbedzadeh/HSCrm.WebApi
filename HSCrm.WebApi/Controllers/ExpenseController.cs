@@ -130,6 +130,15 @@ namespace HSCrm.WebApi.Controllers
                 || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any()))
                 return new ApiResponse { Status = false, Message = "مبلغ، پروژه یا حساب بانکی هزینه معتبر نیست." };
 
+            if (model.PaymentStatus < 0 || model.PaymentStatus > 2)
+                return new ApiResponse { Status = false, Message = "وضعیت پرداخت هزینه معتبر نیست." };
+            var actualPaidAmount = model.PaymentStatus switch
+            {
+                1 => model.PaidAmount,
+                2 => model.Amount,
+                _ => 0m
+            };
+
             DateTime expenseDate;
             try
             {
@@ -156,8 +165,8 @@ namespace HSCrm.WebApi.Controllers
                     ExpenseDate = expenseDate,
                     Amount = model.Amount,
                     Description = model.Description,
-                    PaymentStatus = model.PaymentStatus,
-                    PaidAmount = model.PaidAmount,
+                    PaymentStatus = actualPaidAmount <= 0 ? 0 : actualPaidAmount < model.Amount ? 1 : 2,
+                    PaidAmount = actualPaidAmount,
                     BankAccountId = model.BankAccountId,
                     PaymentMethod = model.PaymentMethod,
                     ReferenceNo = model.ReferenceNo,
@@ -172,12 +181,7 @@ namespace HSCrm.WebApi.Controllers
                 await _accountingService.CreateVoucherForExpenseAsync(expense);
 
                 // منطق ثبت پرداخت خودکار بر اساس وضعیت
-                var actualPaidAmount = model.PaymentStatus switch
-                {
-                    1 => model.PaidAmount,      // پرداخت جزئی
-                    2 => model.Amount,          // پرداخت کامل
-                    _ => 0m                     // عدم پرداخت
-                };
+
 
                 if (actualPaidAmount > 0)
                 {
