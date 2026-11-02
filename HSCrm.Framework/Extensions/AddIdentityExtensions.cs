@@ -112,7 +112,7 @@ namespace HSCrm.Framework.Extensions
                             }
 
                             var fiscalYearIsValid = await db.FiscalYears.IgnoreQueryFilters()
-                                .AnyAsync(f => f.Id == fiscalYearId && f.TenantId == tokenTenantId && !f.IsClosed,
+                                .AnyAsync(f => f.Id == fiscalYearId && f.TenantId == tokenTenantId && !f.IsDeleted && !f.IsClosed,
                                     context.HttpContext.RequestAborted);
                             if (!fiscalYearIsValid)
                                 context.Fail("Fiscal year is invalid or closed.");
