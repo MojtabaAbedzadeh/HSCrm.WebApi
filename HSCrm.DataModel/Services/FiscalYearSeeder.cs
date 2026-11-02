@@ -37,7 +37,7 @@ namespace HSCrm.DataModel.Seeders
             // ✅ مهم — بدون QueryFilter
             var fiscalYears = await context.FiscalYears
                 .IgnoreQueryFilters()
-                .Where(x => x.TenantId == tenantId)
+                .Where(x => x.TenantId == tenantId && !x.IsDeleted)
                 .ToListAsync();
 
             var existingYear = fiscalYears.FirstOrDefault(x => x.Title == title);
