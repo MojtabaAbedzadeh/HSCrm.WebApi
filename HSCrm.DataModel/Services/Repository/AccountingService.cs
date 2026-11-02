@@ -677,8 +677,9 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task CancelVoucherByReferenceAsync(AccountingReferenceType referenceType, int referenceId, string? reason = null, CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var voucher = await _context.JournalVouchers
-                .FirstOrDefaultAsync(x => x.ReferenceType == referenceType && x.ReferenceId == referenceId && x.Status != JournalVoucherStatus.Cancelled, ct);
+                .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ReferenceType == referenceType && x.ReferenceId == referenceId && x.Status != JournalVoucherStatus.Cancelled && !x.IsDeleted, ct);
 
             if (voucher == null) return;
 
@@ -694,13 +695,15 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<TrialBalanceRowDto>> GetTrialBalanceAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
-                         && !x.JournalVoucher.IsDeleted
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted && !x.IsDeleted
                          && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
             if (fromDate.HasValue)
@@ -737,14 +740,16 @@ namespace HSCrm.DataModel.Services.Repository
             DateTime? toDate = null,
             CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.BankAccount)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
-                         && !x.JournalVoucher.IsDeleted
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted && !x.IsDeleted
                          && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
             if (accountId.HasValue) query = query.Where(x => x.AccountId == accountId.Value);
@@ -845,9 +850,10 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<BankAccountBalanceSummaryDto>> GetBankAccountsBalanceSummaryAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var bankAccounts = await _context.Set<BankAccount>()
                 .AsNoTracking()
-                .Where(x => !x.IsDeleted)
+                .Where(x => x.TenantId == tenantId && !x.IsDeleted)
                 .OrderByDescending(x => x.IsDefault)
                 .ThenBy(x => x.Id)
                 .ToListAsync(ct);
@@ -856,7 +862,8 @@ namespace HSCrm.DataModel.Services.Repository
             var itemsQuery = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.BankAccountId != null
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.BankAccountId != null
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
@@ -906,7 +913,8 @@ namespace HSCrm.DataModel.Services.Repository
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
                          && !x.IsDeleted
