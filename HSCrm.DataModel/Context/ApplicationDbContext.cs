@@ -13,6 +13,7 @@ namespace HSCrm.DataModel.Context
 {
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string, IdentityUserClaim<string>, UserRole, IdentityUserLogin<string>, IdentityRoleClaim<string>, IdentityUserToken<string>>
     {
+        private bool _allowFiscalYearTransitionWrites;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         public int CurrentTenantId => _currentUserService?.TenantId ?? 0;
@@ -960,14 +961,24 @@ namespace HSCrm.DataModel.Context
                     {
                         if (fiscalEntity.FiscalYearId == 0)
                             fiscalEntity.FiscalYearId = currentFiscalYearId;
-                        else if (fiscalEntity.FiscalYearId != currentFiscalYearId)
+
+                        if (!_allowFiscalYearTransitionWrites && fiscalEntity.FiscalYearId != currentFiscalYearId)
                             throw new UnauthorizedAccessException("ثبت اطلاعات در سال مالی دیگری مجاز نیست.");
+
+                        if (_allowFiscalYearTransitionWrites && !IsFiscalYearOwnedByTenant(fiscalEntity.FiscalYearId, currentTenantId))
+                            throw new UnauthorizedAccessException("سال مالی مقصد متعلق به شرکت جاری نیست.");
                     }
                     else
                     {
                         var originalFiscalYearId = fiscalYearProperty.OriginalValue is int original ? original : 0;
-                        if (originalFiscalYearId != currentFiscalYearId || fiscalEntity.FiscalYearId != currentFiscalYearId)
+                        if (!_allowFiscalYearTransitionWrites &&
+                            (originalFiscalYearId != currentFiscalYearId || fiscalEntity.FiscalYearId != currentFiscalYearId))
                             throw new UnauthorizedAccessException("تغییر اطلاعات متعلق به سال مالی دیگری مجاز نیست.");
+
+                        if (_allowFiscalYearTransitionWrites &&
+                            (!IsFiscalYearOwnedByTenant(originalFiscalYearId, currentTenantId) ||
+                             !IsFiscalYearOwnedByTenant(fiscalEntity.FiscalYearId, currentTenantId)))
+                            throw new UnauthorizedAccessException("سال مالی رکورد متعلق به شرکت جاری نیست.");
                     }
                 }
 
@@ -990,6 +1001,35 @@ namespace HSCrm.DataModel.Context
                 }
             }
         }
+        // Restricted internal scope for the accounting year-close service only.
+        // Cross-year writes remain tenant-bound and are validated against FiscalYears.
+        internal IDisposable BeginFiscalYearTransitionWriteScope()
+        {
+            var previous = _allowFiscalYearTransitionWrites;
+            _allowFiscalYearTransitionWrites = true;
+            return new CallbackScope(() => _allowFiscalYearTransitionWrites = previous);
+        }
+
+        private bool IsFiscalYearOwnedByTenant(int fiscalYearId, int tenantId)
+        {
+            if (fiscalYearId <= 0 || tenantId <= 0)
+                return false;
+
+            return FiscalYears.Local.Any(f => f.Id == fiscalYearId && f.TenantId == tenantId) ||
+                   FiscalYears.IgnoreQueryFilters().Any(f => f.Id == fiscalYearId && f.TenantId == tenantId);
+        }
+
+        private sealed class CallbackScope : IDisposable
+        {
+            private Action? _onDispose;
+            public CallbackScope(Action onDispose) => _onDispose = onDispose;
+            public void Dispose()
+            {
+                _onDispose?.Invoke();
+                _onDispose = null;
+            }
+        }
+
         public override int SaveChanges()
         {
             cleanStr();
