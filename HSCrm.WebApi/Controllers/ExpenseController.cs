@@ -126,7 +126,7 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse { Status = false, Message = "خطا در احراز هویت یا سال مالی" };
 
             if (model.Amount <= 0 || model.PaidAmount < 0 || model.PaidAmount > model.Amount
-                || (model.ProjectId.HasValue && !_context.projectUW.Get(x => x.Id == model.ProjectId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                || (model.ProjectId > 0 && !_context.projectUW.Get(x => x.Id == model.ProjectId && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
                 || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any()))
                 return new ApiResponse { Status = false, Message = "مبلغ، پروژه یا حساب بانکی هزینه معتبر نیست." };
 

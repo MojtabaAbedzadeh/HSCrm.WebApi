@@ -179,7 +179,7 @@ namespace HSCrm.WebApi.Controllers
 
             var tenantId = User.GetTenantId();
             var userId = User.GetUserId();
-            if (!tenantId.HasValue || !userId.HasValue
+            if (!tenantId.HasValue || userId == null
                 || !_context.fiscalYearUW.Get(x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).Any()
                 || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantId.Value && x.IsActive && !x.IsDeleted).Any() || !_context.supplierUW.Get(x => x.Id == model.SupplierId && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
                 return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، انبار، طرف حساب یا سال مالی معتبر نیست." });
@@ -250,9 +250,9 @@ namespace HSCrm.WebApi.Controllers
                     TenantId = tenantId.Value,
                     FiscalYearId = fiscalYearId.Value,
                     IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
-                    PurchaserUserId = userId.Value,
+                    PurchaserUserId = userId,
                     Status = model.Status,
-                    CreatedById = userId.Value,
+                    CreatedById = userId,
                     CreatedAt = DateTime.UtcNow,
                     Description = model.Description ?? $"فاکتور برگشت از خرید شماره {model.InvoiceNumber}",
                     Items = new List<PurchaseReturnInvoiceItem>()
@@ -279,7 +279,7 @@ namespace HSCrm.WebApi.Controllers
                         Tax = itemDto.Tax,
                         LineTotal = lineTotal,
                         TenantId = tenantId.Value,
-                        CreatedById = userId.Value,
+                        CreatedById = userId,
                         CreatedAt = DateTime.UtcNow
                     });
 
