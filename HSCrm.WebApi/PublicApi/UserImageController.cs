@@ -12,7 +12,7 @@ namespace HSCrm.WebApi.PublicApi
     public sealed class UserImageController : ControllerBase
     {
         private static readonly Regex SafeFileName = new(
-            @"\\A[a-f0-9]{32}\\.(?:png|jpe?g)\\z",
+            @"\A[a-f0-9]{32}\.(?:png|jpe?g)\z",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         private readonly IWebHostEnvironment _hosting;
