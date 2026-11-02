@@ -996,7 +996,10 @@ namespace HSCrm.DataModel.Services.Repository
                 .AsNoTracking()
                 .FirstOrDefaultAsync(f => f.Id == fiscalYearId && f.TenantId == tenantId && !f.IsDeleted, ct);
 
-            if (fy != null && fy.IsClosed)
+            if (fy == null)
+                throw new UnauthorizedAccessException("سال مالی متعلق به شرکت جاری یافت نشد.");
+
+            if (fy.IsClosed)
                 throw new InvalidOperationException($"سال مالی {fy.Title} بسته شده است و امکان ثبت یا ویرایش سند در سال مالی بسته وجود ندارد. در صورت نیاز ابتدا سال مالی را بازگشایی نمایید.");
         }
 
