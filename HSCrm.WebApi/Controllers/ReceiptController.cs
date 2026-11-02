@@ -83,12 +83,25 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Receipt.Create)]
         public async Task<ActionResult<ApiResponse<ReceiptModel>>> Create([FromBody] ReceiptCreateModel model, CancellationToken cancellationToken)
         {
-            var receipt = _mapper.Map<Receipt>(model);
+            var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue || model.Amount <= 0)
+                return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "شرکت، سال مالی یا مبلغ دریافت معتبر نیست." });
 
-            receipt.TenantId = _currentUserService.TenantId ?? model.TenantId;
-            receipt.FiscalYearId = (int)_currentFiscalYearService.FiscalYearId;
-            receipt.CreatedAt = DateTime.Now;
-            receipt.CreatedById = model.UserId;
+            if (!_context.fiscalYearUW.Get(x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).Any()
+                || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                || (model.CustomerId.HasValue && !_context.customerUW.Get(x => x.Id == model.CustomerId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any()))
+                return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "حساب بانکی، مشتری یا سال مالی متعلق به شرکت جاری نیست." });
+
+            if (model.SalesInvoiceId.HasValue
+                && !_context.salesInvoiceUW.Get(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Any())
+                return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "فاکتور فروش متعلق به شرکت/سال مالی جاری نیست." });
+
+            var receipt = _mapper.Map<Receipt>(model);
+            receipt.TenantId = tenantId.Value;
+            receipt.FiscalYearId = fiscalYearId.Value;
+            receipt.CreatedAt = DateTime.UtcNow;
+            receipt.CreatedById = _currentUserService.UserId;
 
             using var transaction = _context.BeginTransaction();
             try
@@ -130,6 +143,14 @@ namespace HSCrm.WebApi.Controllers
                     Message = "Receipt not found"
                 });
             }
+
+            var tenantIdForUpdate = _currentUserService.TenantId;
+            var fiscalYearForUpdate = _currentFiscalYearService.FiscalYearId;
+            if (!tenantIdForUpdate.HasValue || !fiscalYearForUpdate.HasValue || receipt.FiscalYearId != fiscalYearForUpdate.Value || model.Amount <= 0
+                || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any())
+                || (model.CustomerId.HasValue && !_context.customerUW.Get(x => x.Id == model.CustomerId.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any())
+                || (model.SalesInvoiceId.HasValue && !_context.salesInvoiceUW.Get(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantIdForUpdate.Value && x.FiscalYearId == fiscalYearForUpdate.Value && !x.IsDeleted).Any()))
+                return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "مشتری، حساب بانکی، فاکتور یا سال مالی معتبر نیست." });
 
             receipt.SalesInvoiceId = model.SalesInvoiceId;
             receipt.CustomerId = model.CustomerId;

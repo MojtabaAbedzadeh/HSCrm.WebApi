@@ -258,7 +258,35 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
             var userId = User.GetUserId();
+            if (!tenantId.HasValue || !fiscalYearId.HasValue || model.Amount <= 0
+                || !await _context.fiscalYearUW.Get(x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).AnyAsync())
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
+
+            if (model.BankAccountId.HasValue
+                && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "حساب بانکی متعلق به شرکت جاری نیست." };
+
+            if (model.PurchaseInvoiceId.HasValue)
+            {
+                var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == model.PurchaseInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
+                if (invoice == null || invoice.Status != InvoiceStatus.Final)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "فاکتور خرید معتبر نیست یا متعلق به شرکت/سال مالی جاری نیست." };
+                var paid = _context.paymentUW.Get(x => x.PurchaseInvoiceId == invoice.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Sum(x => x.Amount);
+                if (model.Amount > invoice.Total - paid)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "مبلغ پرداخت از مانده فاکتور بیشتر است." };
+            }
+            else
+            {
+                var expense = _context.expenseUW.Get(x => x.Id == model.ExpenseId!.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
+                if (expense == null)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "هزینه متعلق به شرکت/سال مالی جاری نیست." };
+                var paid = _context.paymentUW.Get(x => x.ExpenseId == expense.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Sum(x => x.Amount);
+                if (model.Amount > expense.Amount - paid)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "مبلغ پرداخت از مانده هزینه بیشتر است." };
+            }
 
             // شروع تراکنش برای اطمینان از ثبت پرداخت و آپدیت فاکتور با هم
             using var transaction = _context.BeginTransaction();
@@ -267,7 +295,7 @@ namespace HSCrm.WebApi.Controllers
                 // 2. ثبت رکورد پرداخت جدید
                 var entity = new Payment
                 {
-                    FiscalYearId = model.FiscalYearId,
+                    TenantId = tenantId.Value,\n                    FiscalYearId = fiscalYearId.Value,
                     PurchaseInvoiceId = model.PurchaseInvoiceId,
                     ExpenseId = model.ExpenseId,
                     PaymentDate = model.PaymentDate,
@@ -321,11 +349,11 @@ namespace HSCrm.WebApi.Controllers
         // متد کمکی برای محاسبه مجدد و آپدیت فاکتور خرید
         private void UpdatePurchaseInvoiceStatus(int invoiceId)
         {
-            var invoice = _context.purchaseInvoiceUW.GetById(invoiceId);
+            var tenantId = _currentUserService.TenantId;\n            var fiscalYearId = _currentFiscalYearService.FiscalYearId;\n            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;\n            var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == invoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
             if (invoice == null) return;
 
             // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این فاکتور
-            var totalPaid = _context.paymentUW.Get(p => p.PurchaseInvoiceId == invoiceId && !p.IsDeleted)
+            var totalPaid = _context.paymentUW.Get(p => p.PurchaseInvoiceId == invoiceId && p.TenantId == tenantId.Value && p.FiscalYearId == fiscalYearId.Value && !p.IsDeleted)
                                              .Sum(p => p.Amount);
 
             invoice.PaidAmount = totalPaid;
@@ -344,11 +372,11 @@ namespace HSCrm.WebApi.Controllers
         // متد کمکی برای محاسبه مجدد و آپدیت هزینه
         private void UpdateExpenseStatus(int expenseId)
         {
-            var expense = _context.expenseUW.GetById(expenseId);
+            var tenantId = _currentUserService.TenantId;\n            var fiscalYearId = _currentFiscalYearService.FiscalYearId;\n            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;\n            var expense = _context.expenseUW.Get(x => x.Id == expenseId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
             if (expense == null) return;
 
             // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این هزینه
-            var totalPaid = _context.paymentUW.Get(p => p.ExpenseId == expenseId && !p.IsDeleted)
+            var totalPaid = _context.paymentUW.Get(p => p.ExpenseId == expenseId && p.TenantId == tenantId.Value && p.FiscalYearId == fiscalYearId.Value && !p.IsDeleted)
                                              .Sum(p => p.Amount);
 
             expense.PaidAmount = totalPaid;
@@ -391,7 +419,16 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
-                var invoice = _context.purchaseInvoiceUW.GetById(model.PurchaseInvoiceId);
+                var tenantId = _currentUserService.TenantId;
+                var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+                if (!tenantId.HasValue || !fiscalYearId.HasValue || model.Amount <= 0)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
+
+                if (model.BankAccountId.HasValue
+                    && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "حساب بانکی متعلق به شرکت جاری نیست." };
+
+                var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == model.PurchaseInvoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
                 if (invoice == null) return new ApiResponse
                 {
                     Status = false,
