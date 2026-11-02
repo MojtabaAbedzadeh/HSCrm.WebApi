@@ -24,7 +24,7 @@ jobs:
       - name: Build
         run: dotnet build HSCrm.WebApi.sln --configuration Release --no-restore
       - name: Test
-        run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=tests.trx"
+        run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --logger "trx;LogFileName=tests.trx"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
