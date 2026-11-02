@@ -9,6 +9,7 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -34,13 +35,27 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetUsers")]
         [Permission(Permissions.Users.View)]
-        public async Task<ApiResponse<List<ApplicationUser>>> Get(CancellationToken ct)
+        public async Task<ApiResponse<List<UserModelDto>>> Get(CancellationToken ct)
         {
-            var persons = (await _context.userManagerUW
-                .GetAsync(u => u.UserType != 3 && u.UserType != 110 && u.TenantId == User.GetTenantId().Value, asNoTracking: true, ct: ct))
-                .ToList();
+            var tenantId = User.GetTenantId();
+            var persons = tenantId.HasValue
+                ? await _userManager.Users.AsNoTracking()
+                    .Where(u => u.TenantId == tenantId.Value && u.UserType != 3 && u.UserType != 110)
+                    .Select(u => new UserModelDto
+                    {
+                        Id = u.Id,
+                        UserFirstName = u.UserFirstName,
+                        UserLastName = u.UserLastName,
+                        UserName = u.UserName ?? string.Empty,
+                        Email = u.Email ?? string.Empty,
+                        PhoneNumber = u.PhoneNumber ?? string.Empty,
+                        UserImageUrl = u.UserImageUrl ?? string.Empty,
+                        UserStatus = u.UserStatus,
+                        RoleName = u.UserRoles.Select(ur => ur.Role.Name).FirstOrDefault() ?? string.Empty
+                    }).ToListAsync(ct)
+                : new List<UserModelDto>();
 
-            return new ApiResponse<List<ApplicationUser>>
+            return new ApiResponse<List<UserModelDto>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
@@ -54,12 +69,12 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Users.View)]
-        public ApiResponse GetById(string userId)
+        public ApiResponse<UserModelDto> GetById(string userId)
         {
             var tenantId = User.GetTenantId();
             var request = tenantId.HasValue ? _context.userManagerUW.Get(u => u.Id == userId && u.TenantId == tenantId.Value).FirstOrDefault() : null;
 
-            if (request == null) return new ApiResponse
+            if (request == null) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.NotFound,
@@ -71,7 +86,7 @@ namespace HSCrm.WebApi.Controllers
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = request
+                Data = ToUserDto(request)
             };
         }
 
@@ -177,16 +192,16 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Users.Edit)]
-        public async Task<ApiResponse<ApplicationUser>> Update([FromBody] UserEditModel model)
+        public async Task<ApiResponse<UserModelDto>> Update([FromBody] UserEditModel model)
         {
-            if (string.IsNullOrEmpty(model.UserId)) return new ApiResponse<ApplicationUser>
+            if (string.IsNullOrEmpty(model.UserId)) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.NotFound,
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
             };
 
-            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            if (!ModelState.IsValid) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.BadRequest,
@@ -202,25 +217,25 @@ namespace HSCrm.WebApi.Controllers
                 {
                     var mapModel = _map.Map(model, getUser);
                     IdentityResult result = await _userManager.UpdateAsync(mapModel);
-                    if (result.Succeeded) return new ApiResponse<ApplicationUser>
+                    if (result.Succeeded) return new ApiResponse<UserModelDto>
                     {
                         Status = true,
                         StatusCode = ApiResultStatusCode.Success,
                         Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                        Data = getUser
+                        Data = ToUserDto(getUser)
                     };
                 }
             }
             catch (Exception)
             {
-                return new ApiResponse<ApplicationUser>
+                return new ApiResponse<UserModelDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
                     Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
                 };
             }
-            return new ApiResponse<ApplicationUser>
+            return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.ServerError,
@@ -230,16 +245,16 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpDelete("DeleteUser")]
         [Permission(Permissions.Users.Delete)]
-        public async Task<ApiResponse<ApplicationUser>> Delete(string userId)
+        public async Task<ApiResponse<UserModelDto>> Delete(string userId)
         {
-            if (string.IsNullOrEmpty(userId)) return new ApiResponse<ApplicationUser>
+            if (string.IsNullOrEmpty(userId)) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.NotFound,
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
             };
 
-            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            if (!ModelState.IsValid) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.BadRequest,
@@ -255,25 +270,25 @@ namespace HSCrm.WebApi.Controllers
                 if (getUser != null)
                 {
                     _context.userManagerUW.Delete(getUser);
-                    return new ApiResponse<ApplicationUser>
+                    return new ApiResponse<UserModelDto>
                     {
                         Status = true,
                         StatusCode = ApiResultStatusCode.Success,
                         Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                        Data = getUser
+                        Data = ToUserDto(getUser)
                     };
                 }
             }
             catch
             {
-                return new ApiResponse<ApplicationUser>
+                return new ApiResponse<UserModelDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
                     Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
                 };
             }
-            return new ApiResponse<ApplicationUser>
+            return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.ServerError,
@@ -325,5 +340,18 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
         }
+        private static UserModelDto ToUserDto(ApplicationUser user) => new()
+        {
+            Id = user.Id,
+            UserFirstName = user.UserFirstName,
+            UserLastName = user.UserLastName,
+            UserName = user.UserName ?? string.Empty,
+            Email = user.Email ?? string.Empty,
+            PhoneNumber = user.PhoneNumber ?? string.Empty,
+            UserImageUrl = user.UserImageUrl ?? string.Empty,
+            UserStatus = user.UserStatus,
+            RoleName = string.Empty
+        };
+
     }
 }
