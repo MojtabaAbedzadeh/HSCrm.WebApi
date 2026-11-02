@@ -325,8 +325,8 @@ namespace HSCrm.UnitTests
             Assert.Equal(ApiResultStatusCode.BadRequest, response.StatusCode);
         }
 
-        [Fact(DisplayName = "6. ایجاد فاکتور فروش: فاکتور با وضعیت نهایی (Final) باید انبار و سند حسابداری را فراخوانی کند")]
-        public async Task CreateSalesInvoice_WhenStatusFinal_InvokesInventoryAndAccounting()
+        [Fact(DisplayName = "6. ایجاد فاکتور فروش: وضعیت Final ارسالی کلاینت نادیده گرفته می‌شود و تأیید جداگانه لازم است")]
+        public async Task CreateSalesInvoice_WhenStatusFinalRequested_CreatesProformaWithoutPosting()
         {
             // Arrange
             var env = CreateTestEnvironment("SalesFinal");
@@ -355,9 +355,11 @@ namespace HSCrm.UnitTests
             Assert.True(response.Status);
             Assert.Equal(ApiResultStatusCode.Success, response.StatusCode);
 
-            // اطمینان از اعمال انبار و صدور سند حسابداری
-            env.InventoryMock.Verify(x => x.ApplyInventoryForSalesInvoice(It.IsAny<SalesInvoice>(), InventoryCostingMethod.WeightedAverage), Times.Once);
-            env.AccountingMock.Verify(x => x.CreateVoucherForSalesInvoiceAsync(It.IsAny<SalesInvoice>(), InventoryCostingMethod.WeightedAverage, It.IsAny<CancellationToken>()), Times.Once);
+            // Finalization requires the dedicated Approve permission and Confirm endpoint.
+            var savedInvoice = await env.Context.SalesInvoices.SingleAsync(x => x.Number == "SI-FINAL-1");
+            Assert.Equal(InvoiceStatus.Proforma, savedInvoice.Status);
+            env.InventoryMock.Verify(x => x.ApplyInventoryForSalesInvoice(It.IsAny<SalesInvoice>(), InventoryCostingMethod.WeightedAverage), Times.Never);
+            env.AccountingMock.Verify(x => x.CreateVoucherForSalesInvoiceAsync(It.IsAny<SalesInvoice>(), InventoryCostingMethod.WeightedAverage, It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact(DisplayName = "7. لیست کشویی انبار (WarehouseDropdownList): در پایگاه‌داده خالی بدون خطا لیست خالی برمی‌گرداند")]
