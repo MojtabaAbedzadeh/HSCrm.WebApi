@@ -89,7 +89,9 @@ builder.Services.AddScoped<IAccountingService, AccountingService>();
 
 
 // ۶. مپ کردن پروفایل‌های AutoMapper
-builder.Services.AddAutoMapper(typeof(Program));
+// AutoMapper 15 requires an explicit configuration callback. The optional
+// license key is discovered from AUTOMAPPER_LICENSE_KEY at runtime.
+builder.Services.AddAutoMapper(_ => { }, typeof(Program));
 
 // ۷. CORS: only explicitly configured origins are allowed.
 var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
