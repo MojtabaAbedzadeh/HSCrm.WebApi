@@ -9,6 +9,7 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -82,7 +83,7 @@ namespace HSCrm.WebApi.Controllers
             }
 
             var payments = await _context.paymentUW.GetAsync(
-                predicate: p => p.TenantId == tenantId.Value,
+                predicate: p => p.TenantId == tenantId.Value && p.FiscalYearId == _currentFiscalYearService.FiscalYearId,
                 asNoTracking: true,
                 ct: cancellationToken,
 
@@ -152,7 +153,7 @@ namespace HSCrm.WebApi.Controllers
             if (referenceType is "all" or "purchaseInvoice")
             {
                 var purchaseInvoices = _context.purchaseInvoiceUW
-                    .Get(x => x.FiscalYearId == fiscalYearId && (x.Number.Contains(term) || x.Supplier.SupplierFullName.Contains(term)),
+                    .Get(x => x.TenantId == _currentUserService.TenantId && x.FiscalYearId == fiscalYearId && !x.IsDeleted && (x.Number.Contains(term) || x.Supplier.SupplierFullName.Contains(term)),
                     true,
                     x => x.Supplier)
                         .Take(15)
@@ -174,7 +175,7 @@ namespace HSCrm.WebApi.Controllers
                 var expenses = _context.expenseUW
                     .Get(
                         x =>
-                            x.FiscalYearId == fiscalYearId &&
+                            x.TenantId == _currentUserService.TenantId && x.FiscalYearId == fiscalYearId && !x.IsDeleted &&
                             x.ExpenseTitle.Contains(term),
                         true,
                         x => x.Project)
@@ -295,7 +296,8 @@ namespace HSCrm.WebApi.Controllers
                 // 2. ثبت رکورد پرداخت جدید
                 var entity = new Payment
                 {
-                    TenantId = tenantId.Value,\n                    FiscalYearId = fiscalYearId.Value,
+                    TenantId = tenantId.Value,
+                    FiscalYearId = fiscalYearId.Value,
                     PurchaseInvoiceId = model.PurchaseInvoiceId,
                     ExpenseId = model.ExpenseId,
                     PaymentDate = model.PaymentDate,
@@ -349,7 +351,10 @@ namespace HSCrm.WebApi.Controllers
         // متد کمکی برای محاسبه مجدد و آپدیت فاکتور خرید
         private void UpdatePurchaseInvoiceStatus(int invoiceId)
         {
-            var tenantId = _currentUserService.TenantId;\n            var fiscalYearId = _currentFiscalYearService.FiscalYearId;\n            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;\n            var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == invoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
+            var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;
+            var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == invoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
             if (invoice == null) return;
 
             // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این فاکتور
@@ -372,7 +377,10 @@ namespace HSCrm.WebApi.Controllers
         // متد کمکی برای محاسبه مجدد و آپدیت هزینه
         private void UpdateExpenseStatus(int expenseId)
         {
-            var tenantId = _currentUserService.TenantId;\n            var fiscalYearId = _currentFiscalYearService.FiscalYearId;\n            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;\n            var expense = _context.expenseUW.Get(x => x.Id == expenseId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
+            var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;
+            var expense = _context.expenseUW.Get(x => x.Id == expenseId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
             if (expense == null) return;
 
             // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این هزینه
@@ -444,7 +452,7 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 var alreadyPaid = _context.paymentUW
-                    .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+                    .Get(x => x.PurchaseInvoiceId == invoice.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted)
                     .Sum(x => x.Amount);
 
                 var remaining = invoice.Total - alreadyPaid;
@@ -457,6 +465,8 @@ namespace HSCrm.WebApi.Controllers
 
                 var payment = new Payment
                 {
+                    TenantId = tenantId.Value,
+                    FiscalYearId = fiscalYearId.Value,
                     PurchaseInvoiceId = invoice.Id,
                     Amount = model.Amount,
                     BankAccountId = model.BankAccountId,
