@@ -114,7 +114,7 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.NoContent.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            var tenantId = User?.GetTenantId() ?? (model.TenantId > 0 ? model.TenantId : (int?)null);
+            var tenantId = User.GetTenantId();
             if (!tenantId.HasValue)
             {
                 return new ApiResponse
@@ -168,6 +168,22 @@ namespace HSCrm.WebApi.Controllers
                                            .FirstOrDefault()
                     ?? 1;
 
+                if (!_context.fiscalYearUW.Get(f => f.Id == fiscalYearId && f.TenantId == tenantId.Value && !f.IsClosed && !f.IsDeleted).Any()
+                    || !_context.warehouseUW.Get(w => w.Id == model.WarehouseId && w.TenantId == tenantId.Value && w.IsActive && !w.IsDeleted).Any()
+                    || !_context.projectUW.Get(p => p.Id == model.ProjectId && p.TenantId == tenantId.Value && !p.IsDeleted).Any())
+                {
+                    transaction?.Rollback();
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "سال مالی، انبار یا پروژه متعلق به شرکت جاری نیست یا معتبر نیست." };
+                }
+
+                var requestedProductIds = model.Items.Select(i => i.ProductId).Distinct().ToList();
+                if (requestedProductIds.Any(id => id <= 0)
+                    || _context.productUW.Get(p => requestedProductIds.Contains(p.Id) && p.TenantId == tenantId.Value && !p.IsDeleted).Select(p => p.Id).Distinct().Count() != requestedProductIds.Count)
+                {
+                    transaction?.Rollback();
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست." };
+                }
+
                 decimal subtotal = model.Items.Sum(i => i.Quantity * i.UnitPrice);
                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
 
@@ -189,7 +205,7 @@ namespace HSCrm.WebApi.Controllers
                     }
                 }
 
-                var userId = User?.GetUserId() ?? model.SellerUserId;
+                var userId = User.GetUserId();
 
                 var invoice = new SalesInvoice
                 {
@@ -204,7 +220,7 @@ namespace HSCrm.WebApi.Controllers
                     Discount = model.InvoiceDiscount,
                     Tax = model.InvoiceTax,
                     Total = finalTotal,
-                    SellerUserId = model.SellerUserId,
+                    SellerUserId = userId,
                     CreatedById = userId,
                     Description = "فاکتور فروش شماره " + model.InvoiceNumber,
                     CreatedAt = DateTime.Now

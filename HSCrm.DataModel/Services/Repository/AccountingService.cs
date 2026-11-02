@@ -179,6 +179,34 @@ namespace HSCrm.DataModel.Services.Repository
             if (totalDebit <= 0 || totalDebit != totalCredit)
                 throw new InvalidOperationException("سند حسابداری تراز نیست. جمع بدهکار باید با جمع بستانکار برابر و بزرگتر از صفر باشد.");
 
+            var accountIds = model.Items.Select(x => x.AccountId).Distinct().ToList();
+            if (accountIds.Any(id => id <= 0)
+                || await _context.AccountingAccounts.CountAsync(x => accountIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted && x.IsActive, ct) != accountIds.Count)
+                throw new UnauthorizedAccessException("یک یا چند حساب متعلق به شرکت جاری نیست یا فعال نیست.");
+
+            var customerIds = model.Items.Where(x => x.CustomerId.HasValue).Select(x => x.CustomerId!.Value).Distinct().ToList();
+            if (customerIds.Count > 0 && await _context.Customers.CountAsync(x => customerIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != customerIds.Count)
+                throw new UnauthorizedAccessException("مشتری انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var supplierIds = model.Items.Where(x => x.SupplierId.HasValue).Select(x => x.SupplierId!.Value).Distinct().ToList();
+            if (supplierIds.Count > 0 && await _context.Suppliers.CountAsync(x => supplierIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != supplierIds.Count)
+                throw new UnauthorizedAccessException("تأمین‌کننده انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var projectIds = model.Items.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId!.Value).Distinct().ToList();
+            if (projectIds.Count > 0 && await _context.Projects.CountAsync(x => projectIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != projectIds.Count)
+                throw new UnauthorizedAccessException("پروژه انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var warehouseIds = model.Items.Where(x => x.WarehouseId.HasValue).Select(x => x.WarehouseId!.Value).Distinct().ToList();
+            if (warehouseIds.Count > 0 && await _context.Warehouses.CountAsync(x => warehouseIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != warehouseIds.Count)
+                throw new UnauthorizedAccessException("انبار انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var bankAccountIds = model.Items.Where(x => x.BankAccountId.HasValue).Select(x => x.BankAccountId!.Value).Distinct().ToList();
+            if (bankAccountIds.Count > 0 && await _context.BankAccounts.CountAsync(x => bankAccountIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != bankAccountIds.Count)
+                throw new UnauthorizedAccessException("حساب بانکی انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            if (!await _context.FiscalYears.AnyAsync(x => x.Id == fiscalYearId && x.TenantId == tenantId && !x.IsClosed && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("سال مالی فعال متعلق به شرکت جاری نیست.");
+
             var voucherDate = ConvertDate.ConvertShamsiToMiladi(model.VoucherDateShamsi);
             var nextNumber = await GetNextVoucherNumberAsync(tenantId, fiscalYearId, ct);
 
@@ -230,7 +258,7 @@ namespace HSCrm.DataModel.Services.Repository
 
             var project = await _context.Set<Project>()
                 .AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Id == invoice.ProjectId, ct);
+                .FirstOrDefaultAsync(p => p.Id == invoice.ProjectId && p.TenantId == invoice.TenantId && !p.IsDeleted, ct);
 
             int? customerId = project?.CustomerId;
 
@@ -532,14 +560,14 @@ namespace HSCrm.DataModel.Services.Repository
             {
                 var pInv = await _context.Set<PurchaseInvoice>()
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == payment.PurchaseInvoiceId.Value, ct);
+                    .FirstOrDefaultAsync(x => x.Id == payment.PurchaseInvoiceId.Value && x.TenantId == payment.TenantId && !x.IsDeleted, ct);
                 supplierId = pInv?.SupplierId;
             }
             else if (payment.ExpenseId.HasValue)
             {
                 var exp = await _context.Set<Expense>()
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == payment.ExpenseId.Value, ct);
+                    .FirstOrDefaultAsync(x => x.Id == payment.ExpenseId.Value && x.TenantId == payment.TenantId && !x.IsDeleted, ct);
                 projectId = exp?.ProjectId;
             }
 

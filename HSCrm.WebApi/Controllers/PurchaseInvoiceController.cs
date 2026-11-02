@@ -263,6 +263,16 @@ namespace HSCrm.WebApi.Controllers
                         StatusCode = ApiResultStatusCode.BadRequest
                     };
 
+                if (!_context.supplierUW.Get(x => x.Id == model.SupplierId && x.TenantId == tenantId.Value && !x.IsDeleted).Any()
+                    || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantId.Value && x.IsActive && !x.IsDeleted).Any()
+                    || !_context.fiscalYearUW.Get(x => x.Id == fiscalYear.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).Any())
+                    return new ApiResponse { Status = false, Message = "تأمین‌کننده، انبار یا سال مالی متعلق به شرکت جاری نیست یا معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+
+                var requestedProductIds = model.Items.Select(x => x.ProductId).Distinct().ToList();
+                if (requestedProductIds.Any(id => id <= 0)
+                    || _context.productUW.Get(x => requestedProductIds.Contains(x.Id) && x.TenantId == tenantId.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != requestedProductIds.Count)
+                    return new ApiResponse { Status = false, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+
                 if (!DateTime.TryParseExact(model.IssueDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var issueDate))
                     issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
 
@@ -399,6 +409,20 @@ namespace HSCrm.WebApi.Controllers
             {
                 return new ApiResponse { Status = false, Message = "فاکتور یافت نشد.", StatusCode = ApiResultStatusCode.NotFound };
             }
+
+            var tenantIdForUpdate = User.GetTenantId();
+            var fiscalYearForUpdate = _currentFiscalYearService.FiscalYearId;
+            if (!tenantIdForUpdate.HasValue || !fiscalYearForUpdate.HasValue
+                || invoice.TenantId != tenantIdForUpdate.Value
+                || invoice.FiscalYearId != fiscalYearForUpdate.Value
+                || !_context.supplierUW.Get(x => x.Id == model.SupplierId && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any()
+                || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantIdForUpdate.Value && x.IsActive && !x.IsDeleted).Any())
+                return new ApiResponse { Status = false, Message = "فاکتور، تأمین‌کننده یا انبار متعلق به شرکت/سال مالی جاری نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+
+            var updateProductIds = model.Items.Select(x => x.ProductId).Distinct().ToList();
+            if (updateProductIds.Any(id => id <= 0)
+                || _context.productUW.Get(x => updateProductIds.Contains(x.Id) && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != updateProductIds.Count)
+                return new ApiResponse { Status = false, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
 
             // گارد ویرایش فاکتور نهایی
             if (invoice.Status == InvoiceStatus.Final)

@@ -642,9 +642,10 @@ namespace HSCrm.DataModel.Services.Repository
         /// </summary>
         public async Task<List<KardexDto>> GetProductKardexAsync(int productId, DateTime? fromDate, DateTime? toDate, int? warehouseId = null)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var baseQuery = _context.InventoryTransactions
                 .AsNoTracking()
-                .Where(x => x.ProductId == productId && !x.IsDeleted);
+                .Where(x => x.TenantId == tenantId && x.ProductId == productId && !x.IsDeleted);
 
             if (warehouseId.HasValue)
             {
@@ -742,11 +743,12 @@ namespace HSCrm.DataModel.Services.Repository
         /// </summary>
         public async Task<List<InventoryValuationDto>> GetInventoryValuationAsync(int? warehouseId = null, CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var invQuery = _context.Inventories
                 .AsNoTracking()
                 .Include(x => x.Product)
                 .Include(x => x.Warehouse)
-                .Where(x => !x.IsDeleted && x.Quantity > 0);
+                .Where(x => x.TenantId == tenantId && !x.IsDeleted && x.Quantity > 0);
 
             if (warehouseId.HasValue)
                 invQuery = invQuery.Where(x => x.WarehouseId == warehouseId.Value);
@@ -755,7 +757,7 @@ namespace HSCrm.DataModel.Services.Repository
 
             var openFifoLayers = await _context.InventoryTransactions
                 .AsNoTracking()
-                .Where(x => !x.IsDeleted && x.QuantityChange > 0 && x.RemainingFifoQuantity > 0)
+                .Where(x => x.TenantId == tenantId && !x.IsDeleted && x.QuantityChange > 0 && x.RemainingFifoQuantity > 0)
                 .ToListAsync(ct);
 
             var result = new List<InventoryValuationDto>();
@@ -799,8 +801,16 @@ namespace HSCrm.DataModel.Services.Repository
             using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
+                var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+                var fiscalYearId = _currentFiscalYear.FiscalYearId ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
+                var fiscalYearValid = await _context.FiscalYears.AnyAsync(x => x.Id == fiscalYearId && x.TenantId == tenantId && !x.IsClosed && !x.IsDeleted, ct);
+                var productValid = await _context.Products.AnyAsync(x => x.Id == dto.ProductId && x.TenantId == tenantId && !x.IsDeleted, ct);
+                var warehouseValid = await _context.Warehouses.AnyAsync(x => x.Id == dto.WarehouseId && x.TenantId == tenantId && x.IsActive && !x.IsDeleted, ct);
+                if (!fiscalYearValid || !productValid || !warehouseValid)
+                    throw new UnauthorizedAccessException("کالا، انبار یا سال مالی متعلق به شرکت جاری نیست یا معتبر نیست.");
+
                 var inventory = await _context.Inventories.FirstOrDefaultAsync(
-                    x => x.ProductId == dto.ProductId && x.WarehouseId == dto.WarehouseId, ct);
+                    x => x.ProductId == dto.ProductId && x.WarehouseId == dto.WarehouseId && x.TenantId == tenantId && !x.IsDeleted, ct);
 
                 if (inventory == null)
                 {
@@ -816,8 +826,8 @@ namespace HSCrm.DataModel.Services.Repository
                 {
                     ProductId = dto.ProductId,
                     WarehouseId = dto.WarehouseId,
-                    TenantId = (int)_currentUser.TenantId,
-                    FiscalYearId = (int)_currentFiscalYear.FiscalYearId,
+                    TenantId = tenantId,
+                    FiscalYearId = fiscalYearId,
                     QuantityChange = dto.QuantityChange,
                     UnitCost = unitCost,
                     TotalCost = totalCost,
