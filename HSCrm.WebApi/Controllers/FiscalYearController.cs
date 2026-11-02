@@ -53,7 +53,7 @@ namespace HSCrm.WebApi.Controllers
         [EnableRateLimiting("Auth")] // چون قبل از لاگین نهایی فراخوانی می‌شود
         public ApiResponse FiscalYearDropdownList(int tenantId)
         {
-            var fiscalYearList = _context.fiscalYearUW.Get(f => tenantId > 0 && f.TenantId == tenantId && !f.IsClosed && f.Tenant.IsActive)
+            var fiscalYearList = _context.fiscalYearUW.Get(f => tenantId > 0 && f.TenantId == tenantId && !f.IsDeleted && !f.IsClosed && f.Tenant.IsActive && !f.Tenant.IsDeleted)
                 .IgnoreQueryFilters()
                 .OrderByDescending(f => f.Id)
                 .Select(f => new DropdownDto
