@@ -28,7 +28,7 @@ namespace HSCrm.WebApi.PublicApi
             if (filesToUpload.Count > maxFileCount)
                 return BadRequest(new { statusCode = 400, message = "حداکثر تعداد فایل مجاز ۵ عدد است." });
 
-            var validatedFiles = new List<(IFormFile File, byte[] Content, string Extension)>();
+            var validatedFiles = new List<(byte[] Content, string Extension)>();
             foreach (var file in filesToUpload)
             {
                 if (file.Length <= 0 || file.Length > maxFileBytes)
@@ -49,7 +49,7 @@ namespace HSCrm.WebApi.PublicApi
                     return StatusCode(StatusCodes.Status415UnsupportedMediaType,
                         new { statusCode = 415, message = "ساختار یا ابعاد تصویر معتبر نیست." });
 
-                validatedFiles.Add((file, content, extension));
+                validatedFiles.Add((content, extension));
             }
 
             // Store new uploads outside wwwroot. They are served only by the
@@ -78,6 +78,7 @@ namespace HSCrm.WebApi.PublicApi
             if (extension == ".png")
             {
                 if (data.Length < 24
+                    || System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(8, 4)) != 13
                     || !data.AsSpan(0, 8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A })
                     || !data.AsSpan(12, 4).SequenceEqual("IHDR"u8))
                     return false;
