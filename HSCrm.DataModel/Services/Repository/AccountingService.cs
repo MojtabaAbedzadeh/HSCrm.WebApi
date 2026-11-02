@@ -2163,6 +2163,69 @@ namespace HSCrm.DataModel.Services.Repository
         /// بخش اول: بدهکار برگشت از فروش (4103) و مالیات فروش (2102) / بستانکار حساب دریافتنی مشتری (1103) و تخفیفات فروش (4102)
         /// بخش دوم (معکوس کردن COGS): بدهکار موجودی کالا و انبار (1105) / بستانکار بهای تمام‌شده کالای فروش‌رفته (5101)
         /// </summary>
+        private async Task ValidateSalesReturnForPostingAsync(SalesReturnInvoice returnInvoice, CancellationToken ct)
+        {
+            if (returnInvoice.Total <= 0 || returnInvoice.Items == null || returnInvoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور برگشت از فروش فاقد مبلغ یا اقلام معتبر است.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == returnInvoice.WarehouseId
+                && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار فاکتور برگشت از فروش متعلق به شرکت جاری نیست.");
+
+            var project = await _context.Projects.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.Id == returnInvoice.ProjectId && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct);
+            if (project == null)
+                throw new UnauthorizedAccessException("پروژه فاکتور برگشت از فروش متعلق به شرکت جاری نیست.");
+
+            if (project.CustomerId.HasValue && !await _context.Customers.AnyAsync(x =>
+                x.Id == project.CustomerId.Value && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("مشتری پروژه فاکتور برگشت از فروش معتبر نیست.");
+
+            if (returnInvoice.SalesInvoiceId.HasValue && !await _context.SalesInvoices.AnyAsync(x =>
+                x.Id == returnInvoice.SalesInvoiceId.Value
+                && x.TenantId == returnInvoice.TenantId
+                && x.FiscalYearId == returnInvoice.FiscalYearId
+                && x.ProjectId == returnInvoice.ProjectId
+                && x.Status == InvoiceStatus.Final
+                && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور فروش مرجع برگشت متعلق به شرکت/سال مالی جاری یا پروژه انتخابی نیست.");
+
+            var productIds = returnInvoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == returnInvoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || returnInvoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0 || x.TotalCost < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور برگشت از فروش معتبر نیست.");
+        }
+
+        private async Task ValidatePurchaseReturnForPostingAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct)
+        {
+            if (returnInvoice.Total <= 0 || returnInvoice.Items == null || returnInvoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور برگشت از خرید فاقد مبلغ یا اقلام معتبر است.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == returnInvoice.WarehouseId
+                && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار فاکتور برگشت از خرید متعلق به شرکت جاری نیست.");
+
+            if (!await _context.Suppliers.AnyAsync(x => x.Id == returnInvoice.SupplierId
+                && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("تأمین‌کننده فاکتور برگشت از خرید متعلق به شرکت جاری نیست.");
+
+            if (returnInvoice.PurchaseInvoiceId.HasValue && !await _context.PurchaseInvoices.AnyAsync(x =>
+                x.Id == returnInvoice.PurchaseInvoiceId.Value
+                && x.TenantId == returnInvoice.TenantId
+                && x.FiscalYearId == returnInvoice.FiscalYearId
+                && x.SupplierId == returnInvoice.SupplierId
+                && x.Status == InvoiceStatus.Final
+                && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور خرید مرجع برگشت متعلق به شرکت/سال مالی جاری یا تأمین‌کننده انتخابی نیست.");
+
+            var productIds = returnInvoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == returnInvoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || returnInvoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور برگشت از خرید معتبر نیست.");
+        }
+
         public async Task<JournalVoucher> CreateVoucherForSalesReturnAsync(SalesReturnInvoice returnInvoice, CancellationToken ct = default)
         {
             await EnsureFiscalYearIsOpenAsync(returnInvoice.TenantId, returnInvoice.FiscalYearId, ct);
@@ -2170,6 +2233,8 @@ namespace HSCrm.DataModel.Services.Repository
                 returnInvoice.TenantId, returnInvoice.FiscalYearId, AccountingReferenceType.SalesReturnInvoice, returnInvoice.Id, ct);
             if (existingVoucher != null)
                 return existingVoucher;
+
+            await ValidateSalesReturnForPostingAsync(returnInvoice, ct);
 
             var accReceivable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_RECEIVABLE, ct);
             var accSalesReturn = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_SALES_RETURN, ct);
@@ -2182,7 +2247,8 @@ namespace HSCrm.DataModel.Services.Repository
             if (!customerId.HasValue && returnInvoice.ProjectId > 0)
             {
                 customerId = await _context.Projects
-                    .Where(p => p.Id == returnInvoice.ProjectId)
+                    .Where(p => p.Id == returnInvoice.ProjectId
+                        && p.TenantId == returnInvoice.TenantId && !p.IsDeleted)
                     .Select(p => (int?)p.CustomerId)
                     .FirstOrDefaultAsync(ct);
             }
@@ -2337,6 +2403,8 @@ namespace HSCrm.DataModel.Services.Repository
                 returnInvoice.TenantId, returnInvoice.FiscalYearId, AccountingReferenceType.PurchaseReturnInvoice, returnInvoice.Id, ct);
             if (existingVoucher != null)
                 return existingVoucher;
+
+            await ValidatePurchaseReturnForPostingAsync(returnInvoice, ct);
 
             var accInventory = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_INVENTORY, ct);
             var accVatRec = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_VAT_RECEIVABLE, ct);
