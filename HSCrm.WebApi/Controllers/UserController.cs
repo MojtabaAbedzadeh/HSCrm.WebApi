@@ -297,7 +297,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("AssignRole")]
-        [Permission(Permissions.Users.Create)]
+        [Permission(Permissions.Roles.ManagePermissions)]
         public async Task<ApiResponse> AssignRole(AssignRoleModel model)
         {
             try
