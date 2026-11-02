@@ -343,7 +343,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
-                    Message = "خطا در ثبت پرداخت: " + ex.Message
+                    Message = "خطا در ثبت پرداخت. جزئیات در گزارش سرور ثبت شده است."
                 };
             }
         }
@@ -404,6 +404,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Payments.Create)]
         public async Task<ApiResponse> RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
         {
+            IEntityTransaction? transaction = null;
             try
             {
                 if (model == null) return new ApiResponse
@@ -463,6 +464,8 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
+                transaction = _context.BeginTransaction();
+
                 var payment = new Payment
                 {
                     TenantId = tenantId.Value,
@@ -483,7 +486,7 @@ namespace HSCrm.WebApi.Controllers
                 await _accountingService.CreateVoucherForPaymentAsync(payment);
 
                 var totalPaid = _context.paymentUW
-                    .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+                    .Get(x => x.PurchaseInvoiceId == invoice.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted)
                     .Sum(x => x.Amount);
 
                 invoice.PaidAmount = totalPaid;
@@ -496,6 +499,8 @@ namespace HSCrm.WebApi.Controllers
                 _context.purchaseInvoiceUW.Update(invoice);
                 await _context.SaveAsync();
 
+                transaction.Commit();
+
                 return new ApiResponse
                 {
                     Status = true,
@@ -507,6 +512,7 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
+                transaction?.Rollback();
                 return new ApiResponse
                 {
                     Status = false,
