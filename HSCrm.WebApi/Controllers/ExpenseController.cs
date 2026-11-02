@@ -217,7 +217,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPut("UpdateExpense")]
         [Permission(Permissions.Expenses.Edit)]
-        public ApiResponse Update([FromBody] ExpenseEditModel model)
+        public async Task<ApiResponse> Update([FromBody] ExpenseEditModel model)
         {
             if (model == null || model.ExpenseId <= 0)
                 return new ApiResponse { Status = false, Message = "شناسه هزینه معتبر نیست" };
@@ -235,25 +235,49 @@ namespace HSCrm.WebApi.Controllers
             if (expense == null)
                 return new ApiResponse { Status = false, Message = "هزینه یافت نشد" };
 
-            if (model.Amount <= 0
-                || (model.ProjectId > 0 && !_context.projectUW.Get(x => x.Id == model.ProjectId && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+            if (model.Amount <= 0 || model.ProjectId <= 0
+                || !_context.projectUW.Get(x => x.Id == model.ProjectId && x.TenantId == tenantId.Value && !x.IsDeleted).Any()
                 || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any()))
                 return new ApiResponse { Status = false, Message = "مبلغ، پروژه یا حساب بانکی هزینه معتبر نیست." };
 
-            var actualPaidAmount = _context.paymentUW.Get(x => x.ExpenseId == expense.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Sum(x => x.Amount);
-            if (model.Amount < actualPaidAmount)
-                return new ApiResponse { Status = false, Message = "مبلغ هزینه نمی‌تواند کمتر از مبالغ پرداخت‌شده باشد." };
+            var hasPayments = _context.paymentUW.Get(x =>
+                x.ExpenseId == expense.Id && x.TenantId == tenantId.Value
+                && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Any();
+            if (hasPayments)
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "این هزینه دارای پرداخت ثبت‌شده است؛ تا زمان فراهم شدن گردش اصلاح و ابطال پرداخت، ویرایش آن مجاز نیست."
+                };
 
+            DateTime expenseDate;
             try
             {
+                expenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
+            }
+            catch
+            {
+                return new ApiResponse { Status = false, Message = "تاریخ وارد شده معتبر نیست" };
+            }
+
+            using var transaction = _context.BeginTransaction();
+            try
+            {
+                // Reverse the old posting and recreate it from the updated expense in one transaction.
+                await _accountingService.CancelVoucherByReferenceAsync(
+                    HSCrm.Common.PublicTools.Enums.AccountingReferenceType.Expense,
+                    expense.Id,
+                    "اصلاح اطلاعات هزینه",
+                    CancellationToken.None);
+
                 expense.ExpenseTitle = model.ExpenseTitle.Trim();
                 expense.Description = model.Description;
                 expense.Type = model.Type;
                 expense.ProjectId = model.ProjectId;
                 expense.Amount = model.Amount;
-                expense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
-                expense.PaidAmount = actualPaidAmount;
-                expense.PaymentStatus = actualPaidAmount <= 0 ? 0 : actualPaidAmount < model.Amount ? 1 : 2;
+                expense.ExpenseDate = expenseDate;
+                expense.PaidAmount = 0m;
+                expense.PaymentStatus = 0;
                 expense.BankAccountId = model.BankAccountId;
                 expense.PaymentMethod = model.PaymentMethod;
                 expense.ReferenceNo = model.ReferenceNo;
@@ -261,24 +285,28 @@ namespace HSCrm.WebApi.Controllers
                 expense.ModifiedById = User.GetUserId();
 
                 _context.expenseUW.Update(expense);
-                _context.Save();
+                await _context.SaveAsync();
+                await _accountingService.CreateVoucherForExpenseAsync(expense);
+                transaction.Commit();
 
-                return new ApiResponse { Status = true, Message = "هزینه با موفقیت ویرایش شد" };
+                return new ApiResponse { Status = true, Message = "هزینه و سند حسابداری آن با موفقیت اصلاح شد" };
             }
             catch (Exception)
             {
-                return new ApiResponse { Status = false, Message = "خطا در بروزرسانی هزینه" };
+                transaction.Rollback();
+                return new ApiResponse { Status = false, Message = "خطا در بروزرسانی هزینه و سند حسابداری" };
             }
         }
 
         [HttpDelete("DeleteExpense/{id:int}")]
         [Permission(Permissions.Expenses.Delete)]
-        public ApiResponse Delete(int id)
+        public async Task<ApiResponse> Delete(int id)
         {
             var tenantId = User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
 
-            if (!tenantId.HasValue) return new ApiResponse { Status = false, Message = "عدم دسترسی" };
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse { Status = false, Message = "عدم دسترسی به سال مالی" };
 
             var expense = _context.expenseUW
                 .Get(x => x.Id == id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value)
@@ -287,16 +315,33 @@ namespace HSCrm.WebApi.Controllers
             if (expense == null)
                 return new ApiResponse { Status = false, Message = "رکورد یافت نشد" };
 
+            var hasPayments = _context.paymentUW.Get(x =>
+                x.ExpenseId == expense.Id && x.TenantId == tenantId.Value
+                && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Any();
+            if (hasPayments)
+                return new ApiResponse
+                {
+                    Status = false,
+                    Message = "این هزینه دارای پرداخت ثبت‌شده است؛ ابتدا باید پرداخت‌ها از مسیر حسابداری تسویه و ابطال شوند."
+                };
+
+            using var transaction = _context.BeginTransaction();
             try
             {
+                await _accountingService.CancelVoucherByReferenceAsync(
+                    HSCrm.Common.PublicTools.Enums.AccountingReferenceType.Expense,
+                    expense.Id,
+                    "حذف هزینه",
+                    CancellationToken.None);
                 _context.expenseUW.Delete(expense);
-                _context.Save();
-                return new ApiResponse { Status = true, Message = "هزینه حذف شد" };
+                await _context.SaveAsync();
+                transaction.Commit();
+                return new ApiResponse { Status = true, Message = "هزینه و سند حسابداری آن با موفقیت حذف/ابطال شد" };
             }
             catch (Exception)
             {
-                return new ApiResponse { Status = false, Message = "خطا در حذف هزینه" };
+                transaction.Rollback();
+                return new ApiResponse { Status = false, Message = "خطا در حذف هزینه و سند حسابداری" };
             }
         }
-    }
 }
