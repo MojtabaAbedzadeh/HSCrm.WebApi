@@ -924,12 +924,14 @@ namespace HSCrm.DataModel.Context
 
             foreach (var entry in entries)
             {
-                // Tenant
-                if (entry.Entity is TenantScopedEntity tenantEntity && _currentUserService.TenantId.HasValue)
+                // Tenant: never allow tenant-scoped writes without an authenticated tenant context.
+                if (entry.Entity is TenantScopedEntity tenantEntity)
                 {
-                    var currentTenantId = _currentUserService.TenantId.Value;
-                    var tenantProperty = entry.Property(nameof(TenantScopedEntity.TenantId));
+                    var currentTenantId = _currentUserService?.TenantId ?? 0;
+                    if (currentTenantId <= 0)
+                        throw new UnauthorizedAccessException("برای ثبت یا ویرایش اطلاعات، شرکت معتبر لازم است.");
 
+                    var tenantProperty = entry.Property(nameof(TenantScopedEntity.TenantId));
                     if (entry.State == EntityState.Added)
                     {
                         if (tenantEntity.TenantId == 0)
@@ -945,11 +947,28 @@ namespace HSCrm.DataModel.Context
                     }
                 }
 
-                // FiscalYear
+                // Fiscal year is also a write boundary. Never accept a client-supplied
+                // fiscal year different from the one bound to the authenticated token.
                 if (entry.Entity is IFiscalYearScoped fiscalEntity)
                 {
-                    if (fiscalEntity.FiscalYearId == 0 && _currentFiscalYearService.FiscalYearId.HasValue)
-                        fiscalEntity.FiscalYearId = _currentFiscalYearService.FiscalYearId.Value;
+                    var currentFiscalYearId = _currentFiscalYearService?.FiscalYearId ?? 0;
+                    if (currentFiscalYearId <= 0)
+                        throw new UnauthorizedAccessException("برای ثبت یا ویرایش این اطلاعات، سال مالی معتبر لازم است.");
+
+                    var fiscalYearProperty = entry.Property(nameof(IFiscalYearScoped.FiscalYearId));
+                    if (entry.State == EntityState.Added)
+                    {
+                        if (fiscalEntity.FiscalYearId == 0)
+                            fiscalEntity.FiscalYearId = currentFiscalYearId;
+                        else if (fiscalEntity.FiscalYearId != currentFiscalYearId)
+                            throw new UnauthorizedAccessException("ثبت اطلاعات در سال مالی دیگری مجاز نیست.");
+                    }
+                    else
+                    {
+                        var originalFiscalYearId = fiscalYearProperty.OriginalValue is int original ? original : 0;
+                        if (originalFiscalYearId != currentFiscalYearId || fiscalEntity.FiscalYearId != currentFiscalYearId)
+                            throw new UnauthorizedAccessException("تغییر اطلاعات متعلق به سال مالی دیگری مجاز نیست.");
+                    }
                 }
 
                 // Audit fields
