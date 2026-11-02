@@ -803,24 +803,76 @@ namespace HSCrm.DataModel.Services.Repository
             {
                 var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
                 var fiscalYearId = _currentFiscalYear.FiscalYearId ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
-                var fiscalYearValid = await _context.FiscalYears.AnyAsync(x => x.Id == fiscalYearId && x.TenantId == tenantId && !x.IsClosed && !x.IsDeleted, ct);
-                var productValid = await _context.Products.AnyAsync(x => x.Id == dto.ProductId && x.TenantId == tenantId && !x.IsDeleted, ct);
-                var warehouseValid = await _context.Warehouses.AnyAsync(x => x.Id == dto.WarehouseId && x.TenantId == tenantId && x.IsActive && !x.IsDeleted, ct);
-                if (!fiscalYearValid || !productValid || !warehouseValid)
-                    throw new UnauthorizedAccessException("کالا، انبار یا سال مالی متعلق به شرکت جاری نیست یا معتبر نیست.");
+                var fiscalYearValid = await _context.FiscalYears.AnyAsync(x =>
+                    x.Id == fiscalYearId && x.TenantId == tenantId && !x.IsClosed && !x.IsDeleted, ct);
+                var productValid = await _context.Products.AnyAsync(x =>
+                    x.Id == dto.ProductId && x.TenantId == tenantId && !x.IsDeleted, ct);
+                var warehouseValid = await _context.Warehouses.AnyAsync(x =>
+                    x.Id == dto.WarehouseId && x.TenantId == tenantId && x.IsActive && !x.IsDeleted, ct);
+                if (!fiscalYearValid || !productValid || !warehouseValid || dto.ActualQuantity < 0)
+                    throw new UnauthorizedAccessException("کالا، انبار، مقدار شمارش‌شده یا سال مالی معتبر نیست.");
 
                 var inventory = await _context.Inventories.FirstOrDefaultAsync(
-                    x => x.ProductId == dto.ProductId && x.WarehouseId == dto.WarehouseId && x.TenantId == tenantId && !x.IsDeleted, ct);
+                    x => x.ProductId == dto.ProductId && x.WarehouseId == dto.WarehouseId
+                         && x.TenantId == tenantId && !x.IsDeleted, ct);
 
                 if (inventory == null)
+                    throw new InvalidOperationException("رکورد موجودی برای این کالا و انبار یافت نشد.");
+
+                // The API receives the physical count, not a signed delta.
+                var quantityChange = dto.ActualQuantity - inventory.Quantity;
+                if (quantityChange == 0)
                 {
-                    throw new Exception("رکورد موجودی برای این کالا و انبار یافت نشد.");
+                    await transaction.CommitAsync(ct);
+                    return;
                 }
 
-                decimal unitCost = inventory.AverageUnitCost;
-                decimal totalCost = Math.Round(Math.Abs(dto.QuantityChange) * unitCost, 2);
+                decimal totalCost = 0m;
+                var unitCost = inventory.AverageUnitCost;
 
-                inventory.Quantity += dto.QuantityChange;
+                if (quantityChange > 0)
+                {
+                    totalCost = Math.Round(quantityChange * unitCost, 2);
+                }
+                else
+                {
+                    var remainingToConsume = Math.Abs(quantityChange);
+                    if (remainingToConsume > inventory.Quantity)
+                        throw new InvalidOperationException("مقدار تعدیل منفی از موجودی فعلی بیشتر است.");
+
+                    // Reduce FIFO layers as well as the aggregate quantity so future FIFO
+                    // sales cannot consume stock that was removed by stocktaking.
+                    var openLayers = await _context.InventoryTransactions
+                        .Where(x => x.TenantId == tenantId
+                            && x.WarehouseId == dto.WarehouseId
+                            && x.ProductId == dto.ProductId
+                            && x.QuantityChange > 0
+                            && x.RemainingFifoQuantity > 0
+                            && !x.IsDeleted)
+                        .OrderBy(x => x.CreatedAt)
+                        .ThenBy(x => x.Id)
+                        .ToListAsync(ct);
+
+                    foreach (var layer in openLayers)
+                    {
+                        if (remainingToConsume <= 0)
+                            break;
+
+                        var consumed = Math.Min(remainingToConsume, layer.RemainingFifoQuantity);
+                        layer.RemainingFifoQuantity -= consumed;
+                        totalCost += consumed * layer.UnitCost;
+                        remainingToConsume -= consumed;
+                    }
+
+                    // Legacy opening stock may not have FIFO layers; value that portion at
+                    // the current weighted-average cost rather than leaving it unvalued.
+                    if (remainingToConsume > 0)
+                        totalCost += remainingToConsume * unitCost;
+
+                    totalCost = Math.Round(totalCost, 2);
+                }
+
+                inventory.Quantity = dto.ActualQuantity;
 
                 var transactionLog = new InventoryTransaction
                 {
@@ -828,22 +880,22 @@ namespace HSCrm.DataModel.Services.Repository
                     WarehouseId = dto.WarehouseId,
                     TenantId = tenantId,
                     FiscalYearId = fiscalYearId,
-                    QuantityChange = dto.QuantityChange,
-                    UnitCost = unitCost,
+                    QuantityChange = quantityChange,
+                    UnitCost = quantityChange > 0 ? unitCost : (Math.Abs(quantityChange) > 0 ? Math.Round(totalCost / Math.Abs(quantityChange), 4) : 0m),
                     TotalCost = totalCost,
-                    RemainingFifoQuantity = dto.QuantityChange > 0 ? dto.QuantityChange : 0,
+                    RemainingFifoQuantity = quantityChange > 0 ? quantityChange : 0m,
                     TransactionType = InventoryTransactionType.Adjustment,
                     Description = dto.Description,
                     ReferenceId = dto.ReferenceId,
                     ReferenceType = InventoryReferenceType.Adjustment,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                 };
 
                 await _context.InventoryTransactions.AddAsync(transactionLog, ct);
                 await _unitOfWork.SaveAsync();
                 await transaction.CommitAsync(ct);
             }
-            catch (Exception)
+            catch
             {
                 await transaction.RollbackAsync(ct);
                 throw;

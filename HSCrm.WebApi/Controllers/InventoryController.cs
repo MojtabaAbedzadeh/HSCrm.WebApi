@@ -108,7 +108,7 @@ namespace HSCrm.WebApi.Controllers
             {
                 ProductId = model.ProductId,
                 WarehouseId = model.WarehouseId,
-                QuantityChange = model.ActualQuantity,
+                ActualQuantity = model.ActualQuantity,
                 ReferenceId = model.ReferenceId,
                 Description = model.Description
             });
