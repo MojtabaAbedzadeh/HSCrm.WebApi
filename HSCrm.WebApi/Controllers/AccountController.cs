@@ -27,6 +27,7 @@ namespace HSCrm.WebApi.Controllers
         private readonly IUnitOfWork _iuwcontext;
         private readonly IPermissionService _permissionService;
         private readonly ILogger<AccountController> _logger;
+        private readonly IConfiguration _configuration;
 
         public AccountController(
             UserManager<ApplicationUser> userManager,
@@ -36,7 +37,8 @@ namespace HSCrm.WebApi.Controllers
             ApplicationDbContext context,
             IPermissionService permissionService,
             IUnitOfWork iuwcontext,
-            ILogger<AccountController> logger)
+            ILogger<AccountController> logger,
+            IConfiguration configuration)
         {
             _context = context;
             _userManager = userManager;
@@ -46,6 +48,7 @@ namespace HSCrm.WebApi.Controllers
             _permissionService = permissionService;
             _iuwcontext = iuwcontext;
             _logger = logger;
+            _configuration = configuration;
         }
 
         [AllowAnonymous]
@@ -325,8 +328,8 @@ namespace HSCrm.WebApi.Controllers
 
         private string BuildDefaultAvatarUrl()
         {
-            var baseUrl = $"{Request.Scheme}://{Request.Host.Value}";
-            return $"{baseUrl}{DefaultAvatarPath}";
+            var baseUrl = _configuration["PublicBaseUrl"]?.TrimEnd('/');
+            return string.IsNullOrWhiteSpace(baseUrl) ? DefaultAvatarPath : $"{baseUrl}{DefaultAvatarPath}";
         }
     }
 }
