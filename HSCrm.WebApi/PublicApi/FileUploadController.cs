@@ -9,10 +9,12 @@ namespace HSCrm.WebApi.PublicApi
     public class FileUploadController : ControllerBase
     {
         private readonly IWebHostEnvironment _hosting;
+        private readonly IConfiguration _configuration;
 
-        public FileUploadController(IWebHostEnvironment hosting)
+        public FileUploadController(IWebHostEnvironment hosting, IConfiguration configuration)
         {
             _hosting = hosting;
+            _configuration = configuration;
         }
 
         [HttpPost("UserImageUpload")]
@@ -63,7 +65,9 @@ namespace HSCrm.WebApi.PublicApi
                 var filename = $"{Guid.NewGuid():N}{validated.Extension}";
                 var physicalPath = Path.Combine(uploadsRoot, filename);
                 await System.IO.File.WriteAllBytesAsync(physicalPath, validated.Content, ct);
-                savedUrls.Add($"{Request.Scheme}://{Request.Host}/upload/userimage/{filename}");
+                var publicBaseUrl = _configuration["PublicBaseUrl"]?.TrimEnd('/');
+                var relativeUrl = $"/upload/userimage/{filename}";
+                savedUrls.Add(string.IsNullOrWhiteSpace(publicBaseUrl) ? relativeUrl : $"{publicBaseUrl}{relativeUrl}");
             }
 
             if (savedUrls.Count == 1)
