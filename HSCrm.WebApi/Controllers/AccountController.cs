@@ -176,6 +176,7 @@ namespace HSCrm.WebApi.Controllers
             var allFiscalYears = await _iuwcontext.fiscalYearUW
                 .Get(f => f.TenantId == user!.TenantId)
                 .IgnoreQueryFilters()
+                .Where(f => !f.IsDeleted && !f.IsClosed)
                 .OrderByDescending(f => f.Id)
                 .ToListAsync(ct);
 
@@ -240,6 +241,7 @@ namespace HSCrm.WebApi.Controllers
                 var fiscalYear = await _iuwcontext.fiscalYearUW
                     .Get(f => f.Id == model.FiscalYearId && f.TenantId == user!.TenantId)
                     .IgnoreQueryFilters()
+                    .Where(f => !f.IsDeleted)
                     .SingleOrDefaultAsync(ct);
 
                 if (fiscalYear == null)
@@ -287,7 +289,7 @@ namespace HSCrm.WebApi.Controllers
             if (!user.UserStatus)
                 return Unauthorized("User account is inactive.");
 
-            if (user.Tenant == null || !user.Tenant.IsActive)
+            if (user.Tenant == null || !user.Tenant.IsActive || user.Tenant.IsDeleted)
                 return Unauthorized("Tenant is inactive.");
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
