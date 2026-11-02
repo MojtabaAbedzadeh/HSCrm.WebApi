@@ -895,4 +895,97 @@ namespace HSCrm.UnitTests
             Assert.Equal(1, reopenResult.RemovedOpeningVouchersCount);
         }
     }
+
+    public class TenantProvisioningSecurityTests
+    {
+        [Fact]
+        public async Task AnonymousProvisioningScope_AllowsOnlyInitialFiscalYearForTargetTenant()
+        {
+            var currentUser = new MutableCurrentUserService
+            {
+                TenantId = null,
+                UserId = null,
+                IsAuthenticated = false
+            };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = null };
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("TenantProvisioning_" + Guid.NewGuid().ToString("N"))
+                .Options;
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Tenants.Add(new Tenant
+            {
+                Id = 42,
+                TenantCode = "TENANT42",
+                TenantTitle = "Tenant 42",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            var initialFiscalYear = new FiscalYear
+            {
+                TenantId = 42,
+                Title = "Initial fiscal year",
+                StartDate = new DateTime(2026, 3, 21),
+                EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = true,
+                IsClosed = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            context.FiscalYears.Add(initialFiscalYear);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
+
+            using (context.BeginTenantProvisioningScope(42))
+            {
+                await context.SaveChangesAsync();
+            }
+
+            Assert.True(await context.FiscalYears.IgnoreQueryFilters()
+                .AnyAsync(f => f.TenantId == 42 && f.Title == "Initial fiscal year"));
+        }
+
+        [Fact]
+        public async Task AnonymousProvisioningScope_CannotCreateFiscalYearForDifferentTenant()
+        {
+            var currentUser = new MutableCurrentUserService
+            {
+                TenantId = null,
+                UserId = null,
+                IsAuthenticated = false
+            };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = null };
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("TenantProvisioningMismatch_" + Guid.NewGuid().ToString("N"))
+                .Options;
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Tenants.Add(new Tenant
+            {
+                Id = 42,
+                TenantCode = "TENANT42",
+                TenantTitle = "Tenant 42",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            context.FiscalYears.Add(new FiscalYear
+            {
+                TenantId = 43,
+                Title = "Spoofed fiscal year",
+                StartDate = new DateTime(2026, 3, 21),
+                EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = true,
+                IsClosed = false,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            using (context.BeginTenantProvisioningScope(42))
+            {
+                await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
+            }
+        }
+    }
 }
