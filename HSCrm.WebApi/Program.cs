@@ -112,9 +112,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-app.UseCors("_myAllowSpecificationOrigins");
 
 app.UseRouting();
+app.UseCors("_myAllowSpecificationOrigins");
 
 app.UseAuthentication();
 app.UseAuthorization();
