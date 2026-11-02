@@ -56,7 +56,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 });
 
 // Require authentication by default; public endpoints must opt out explicitly.
-builder.Services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+builder.Services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim("TenantId").RequireClaim("FiscalYearId").Build());
 
 // ۴. سرویس‌های اصلی پروژه (DbContext و Identity)
 builder.Services.AddDbContextService(configuration);

@@ -7,6 +7,7 @@ using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -51,6 +52,7 @@ namespace HSCrm.WebApi.Controllers
         public ApiResponse FiscalYearDropdownList(int tenantId)
         {
             var fiscalYearList = _context.fiscalYearUW.Get(f => f.TenantId == tenantId)
+                .IgnoreQueryFilters()
                 .OrderByDescending(f => f.Id)
                 .Select(f => new DropdownDto
                 {
