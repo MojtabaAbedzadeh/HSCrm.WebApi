@@ -921,7 +921,7 @@ namespace HSCrm.DataModel.Context
         private void ApplyAuditTenantAndFiscalYearInfo()
         {
             var entries = ChangeTracker.Entries()
-                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified || e.State == EntityState.Deleted)
                 .ToList();
 
             foreach (var entry in entries)
