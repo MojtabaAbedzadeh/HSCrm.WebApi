@@ -1536,7 +1536,8 @@ namespace HSCrm.DataModel.Services.Repository
 
                 // ۳. بازگشایی سال مالی
                 fiscalYear.IsClosed = false;
-                await _context.SaveChangesAsync(ct);
+                using (_context.BeginFiscalYearTransitionWriteScope())
+                    await _context.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
                 return new ReopenFiscalYearResultDto
