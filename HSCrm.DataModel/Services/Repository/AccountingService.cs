@@ -244,11 +244,43 @@ namespace HSCrm.DataModel.Services.Repository
             return voucher;
         }
 
+        private async Task<JournalVoucher?> GetExistingPostedAutoVoucherAsync(
+            int tenantId,
+            int fiscalYearId,
+            AccountingReferenceType referenceType,
+            int referenceId,
+            CancellationToken ct)
+        {
+            var existing = await _context.JournalVouchers
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId
+                    && x.ReferenceType == referenceType
+                    && x.ReferenceId == referenceId
+                    && !x.IsDeleted
+                    && x.Status != JournalVoucherStatus.Cancelled, ct);
+
+            if (existing == null)
+                return null;
+
+            if (existing.Status != JournalVoucherStatus.Posted)
+                throw new InvalidOperationException("برای این مرجع سند حسابداری فعال اما قطعی‌نشده وجود دارد.");
+
+            return existing;
+        }
+
         public async Task<JournalVoucher> CreateVoucherForSalesInvoiceAsync(
             SalesInvoice invoice,
             InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage,
             CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(invoice.TenantId, invoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                invoice.TenantId, invoice.FiscalYearId, AccountingReferenceType.SalesInvoice, invoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
             var accReceivable = await GetSystemAccountAsync(invoice.TenantId, ACC_RECEIVABLE, ct);
             var accSales = await GetSystemAccountAsync(invoice.TenantId, ACC_SALES_REVENUE, ct);
             var accDiscount = await GetSystemAccountAsync(invoice.TenantId, ACC_SALES_DISCOUNT, ct);
@@ -406,6 +438,12 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForPurchaseInvoiceAsync(PurchaseInvoice invoice, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(invoice.TenantId, invoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                invoice.TenantId, invoice.FiscalYearId, AccountingReferenceType.PurchaseInvoice, invoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
             // در سیستم ثبت دائمی موجودی انبار (Perpetual Inventory)، خرید کالا ابتدا به حساب دارایی انبار (1105) بدهکار می‌شود
             var accInventory = await GetSystemAccountAsync(invoice.TenantId, ACC_INVENTORY, ct);
             var accVatRec = await GetSystemAccountAsync(invoice.TenantId, ACC_VAT_RECEIVABLE, ct);
@@ -496,6 +534,12 @@ namespace HSCrm.DataModel.Services.Repository
         public async Task<JournalVoucher> CreateVoucherForReceiptAsync(Receipt receipt, CancellationToken ct = default)
         {
             await EnsureFiscalYearIsOpenAsync(receipt.TenantId, receipt.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                receipt.TenantId, receipt.FiscalYearId, AccountingReferenceType.Receipt, receipt.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await EnsureFiscalYearIsOpenAsync(receipt.TenantId, receipt.FiscalYearId, ct);
             if (receipt.Amount <= 0
                 || (receipt.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == receipt.BankAccountId.Value && x.TenantId == receipt.TenantId && !x.IsDeleted, ct))
                 || (receipt.CustomerId.HasValue && !await _context.Customers.AnyAsync(x => x.Id == receipt.CustomerId.Value && x.TenantId == receipt.TenantId && !x.IsDeleted, ct)))
@@ -560,6 +604,12 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForPaymentAsync(Payment payment, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(payment.TenantId, payment.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                payment.TenantId, payment.FiscalYearId, AccountingReferenceType.Payment, payment.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
             await EnsureFiscalYearIsOpenAsync(payment.TenantId, payment.FiscalYearId, ct);
             if (payment.Amount <= 0
                 || (payment.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == payment.BankAccountId.Value && x.TenantId == payment.TenantId && !x.IsDeleted, ct)))
@@ -649,6 +699,12 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForExpenseAsync(Expense expense, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(expense.TenantId, expense.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                expense.TenantId, expense.FiscalYearId, AccountingReferenceType.Expense, expense.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
             await EnsureFiscalYearIsOpenAsync(expense.TenantId, expense.FiscalYearId, ct);
             if (expense.Amount <= 0
                 || (expense.ProjectId > 0 && !await _context.Projects.AnyAsync(x => x.Id == expense.ProjectId && x.TenantId == expense.TenantId && !x.IsDeleted, ct))
@@ -2109,6 +2165,12 @@ namespace HSCrm.DataModel.Services.Repository
         /// </summary>
         public async Task<JournalVoucher> CreateVoucherForSalesReturnAsync(SalesReturnInvoice returnInvoice, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(returnInvoice.TenantId, returnInvoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                returnInvoice.TenantId, returnInvoice.FiscalYearId, AccountingReferenceType.SalesReturnInvoice, returnInvoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
             var accReceivable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_RECEIVABLE, ct);
             var accSalesReturn = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_SALES_RETURN, ct);
             var accSalesDiscount = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_SALES_DISCOUNT, ct);
@@ -2270,6 +2332,12 @@ namespace HSCrm.DataModel.Services.Repository
         /// </summary>
         public async Task<JournalVoucher> CreateVoucherForPurchaseReturnAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(returnInvoice.TenantId, returnInvoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                returnInvoice.TenantId, returnInvoice.FiscalYearId, AccountingReferenceType.PurchaseReturnInvoice, returnInvoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
             var accInventory = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_INVENTORY, ct);
             var accVatRec = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_VAT_RECEIVABLE, ct);
             var accPayable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_PAYABLE, ct);
