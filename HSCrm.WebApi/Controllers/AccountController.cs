@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
@@ -48,6 +49,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [AllowAnonymous]
+        [EnableRateLimiting("TenantRegistration")]
         [HttpPost("RegisterTenant")]
         public async Task<IActionResult> RegisterTenant(RegisterTenantDto model, CancellationToken ct)
         {
@@ -152,6 +154,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [AllowAnonymous]
+        [EnableRateLimiting("Auth")]
         [Route("check-user")]
         [HttpPost]
         public async Task<IActionResult> CheckUser(UserLoginModel model, CancellationToken ct)
@@ -210,6 +213,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [AllowAnonymous]
+        [EnableRateLimiting("Auth")]
         [Route("login")]
         [HttpPost]
         public async Task<IActionResult> Login(UserLoginModel model, CancellationToken ct)
