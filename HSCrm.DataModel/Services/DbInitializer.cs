@@ -48,7 +48,8 @@ namespace HSCrm.DataModel.Services
                     if (string.IsNullOrWhiteSpace(tenant.CreatedById))
                         tenant.CreatedById = adminUserId;
 
-                    var fiscalYear = await context.FiscalYears.FirstOrDefaultAsync();
+                    var fiscalYear = await context.FiscalYears.IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(f => f.TenantId == tenant.Id && !f.IsDeleted);
                     if (fiscalYear != null && string.IsNullOrWhiteSpace(fiscalYear.CreatedById))
                         fiscalYear.CreatedById = adminUserId;
 
