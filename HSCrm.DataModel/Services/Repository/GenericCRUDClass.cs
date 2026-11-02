@@ -114,8 +114,20 @@ namespace HSCrm.DataModel.Services.Repository
         public virtual Task<TEntity?> GetByIdAsync(object id, CancellationToken ct = default) => ByPrimaryKey(id).FirstOrDefaultAsync(ct);
         public virtual void Delete(TEntity entity, CancellationToken ct = default)
         {
-            if (_context.Entry(entity).State == EntityState.Detached) _table.Attach(entity);
-            _table.Remove(entity);
+            if (entity == null) throw new ArgumentNullException(nameof(entity));
+
+            var detachedEntry = _context.Entry(entity);
+            var key = detachedEntry.Metadata.FindPrimaryKey()
+                ?? throw new InvalidOperationException($"Entity type {typeof(TEntity).Name} has no primary key.");
+            var keyValues = key.Properties.Select(property => detachedEntry.Property(property.Name).CurrentValue).ToArray();
+
+            // Always resolve the persisted row through the normal query pipeline so
+            // global tenant/fiscal-year filters apply even for detached caller input.
+            var existing = ByPrimaryKey(keyValues!).FirstOrDefault();
+            if (existing == null)
+                throw new KeyNotFoundException("رکورد مورد نظر در محدوده دسترسی جاری پیدا نشد.");
+
+            _table.Remove(existing);
         }
         public virtual void DeleteById(object id)
         {
