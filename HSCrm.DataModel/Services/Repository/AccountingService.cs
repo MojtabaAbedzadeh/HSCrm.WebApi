@@ -270,6 +270,52 @@ namespace HSCrm.DataModel.Services.Repository
             return existing;
         }
 
+        private async Task ValidateSalesInvoiceForPostingAsync(SalesInvoice invoice, CancellationToken ct)
+        {
+            if (invoice.Status != InvoiceStatus.Final || invoice.Total <= 0
+                || invoice.Items == null || invoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور فروش باید نهایی و دارای مبلغ و اقلام معتبر باشد.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == invoice.WarehouseId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct)
+                || !await _context.Projects.AnyAsync(x => x.Id == invoice.ProjectId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار یا پروژه فاکتور فروش متعلق به شرکت جاری نیست.");
+
+            var projectCustomerId = await _context.Projects
+                .Where(x => x.Id == invoice.ProjectId && x.TenantId == invoice.TenantId && !x.IsDeleted)
+                .Select(x => x.CustomerId)
+                .FirstOrDefaultAsync(ct);
+            if (projectCustomerId.HasValue && !await _context.Customers.AnyAsync(x =>
+                x.Id == projectCustomerId.Value && x.TenantId == invoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("مشتری پروژه فاکتور فروش معتبر نیست.");
+
+            var productIds = invoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == invoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || invoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور فروش معتبر نیست.");
+        }
+
+        private async Task ValidatePurchaseInvoiceForPostingAsync(PurchaseInvoice invoice, CancellationToken ct)
+        {
+            if (invoice.Status != InvoiceStatus.Final || invoice.Total <= 0
+                || invoice.Items == null || invoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور خرید باید نهایی و دارای مبلغ و اقلام معتبر باشد.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == invoice.WarehouseId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct)
+                || !await _context.Suppliers.AnyAsync(x => x.Id == invoice.SupplierId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار یا تأمین‌کننده فاکتور خرید متعلق به شرکت جاری نیست.");
+
+            var productIds = invoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == invoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || invoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور خرید معتبر نیست.");
+        }
+
         public async Task<JournalVoucher> CreateVoucherForSalesInvoiceAsync(
             SalesInvoice invoice,
             InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage,
@@ -280,6 +326,8 @@ namespace HSCrm.DataModel.Services.Repository
                 invoice.TenantId, invoice.FiscalYearId, AccountingReferenceType.SalesInvoice, invoice.Id, ct);
             if (existingVoucher != null)
                 return existingVoucher;
+
+            await ValidateSalesInvoiceForPostingAsync(invoice, ct);
 
             var accReceivable = await GetSystemAccountAsync(invoice.TenantId, ACC_RECEIVABLE, ct);
             var accSales = await GetSystemAccountAsync(invoice.TenantId, ACC_SALES_REVENUE, ct);
@@ -443,6 +491,8 @@ namespace HSCrm.DataModel.Services.Repository
                 invoice.TenantId, invoice.FiscalYearId, AccountingReferenceType.PurchaseInvoice, invoice.Id, ct);
             if (existingVoucher != null)
                 return existingVoucher;
+
+            await ValidatePurchaseInvoiceForPostingAsync(invoice, ct);
 
             // در سیستم ثبت دائمی موجودی انبار (Perpetual Inventory)، خرید کالا ابتدا به حساب دارایی انبار (1105) بدهکار می‌شود
             var accInventory = await GetSystemAccountAsync(invoice.TenantId, ACC_INVENTORY, ct);
