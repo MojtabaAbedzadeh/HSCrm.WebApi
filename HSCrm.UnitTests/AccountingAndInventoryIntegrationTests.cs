@@ -126,6 +126,23 @@ namespace HSCrm.UnitTests
             return (context, uow, accounting, inventory, currentUser, currentFy);
         }
 
+
+        [Fact]
+        public async Task SaveChanges_RejectsDirectDeleteOfAnotherTenantsRecord()
+        {
+            var (context, _, _, _, currentUser, _) = CreateTestRig(nameof(SaveChanges_RejectsDirectDeleteOfAnotherTenantsRecord));
+            var foreignCustomer = new Customer
+            {
+                Id = 999,
+                TenantId = 2,
+                Name = "Foreign customer",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            context.Customers.Remove(foreignCustomer);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
+        }
+
         [Fact(DisplayName = "01. ایجاد خودکار و بدون تکرار ۲۰ سرفصل استاندارد حسابداری (EnsureDefaultChartOfAccounts)")]
         public async Task Test01_EnsureDefaultChartOfAccounts_SeedsAll20StandardAccounts_Idempotently()
         {
