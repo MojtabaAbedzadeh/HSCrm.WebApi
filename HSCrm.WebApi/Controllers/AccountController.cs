@@ -94,8 +94,11 @@ namespace HSCrm.WebApi.Controllers
                     CreatedAt = DateTime.Now
                 };
 
-                _context.FiscalYears.Add(defaultFiscalYear);
-                await _context.SaveChangesAsync(ct);
+                using (_context.BeginTenantProvisioningScope(tenant.Id))
+                {
+                    _context.FiscalYears.Add(defaultFiscalYear);
+                    await _context.SaveChangesAsync(ct);
+                }
 
                 var user = new ApplicationUser
                 {
