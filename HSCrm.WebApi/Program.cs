@@ -17,7 +17,8 @@ builder.Services.AddHttpContextAccessor();
 // ۲. لود تنظیمات AppSettings
 var configuration = builder.Configuration
     .SetBasePath(Directory.GetCurrentDirectory())
-    .AddJsonFile(FileNamesExtensions.AppSettingName)
+    .AddJsonFile(FileNamesExtensions.AppSettingName, optional: false, reloadOnChange: true)
+    .AddEnvironmentVariables()
     .Build();
 
 // ۳. کنترلرها و ثبت FluentValidation
@@ -54,6 +55,9 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     };
 });
 
+// Require authentication by default; public endpoints must opt out explicitly.
+builder.Services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+
 // ۴. سرویس‌های اصلی پروژه (DbContext و Identity)
 builder.Services.AddDbContextService(configuration);
 builder.Services.AddIdentityService(configuration);
@@ -75,15 +79,14 @@ builder.Services.AddScoped<IAccountingService, AccountingService>();
 // ۶. مپ کردن پروفایل‌های AutoMapper
 builder.Services.AddAutoMapper(typeof(Program));
 
-// ۷. تنظیمات CORS بر اساس پیکربندی موجود در پروژه شما
+// ۷. CORS: only explicitly configured origins are allowed.
+var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("_myAllowSpecificationOrigins", policy =>
     {
-        policy.AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials()
-              .SetIsOriginAllowed(host => true);
+        if (allowedOrigins.Length > 0)
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
     });
 });
 

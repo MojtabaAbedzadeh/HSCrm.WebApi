@@ -37,7 +37,11 @@ namespace HSCrm.Framework.Extensions
             .AddDefaultTokenProviders();
 
             var jwtSettings = config.GetSection("Jwt");
-            var key = jwtSettings["Key"] ?? throw new InvalidOperationException("JWT Key is missing in appsettings.json");
+            var key = jwtSettings["Key"];
+            if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < 32)
+                throw new InvalidOperationException("JWT signing key must be configured through Jwt__Key and contain at least 32 bytes.");
+            if (string.IsNullOrWhiteSpace(jwtSettings["Issuer"]) || string.IsNullOrWhiteSpace(jwtSettings["Audience"]))
+                throw new InvalidOperationException("JWT issuer and audience must be configured.");
 
             service.AddAuthentication(options =>
             {

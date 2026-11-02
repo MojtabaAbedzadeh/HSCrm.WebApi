@@ -20,8 +20,8 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         _config = config;
         _userManager = userManager;
         var key = _config["Jwt:Key"];
-        if (string.IsNullOrWhiteSpace(key))
-            throw new InvalidOperationException("JWT Key is missing. Set 'Jwt:Key' in appsettings.json");
+        if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < 32)
+            throw new InvalidOperationException("JWT signing key must be configured through Jwt__Key and contain at least 32 bytes.");
 
         _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
     }
@@ -47,7 +47,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
 
         var issuer = _config["Jwt:Issuer"];
         var audience = _config["Jwt:Audience"];
-        var expiryDays = double.Parse(_config["Jwt:ExpiryInDays"] ?? "7");
+        var expiryDays = double.TryParse(_config["Jwt:ExpiryInDays"], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var configuredExpiryDays) ? Math.Clamp(configuredExpiryDays, 0.01, 1) : 1;
 
         var creds = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
 
