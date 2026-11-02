@@ -63,7 +63,7 @@ namespace HSCrm.WebApi.Controllers
 
             var role = _dbContext.UserRoles
                 .AsNoTracking()
-                .Where(x => x.UserId == userId)
+                .Where(x => x.UserId == userId && x.User.TenantId == currentTenantId)
                 .Select(x => new UserRole
                 {
                     RoleId = x.RoleId,
@@ -85,7 +85,7 @@ namespace HSCrm.WebApi.Controllers
         {
             var role = await _dbContext.Roles
                 .AsNoTracking()
-                .Where(x => x.Id == roleId)
+                .Where(x => x.Id == roleId && x.TenantId == _userService.TenantId)
                 .Select(x => new RoleListModel
                 {
                     Id = x.Id,
@@ -178,7 +178,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.Edit)]
         public async Task<ApiResponse<RoleListModel>> UpdateRole([FromBody] RoleEditModel model)
         {
-            var role = await _roleManager.FindByIdAsync(model.Id);
+            var role = await _dbContext.Roles.FirstOrDefaultAsync(r => r.Id == model.Id && r.TenantId == _userService.TenantId);
 
             if (role == null)
             {
@@ -226,7 +226,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.Delete)]
         public async Task<ApiResponse<RoleListModel>> DeleteRole(string roleId)
         {
-            var role = await _roleManager.FindByIdAsync(roleId);
+            var role = await _dbContext.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == _userService.TenantId);
 
             if (role == null)
             {
@@ -298,7 +298,7 @@ namespace HSCrm.WebApi.Controllers
         {
             var permissionIds = await _dbContext.RolePermissions
                 .AsNoTracking()
-                .Where(x => x.RoleId == roleId)
+                .Where(x => x.RoleId == roleId && x.Role.TenantId == _userService.TenantId)
                 .Select(x => x.PermissionId)
                 .ToListAsync(ct);
 
@@ -315,7 +315,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.ManagePermissions)]
         public async Task<ApiResponse<bool>> UpdateRolePermissions([FromBody] RolePermissionsModel model, CancellationToken ct)
         {
-            var exists = await _dbContext.Roles.AnyAsync(x => x.Id == model.RoleId, ct);
+            var exists = await _dbContext.Roles.AnyAsync(x => x.Id == model.RoleId && x.TenantId == _userService.TenantId, ct);
 
             if (!exists)
             {
@@ -329,7 +329,7 @@ namespace HSCrm.WebApi.Controllers
             }
 
             var oldPermissions = await _dbContext.RolePermissions
-                .Where(x => x.RoleId == model.RoleId)
+                .Where(x => x.RoleId == model.RoleId && x.Role.TenantId == _userService.TenantId)
                 .ToListAsync(ct);
 
             _dbContext.RolePermissions.RemoveRange(oldPermissions);

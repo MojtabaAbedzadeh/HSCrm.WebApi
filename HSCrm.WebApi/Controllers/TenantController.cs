@@ -169,6 +169,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("TenantDropdownList")]
+        [Permission(Permissions.Tenants.View)]
         public ApiResponse TenantDropdownList()
         {
             IEnumerable<DropdownDto> tenantList = _context.tenantUW.Get().Select(w => new DropdownDto

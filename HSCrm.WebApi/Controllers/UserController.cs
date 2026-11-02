@@ -56,7 +56,8 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Users.View)]
         public ApiResponse GetById(string userId)
         {
-            var request = _context.userManagerUW.GetById(userId);
+            var tenantId = User.GetTenantId();
+            var request = tenantId.HasValue ? _context.userManagerUW.Get(u => u.Id == userId && u.TenantId == tenantId.Value).FirstOrDefault() : null;
 
             if (request == null) return new ApiResponse
             {
@@ -120,7 +121,10 @@ namespace HSCrm.WebApi.Controllers
                     UserName = model.UserNameC
                 };
 
-                IdentityResult result = await _userManager.CreateAsync(user, "@Omid1364");
+                if (string.IsNullOrWhiteSpace(model.PasswordC))
+                    return new ApiResponse<UserModelDto> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "برای کاربر باید رمز عبور اختصاصی تعیین شود." };
+
+                IdentityResult result = await _userManager.CreateAsync(user, model.PasswordC);
 
                 if (!result.Succeeded)
                 {
@@ -191,7 +195,8 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                var getUser = await _userManager.FindByIdAsync(model.UserId);
+                var tenantId = User.GetTenantId();
+                var getUser = tenantId.HasValue ? await _userManager.Users.FirstOrDefaultAsync(u => u.Id == model.UserId && u.TenantId == tenantId.Value) : null;
 
                 if (getUser != null)
                 {
@@ -244,7 +249,8 @@ namespace HSCrm.WebApi.Controllers
             try
             {
 
-                var getUser = await _userManager.FindByIdAsync(userId);
+                var tenantId = User.GetTenantId();
+                var getUser = tenantId.HasValue ? await _userManager.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value) : null;
 
                 if (getUser != null)
                 {
