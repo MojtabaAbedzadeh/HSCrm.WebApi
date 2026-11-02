@@ -5,6 +5,7 @@ using HSCrm.DataModel.Services.Repository;
 using HSCrm.DataModel.Seeders;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Entities.Models.Dto;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
@@ -292,6 +293,12 @@ namespace HSCrm.UnitTests
             await inventory.ApplyInventoryForPurchaseInvoice(pi2);
             var voucher2 = await accounting.CreateVoucherForPurchaseInvoiceAsync(pi2);
             await context.SaveChangesAsync();
+
+            var duplicateVoucher = await accounting.CreateVoucherForPurchaseInvoiceAsync(pi2);
+            Assert.Equal(voucher2.Id, duplicateVoucher.Id);
+            Assert.Equal(1, await context.JournalVouchers.CountAsync(x =>
+                x.TenantId == 1 && x.ReferenceType == AccountingReferenceType.PurchaseInvoice
+                && x.ReferenceId == pi2.Id && x.Status == JournalVoucherStatus.Posted && !x.IsDeleted));
 
             var inv = await context.Inventories.FirstAsync(x => x.ProductId == 1 && x.WarehouseId == 1);
             Assert.Equal(20m, inv.Quantity);
@@ -912,6 +919,71 @@ namespace HSCrm.UnitTests
             Assert.Equal(2, reopenResult.RemovedClosingVouchersCount);
             Assert.Equal(1, reopenResult.RemovedOpeningVouchersCount);
         }
+        [Fact(DisplayName = "Stocktake uses actual counted quantity and updates FIFO layers")]
+        public async Task ApplyAdjustment_UsesActualCountAndReconcilesFifoLayers()
+        {
+            var (context, _, _, inventoryService, _, _) = CreateTestRig(nameof(ApplyAdjustment_UsesActualCountAndReconcilesFifoLayers));
+
+            var inventory = new Inventory
+            {
+                TenantId = 1,
+                WarehouseId = 1,
+                ProductId = 1,
+                Quantity = 10m,
+                AverageUnitCost = 100m,
+                CreatedAt = DateTime.UtcNow
+            };
+            var fifoLayer = new InventoryTransaction
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProductId = 1,
+                QuantityChange = 10m,
+                UnitCost = 80m,
+                TotalCost = 800m,
+                RemainingFifoQuantity = 10m,
+                TransactionType = InventoryTransactionType.Purchase,
+                ReferenceType = InventoryReferenceType.PurchaseInvoice,
+                ReferenceId = 77,
+                Description = "Initial FIFO layer",
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Inventories.Add(inventory);
+            context.InventoryTransactions.Add(fifoLayer);
+            await context.SaveChangesAsync();
+
+            await inventoryService.ApplyAdjustmentAsync(new AdjustmentDto
+            {
+                ProductId = 1,
+                WarehouseId = 1,
+                ActualQuantity = 7m,
+                Description = "Physical count decrease"
+            });
+
+            Assert.Equal(7m, inventory.Quantity);
+            Assert.Equal(7m, fifoLayer.RemainingFifoQuantity);
+            var decrease = await context.InventoryTransactions.SingleAsync(x =>
+                x.TransactionType == InventoryTransactionType.Adjustment && x.QuantityChange < 0);
+            Assert.Equal(-3m, decrease.QuantityChange);
+            Assert.Equal(240m, decrease.TotalCost);
+
+            await inventoryService.ApplyAdjustmentAsync(new AdjustmentDto
+            {
+                ProductId = 1,
+                WarehouseId = 1,
+                ActualQuantity = 12m,
+                Description = "Physical count increase"
+            });
+
+            Assert.Equal(12m, inventory.Quantity);
+            var increase = await context.InventoryTransactions.SingleAsync(x =>
+                x.TransactionType == InventoryTransactionType.Adjustment && x.QuantityChange > 0);
+            Assert.Equal(5m, increase.QuantityChange);
+            Assert.Equal(500m, increase.TotalCost);
+            Assert.Equal(5m, increase.RemainingFifoQuantity);
+        }
+
     }
 
     public class FiscalYearMaintenanceSecurityTests
