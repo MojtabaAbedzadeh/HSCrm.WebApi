@@ -52,7 +52,7 @@ namespace HSCrm.WebApi.Controllers
                 .Include(x => x.Supplier)
                 .Include(x => x.PurchaseInvoice)
                 .Include(x => x.Warehouse)
-                .AsQueryable();
+                .Where(x => x.TenantId == User.GetTenantId() && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted)\n                .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(supplierFullName))
             {
@@ -119,7 +119,7 @@ namespace HSCrm.WebApi.Controllers
                 .Include(x => x.PurchaseInvoice)
                 .Include(x => x.Supplier)
                 .Include(x => x.Warehouse)
-                .FirstOrDefault(x => x.Id == id);
+                .FirstOrDefault(x => x.Id == id && x.TenantId == User.GetTenantId() && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted);
 
             if (returnInvoice == null)
             {
@@ -175,6 +175,18 @@ namespace HSCrm.WebApi.Controllers
                     Message = "هیچ سال مالی فعالی برای سیستم تعریف نشده است."
                 });
             }
+
+            var tenantId = User.GetTenantId();
+            var userId = User.GetUserId();
+            if (!tenantId.HasValue || !userId.HasValue
+                || !_context.fiscalYearUW.Get(x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).Any()
+                || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantId.Value && x.IsActive && !x.IsDeleted).Any() || !_context.supplierUW.Get(x => x.Id == model.SupplierId && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، انبار، طرف حساب یا سال مالی معتبر نیست." });
+
+            var requestedProductIds = model.Items.Select(x => x.ProductId).Distinct().ToList();
+            if (requestedProductIds.Any(x => x <= 0)
+                || _context.productUW.Get(x => requestedProductIds.Contains(x.Id) && x.TenantId == tenantId.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != requestedProductIds.Count)
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست." });
 
             // اگر فاکتور خرید مرجع انتخاب شده، کنترل عدم برگشت بیش از تعداد خریداری‌شده
             if (model.PurchaseInvoiceId.HasValue && model.PurchaseInvoiceId.Value > 0)
@@ -234,12 +246,12 @@ namespace HSCrm.WebApi.Controllers
                     PurchaseInvoiceId = model.PurchaseInvoiceId,
                     SupplierId = model.SupplierId,
                     WarehouseId = model.WarehouseId,
-                    TenantId = model.TenantId,
+                    TenantId = tenantId.Value,
                     FiscalYearId = fiscalYearId.Value,
                     IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
-                    PurchaserUserId = model.PurchaserUserId,
+                    PurchaserUserId = userId.Value,
                     Status = model.Status,
-                    CreatedById = model.PurchaserUserId,
+                    CreatedById = userId.Value,
                     CreatedAt = DateTime.UtcNow,
                     Description = model.Description ?? $"فاکتور برگشت از خرید شماره {model.InvoiceNumber}",
                     Items = new List<PurchaseReturnInvoiceItem>()
@@ -265,8 +277,8 @@ namespace HSCrm.WebApi.Controllers
                         Discount = itemDto.Discount,
                         Tax = itemDto.Tax,
                         LineTotal = lineTotal,
-                        TenantId = model.TenantId,
-                        CreatedById = model.PurchaserUserId,
+                        TenantId = tenantId.Value,
+                        CreatedById = userId.Value,
                         CreatedAt = DateTime.UtcNow
                     });
 
@@ -323,7 +335,7 @@ namespace HSCrm.WebApi.Controllers
             var returnInvoice = await _context.purchaseReturnInvoiceUW
                 .Query()
                 .Include(x => x.Items)
-                .FirstOrDefaultAsync(x => x.Id == id, ct);
+                 .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == User.GetTenantId() && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted, ct);
 
             if (returnInvoice == null)
                 return NotFound("فاکتور برگشت از خرید یافت نشد.");
