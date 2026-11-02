@@ -1,6 +1,6 @@
 using Common.Permissions;
 using Framework.Authorization;
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 
 namespace HSCrm.WebApi.PublicApi
 {

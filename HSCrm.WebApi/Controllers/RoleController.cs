@@ -63,7 +63,7 @@ namespace HSCrm.WebApi.Controllers
 
             var role = _dbContext.UserRoles
                 .AsNoTracking()
-                .Where(x => x.UserId == userId && x.User.TenantId == currentTenantId && x.Role.TenantId == currentTenantId)
+                .Where(x => x.UserId == userId && x.User.TenantId == currentTenantId && (x.Role.TenantId == currentTenantId || (x.Role.TenantId == 1 && x.Role.Name == "Owner")))
                 .Select(x => new UserRole
                 {
                     RoleId = x.RoleId,

@@ -23,8 +23,28 @@ namespace HSCrm.DataModel.Services.Repository
         }
         public virtual void Update(TEntity entity, CancellationToken ct = default)
         {
-            _table.Attach(entity);
-            _context.Entry(entity).State = EntityState.Modified;
+            if (entity == null) throw new ArgumentNullException(nameof(entity));
+
+            var detachedEntry = _context.Entry(entity);
+            var key = detachedEntry.Metadata.FindPrimaryKey()
+                ?? throw new InvalidOperationException($"Entity type {typeof(TEntity).Name} has no primary key.");
+            var keyValues = key.Properties.Select(property => detachedEntry.Property(property.Name).CurrentValue).ToArray();
+            var existing = ByPrimaryKey(keyValues!).FirstOrDefault();
+            if (existing == null)
+                throw new KeyNotFoundException("رکورد مورد نظر در محدوده دسترسی جاری پیدا نشد.");
+
+            var existingEntry = _context.Entry(existing);
+            var protectedValues = new Dictionary<string, object?>();
+            foreach (var propertyName in key.Properties.Select(property => property.Name)
+                         .Concat(new[] { "TenantId", "CreatedAt", "CreatedById" }))
+            {
+                if (existingEntry.Metadata.FindProperty(propertyName) != null)
+                    protectedValues[propertyName] = existingEntry.Property(propertyName).CurrentValue;
+            }
+
+            existingEntry.CurrentValues.SetValues(entity);
+            foreach (var pair in protectedValues)
+                existingEntry.Property(pair.Key).CurrentValue = pair.Value;
         }
         public virtual IQueryable<TEntity> Get(Expression<Func<TEntity, bool>>? predicate = null, bool asNoTracking = true, params Expression<Func<TEntity, object>>[] includes)
         {

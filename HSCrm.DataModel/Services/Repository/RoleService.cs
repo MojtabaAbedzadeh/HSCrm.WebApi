@@ -11,12 +11,14 @@ namespace HSCrm.DataModel.Services.Repository
         private readonly ApplicationDbContext _context;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<ApplicationRole> _roleManager;
+        private readonly ICurrentUserService _currentUser;
 
-        public RoleService(ApplicationDbContext context, UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager)
+        public RoleService(ApplicationDbContext context, UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager, ICurrentUserService currentUser)
         {
             _context = context;
             _userManager = userManager;
             _roleManager = roleManager;
+            _currentUser = currentUser;
         }
 
         public async Task<List<ApplicationRole>> GetRolesAsync()
@@ -131,21 +133,23 @@ namespace HSCrm.DataModel.Services.Repository
             if (string.IsNullOrWhiteSpace(roleId))
                 throw new ArgumentException("RoleId is required.");
 
-            var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
-            var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue)
+                throw new UnauthorizedAccessException("Current tenant is not available.");
 
-            if (!userExists)
-                throw new InvalidOperationException("User not found.");
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value);
+            var role = await _context.Roles.FirstOrDefaultAsync(r =>
+                r.Id == roleId && (r.TenantId == tenantId.Value || (r.TenantId == 1 && r.Name == "Owner")));
 
-            if (!roleExists)
-                throw new InvalidOperationException("Role not found.");
+            if (user == null)
+                throw new InvalidOperationException("User not found in the current tenant.");
+            if (role == null)
+                throw new InvalidOperationException("Role not found in the current tenant.");
 
             var exists = await _context.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId);
-
             if (exists)
                 return;
 
-            var user = await _userManager.FindByIdAsync(userId);
             var currentUserRoles = await _userManager.GetRolesAsync(user);
 
             if (currentUserRoles.Any())
