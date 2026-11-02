@@ -125,6 +125,11 @@ namespace HSCrm.WebApi.Controllers
             if (!tenantId.HasValue || !fiscalYearId.HasValue)
                 return new ApiResponse { Status = false, Message = "خطا در احراز هویت یا سال مالی" };
 
+            if (model.Amount <= 0 || model.PaidAmount < 0 || model.PaidAmount > model.Amount
+                || (model.ProjectId.HasValue && !_context.projectUW.Get(x => x.Id == model.ProjectId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any()))
+                return new ApiResponse { Status = false, Message = "مبلغ، پروژه یا حساب بانکی هزینه معتبر نیست." };
+
             DateTime expenseDate;
             try
             {
@@ -226,6 +231,15 @@ namespace HSCrm.WebApi.Controllers
             if (expense == null)
                 return new ApiResponse { Status = false, Message = "هزینه یافت نشد" };
 
+            if (model.Amount <= 0
+                || (model.ProjectId.HasValue && !_context.projectUW.Get(x => x.Id == model.ProjectId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any()))
+                return new ApiResponse { Status = false, Message = "مبلغ، پروژه یا حساب بانکی هزینه معتبر نیست." };
+
+            var actualPaidAmount = _context.paymentUW.Get(x => x.ExpenseId == expense.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Sum(x => x.Amount);
+            if (model.Amount < actualPaidAmount)
+                return new ApiResponse { Status = false, Message = "مبلغ هزینه نمی‌تواند کمتر از مبالغ پرداخت‌شده باشد." };
+
             try
             {
                 expense.ExpenseTitle = model.ExpenseTitle.Trim();
@@ -234,8 +248,8 @@ namespace HSCrm.WebApi.Controllers
                 expense.ProjectId = model.ProjectId;
                 expense.Amount = model.Amount;
                 expense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
-                expense.PaymentStatus = model.PaymentStatus;
-                expense.PaidAmount = model.PaidAmount;
+                expense.PaidAmount = actualPaidAmount;
+                expense.PaymentStatus = actualPaidAmount <= 0 ? 0 : actualPaidAmount < model.Amount ? 1 : 2;
                 expense.BankAccountId = model.BankAccountId;
                 expense.PaymentMethod = model.PaymentMethod;
                 expense.ReferenceNo = model.ReferenceNo;
