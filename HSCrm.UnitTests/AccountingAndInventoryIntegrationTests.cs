@@ -2,6 +2,7 @@ using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
+using HSCrm.DataModel.Seeders;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using Microsoft.EntityFrameworkCore;
@@ -940,21 +941,12 @@ namespace HSCrm.UnitTests
             });
             await context.SaveChangesAsync();
 
+            await FiscalYearSeeder.SeedCurrentFiscalYearAsync(context, 42);
+
             using (context.BeginTenantFiscalYearMaintenanceScope(42))
             {
-                var fiscalYear = new FiscalYear
-                {
-                    TenantId = 42,
-                    Title = "Seeded year",
-                    StartDate = new DateTime(2026, 3, 21),
-                    EndDate = new DateTime(2027, 3, 20),
-                    IsCurrent = true,
-                    IsClosed = false,
-                    CreatedAt = DateTime.UtcNow
-                };
-                context.FiscalYears.Add(fiscalYear);
-                await context.SaveChangesAsync();
-
+                var fiscalYear = await context.FiscalYears.IgnoreQueryFilters()
+                    .SingleAsync(f => f.TenantId == 42 && !f.IsDeleted);
                 fiscalYear.IsCurrent = false;
                 await context.SaveChangesAsync();
             }
