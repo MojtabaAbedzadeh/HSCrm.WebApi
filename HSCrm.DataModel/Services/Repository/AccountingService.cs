@@ -1421,7 +1421,8 @@ namespace HSCrm.DataModel.Services.Repository
                     };
 
                     await _context.JournalVouchers.AddRangeAsync(new[] { closingVoucher, openingVoucher }, ct);
-                    await _context.SaveChangesAsync(ct);
+                    using (_context.BeginFiscalYearTransitionWriteScope())
+                        await _context.SaveChangesAsync(ct);
 
                     closingVoucherId = closingVoucher.Id;
                     openingVoucherId = openingVoucher.Id;
