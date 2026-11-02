@@ -353,6 +353,21 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
+                var tenantIdForUpdate = User.GetTenantId();
+                var fiscalYearIdForUpdate = _currentFiscalYearService?.FiscalYearId;
+                if (!tenantIdForUpdate.HasValue || !fiscalYearIdForUpdate.HasValue
+                    || invoice.TenantId != tenantIdForUpdate.Value
+                    || invoice.FiscalYearId != fiscalYearIdForUpdate.Value
+                    || !_context.fiscalYearUW.Get(x => x.Id == fiscalYearIdForUpdate.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsClosed && !x.IsDeleted).Any()
+                    || !_context.warehouseUW.Get(x => x.Id == invoice.WarehouseId && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any()
+                    || !_context.projectUW.Get(x => x.Id == model.ProjectId && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any())
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "فاکتور، پروژه، انبار یا سال مالی متعلق به شرکت جاری نیست." };
+
+                var updateProductIds = model.Items?.Select(x => x.ProductId).Distinct().ToList() ?? new List<int>();
+                if (updateProductIds.Count == 0 || updateProductIds.Any(id => id <= 0)
+                    || _context.productUW.Get(x => updateProductIds.Contains(x.Id) && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != updateProductIds.Count)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست." };
+
                 var oldStatus = invoice.Status;
                 var newStatus = (InvoiceStatus)model.Status;
 
@@ -378,12 +393,14 @@ namespace HSCrm.WebApi.Controllers
                         Quantity = item.Quantity,
                         UnitPriceSell = item.UnitPrice,
                         LineTotal = item.UnitPrice * item.Quantity,
-                        TenantId = User?.GetTenantId() ?? invoice.TenantId,
+                        TenantId = tenantIdForUpdate.Value,
                         CreatedAt = DateTime.UtcNow,
-                        CreatedById = User?.GetUserId()
+                        CreatedById = User.GetUserId()
                     });
                 }
 
+                invoice.ProjectId = model.ProjectId;
+                invoice.SellerUserId = User.GetUserId();
                 invoice.Subtotal = subtotal;
                 invoice.Total = subtotal - invoice.Discount + invoice.Tax;
                 invoice.Status = newStatus;
