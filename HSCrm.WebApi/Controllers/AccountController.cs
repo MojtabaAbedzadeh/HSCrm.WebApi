@@ -326,10 +326,27 @@ namespace HSCrm.WebApi.Controllers
             return 2; // غیرفعال / غیرجاری
         }
 
+        private string? GetPublicBaseUrl()
+        {
+            var configured = _configuration["PublicBaseUrl"];
+            if (string.IsNullOrWhiteSpace(configured))
+                return null;
+
+            if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+                || !string.IsNullOrEmpty(uri.UserInfo)
+                || uri.AbsolutePath != "/"
+                || !string.IsNullOrEmpty(uri.Query)
+                || !string.IsNullOrEmpty(uri.Fragment))
+                throw new InvalidOperationException("PublicBaseUrl must be an absolute HTTP(S) origin without credentials, path, query, or fragment.");
+
+            return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+
         private string BuildDefaultAvatarUrl()
         {
-            var baseUrl = _configuration["PublicBaseUrl"]?.TrimEnd('/');
-            return string.IsNullOrWhiteSpace(baseUrl) ? DefaultAvatarPath : $"{baseUrl}{DefaultAvatarPath}";
+            var baseUrl = GetPublicBaseUrl();
+            return baseUrl == null ? DefaultAvatarPath : $"{baseUrl}{DefaultAvatarPath}";
         }
     }
 }
