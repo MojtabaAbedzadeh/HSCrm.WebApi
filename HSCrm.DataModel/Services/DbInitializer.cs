@@ -43,12 +43,17 @@ namespace HSCrm.DataModel.Services
             {
                 await FiscalYearSeeder.SeedCurrentFiscalYearAsync(context, tenant.Id);
 
-                if (string.IsNullOrWhiteSpace(tenant.CreatedById))
-                    tenant.CreatedById = adminUserId;
+                using (context.BeginTenantFiscalYearMaintenanceScope(tenant.Id))
+                {
+                    if (string.IsNullOrWhiteSpace(tenant.CreatedById))
+                        tenant.CreatedById = adminUserId;
 
-                var fiscalYear = await context.FiscalYears.FirstOrDefaultAsync();
-                if (fiscalYear != null && string.IsNullOrWhiteSpace(fiscalYear.CreatedById))
-                    fiscalYear.CreatedById = adminUserId;
+                    var fiscalYear = await context.FiscalYears.FirstOrDefaultAsync();
+                    if (fiscalYear != null && string.IsNullOrWhiteSpace(fiscalYear.CreatedById))
+                        fiscalYear.CreatedById = adminUserId;
+
+                    await context.SaveChangesAsync();
+                }
             }
 
             await context.SaveChangesAsync();
