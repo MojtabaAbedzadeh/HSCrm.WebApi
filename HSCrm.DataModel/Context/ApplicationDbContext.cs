@@ -1037,7 +1037,7 @@ namespace HSCrm.DataModel.Context
         public IDisposable BeginTenantFiscalYearMaintenanceScope(int tenantId)
         {
             if (tenantId <= 0 || !Tenants.IgnoreQueryFilters()
-                .Any(t => t.Id == tenantId && t.IsActive && !t.IsDeleted))
+                .Any(t => t.Id == tenantId && !t.IsDeleted))
                 throw new UnauthorizedAccessException("شرکت مقصد برای نگهداری سال مالی معتبر نیست.");
 
             var previousTenantId = _tenantProvisioningTenantId;
