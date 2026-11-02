@@ -189,7 +189,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("UpdateUser")]
-        [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(UserModelDto), StatusCodes.Status200OK)
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Users.Edit)]
         public async Task<ApiResponse<UserModelDto>> Update([FromBody] UserEditModel model)

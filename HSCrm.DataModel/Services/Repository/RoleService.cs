@@ -21,7 +21,11 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<ApplicationRole>> GetRolesAsync()
         {
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue) return new List<ApplicationRole>();
+
             return await _context.Roles
+                .Where(r => r.TenantId == tenantId.Value || (r.TenantId == 1 && r.Name == "Owner"))
                 .OrderBy(r => r.Name)
                 .ToListAsync();
         }
@@ -31,7 +35,10 @@ namespace HSCrm.DataModel.Services.Repository
             if (string.IsNullOrWhiteSpace(roleName))
                 throw new ArgumentException("Role name is required.");
 
-            var exists = await _context.Roles.AnyAsync(r => r.Name == roleName);
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue) throw new UnauthorizedAccessException("Current tenant is not available.");
+
+            var exists = await _context.Roles.AnyAsync(r => r.TenantId == tenantId.Value && r.Name == roleName);
             if (exists)
                 throw new InvalidOperationException("Role already exists.");
 
@@ -39,7 +46,8 @@ namespace HSCrm.DataModel.Services.Repository
             {
                 Id = Guid.NewGuid().ToString(),
                 Name = roleName,
-                NormalizedName = roleName.ToUpperInvariant()
+                NormalizedName = roleName.ToUpperInvariant(),
+                TenantId = tenantId.Value
             };
 
             _context.Roles.Add(role);
@@ -50,7 +58,10 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<bool> UpdateRoleAsync(string roleId, string roleName)
         {
-            var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            var role = tenantId.HasValue
+                ? await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId.Value)
+                : null;
             if (role == null)
                 return false;
 
@@ -66,7 +77,10 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<bool> DeleteRoleAsync(string roleId)
         {
-            var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            var role = tenantId.HasValue
+                ? await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId.Value)
+                : null;
             if (role == null)
                 return false;
 
@@ -83,10 +97,14 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<string>> GetRolePermissionsAsync(string roleId)
         {
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue) return new List<string>();
+
             return await (
                 from rp in _context.RolePermissions
+                join role in _context.Roles on rp.RoleId equals role.Id
                 join p in _context.Permissions on rp.PermissionId equals p.Id
-                where rp.RoleId == roleId
+                where rp.RoleId == roleId && role.TenantId == tenantId.Value
                 select p.Name
             ).Distinct().ToListAsync();
         }
@@ -98,7 +116,8 @@ namespace HSCrm.DataModel.Services.Repository
 
             permissionNames ??= new List<string>();
 
-            var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            var roleExists = tenantId.HasValue && await _context.Roles.AnyAsync(r => r.Id == roleId && r.TenantId == tenantId.Value);
             if (!roleExists)
                 throw new InvalidOperationException("Role not found.");
 
