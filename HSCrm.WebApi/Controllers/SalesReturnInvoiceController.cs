@@ -54,7 +54,8 @@ namespace HSCrm.WebApi.Controllers
                 .Include(x => x.Warehouse)
                 .Include(x => x.Project)
                     .ThenInclude(p => p.Customer)
-                .Where(x => x.TenantId == User.GetTenantId() && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted)\n                .AsQueryable();
+                .Where(x => x.TenantId == User.GetTenantId() && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted)
+                .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(customerFullName))
             {
@@ -201,7 +202,7 @@ namespace HSCrm.WebApi.Controllers
                     .Query()
                     .AsNoTracking()
                     .Include(x => x.Items)
-                    .FirstOrDefaultAsync(x => x.Id == model.SalesInvoiceId.Value, ct);
+                    .FirstOrDefaultAsync(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted, ct);
 
                 if (origInvoice == null)
                 {
@@ -217,7 +218,7 @@ namespace HSCrm.WebApi.Controllers
                     .Query()
                     .AsNoTracking()
                     .Include(x => x.Items)
-                    .Where(x => x.SalesInvoiceId == model.SalesInvoiceId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted)
+                    .Where(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && x.SalesInvoiceId == model.SalesInvoiceId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted)
                     .ToListAsync(ct);
 
                 foreach (var reqItem in model.Items)
@@ -269,7 +270,7 @@ namespace HSCrm.WebApi.Controllers
 
                 foreach (var itemDto in model.Items)
                 {
-                    if (itemDto.Quantity <= 0 || itemDto.UnitPrice < 0)
+                    if (itemDto.Quantity <= 0 || itemDto.UnitPrice < 0 || itemDto.Discount < 0 || itemDto.Tax < 0)
                         throw new InvalidOperationException("مقادیر تعداد یا قیمت واحد برگشتی نامعتبر است.");
 
                     var lineSubTotal = itemDto.Quantity * itemDto.UnitPrice;
