@@ -368,17 +368,10 @@ namespace HSCrm.WebApi.Controllers
                     || _context.productUW.Get(x => updateProductIds.Contains(x.Id) && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != updateProductIds.Count)
                     return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست." };
 
-                var oldStatus = invoice.Status;
-                var newStatus = (InvoiceStatus)model.Status;
+                if (invoice.Status == InvoiceStatus.Final)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "فاکتور نهایی قابل ویرایش نیست؛ ابتدا باید از مسیر ابطال اقدام شود." };
 
-                if (oldStatus == InvoiceStatus.Final)
-                {
-                    _inventory.RollbackInventory(invoice);
-                    await _accountingService.CancelVoucherByReferenceAsync(
-                        AccountingReferenceType.SalesInvoice,
-                        invoice.Id,
-                        "ویرایش فاکتور فروش");
-                }
+                var newStatus = InvoiceStatus.Proforma;
 
                 _context.salesInvoiceItemUW.DeleteByRange(x => x.SalesInvoiceId == invoice.Id);
                 invoice.Items.Clear();
@@ -436,7 +429,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("ConfirmInvoice")]
-        [Permission(Permissions.SalesInvoices.Create)]
+        [Permission(Permissions.SalesInvoices.Approve)]
         public async Task<IActionResult> Confirm([FromForm] int invoiceId)
         {
             using var tran = _context.BeginTransaction();
