@@ -65,15 +65,32 @@ namespace HSCrm.WebApi.PublicApi
                 var filename = $"{Guid.NewGuid():N}{validated.Extension}";
                 var physicalPath = Path.Combine(uploadsRoot, filename);
                 await System.IO.File.WriteAllBytesAsync(physicalPath, validated.Content, ct);
-                var publicBaseUrl = _configuration["PublicBaseUrl"]?.TrimEnd('/');
+                var publicBaseUrl = GetPublicBaseUrl();
                 var relativeUrl = $"/upload/userimage/{filename}";
-                savedUrls.Add(string.IsNullOrWhiteSpace(publicBaseUrl) ? relativeUrl : $"{publicBaseUrl}{relativeUrl}");
+                savedUrls.Add(publicBaseUrl == null ? relativeUrl : $"{publicBaseUrl}{relativeUrl}");
             }
 
             if (savedUrls.Count == 1)
                 return Ok(new { statusCode = 200, message = savedUrls[0] });
             return Ok(new { statusCode = 200, message = "آپلود موفق", urls = savedUrls });
         }
+        private string? GetPublicBaseUrl()
+        {
+            var configured = _configuration["PublicBaseUrl"];
+            if (string.IsNullOrWhiteSpace(configured))
+                return null;
+
+            if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+                || !string.IsNullOrEmpty(uri.UserInfo)
+                || uri.AbsolutePath != "/"
+                || !string.IsNullOrEmpty(uri.Query)
+                || !string.IsNullOrEmpty(uri.Fragment))
+                throw new InvalidOperationException("PublicBaseUrl must be an absolute HTTP(S) origin without credentials, path, query, or fragment.");
+
+            return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+
         private static bool TryGetImageDimensions(byte[] data, string extension, out int width, out int height)
         {
             width = 0;
