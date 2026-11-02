@@ -420,7 +420,7 @@ namespace HSCrm.UnitTests
             Assert.NotNull(data);
             Assert.Single(data);
             Assert.Equal(10, data[0].DrId);
-            Assert.Equal("انبار فعال ۱", data[0].DrName);
+            Assert.Equal("انبار فعال 1", data[0].DrName);
         }
 
         [Fact(DisplayName = "9. ایجاد فاکتور فروش بدون سال مالی معتبر: عملیات باید رد شود")]
