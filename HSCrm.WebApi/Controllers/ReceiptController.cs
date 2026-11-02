@@ -97,7 +97,13 @@ namespace HSCrm.WebApi.Controllers
                 && !_context.salesInvoiceUW.Get(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Any())
                 return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "فاکتور فروش متعلق به شرکت/سال مالی جاری نیست." });
 
+            var invoiceValidation = ValidateInvoiceCustomerAndRemainingBalance(
+                model.SalesInvoiceId, model.CustomerId, model.Amount, tenantId.Value, fiscalYearId.Value);
+            if (!invoiceValidation.IsValid)
+                return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = invoiceValidation.Error });
+
             var receipt = _mapper.Map<Receipt>(model);
+            receipt.CustomerId = invoiceValidation.CustomerId;
             receipt.TenantId = tenantId.Value;
             receipt.FiscalYearId = fiscalYearId.Value;
             receipt.CreatedAt = DateTime.UtcNow;
@@ -146,14 +152,34 @@ namespace HSCrm.WebApi.Controllers
 
             var tenantIdForUpdate = _currentUserService.TenantId;
             var fiscalYearForUpdate = _currentFiscalYearService.FiscalYearId;
+
+            // Never edit a receipt that has an accounting voucher: changing its operational
+            // values without reversing and reposting the voucher would corrupt the ledger.
+            var hasAccountingVoucher = _context.journalVoucherUW.Get(x =>
+                x.TenantId == tenantIdForUpdate
+                && x.ReferenceType == HSCrm.Common.PublicTools.Enums.AccountingReferenceType.Receipt
+                && x.ReferenceId == receipt.Id
+                && !x.IsDeleted).Any();
+            if (hasAccountingVoucher)
+                return Conflict(new ApiResponse<ReceiptModel>
+                {
+                    Status = false,
+                    Message = "این دریافت دارای سابقه سند حسابداری است؛ اصلاح آن باید از مسیر ابطال و ثبت مجدد حسابداری انجام شود."
+                });
             if (!tenantIdForUpdate.HasValue || !fiscalYearForUpdate.HasValue || receipt.FiscalYearId != fiscalYearForUpdate.Value || model.Amount <= 0
                 || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any())
                 || (model.CustomerId.HasValue && !_context.customerUW.Get(x => x.Id == model.CustomerId.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any())
                 || (model.SalesInvoiceId.HasValue && !_context.salesInvoiceUW.Get(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantIdForUpdate.Value && x.FiscalYearId == fiscalYearForUpdate.Value && !x.IsDeleted).Any()))
                 return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "مشتری، حساب بانکی، فاکتور یا سال مالی معتبر نیست." });
 
+            var invoiceValidation = ValidateInvoiceCustomerAndRemainingBalance(
+                model.SalesInvoiceId, model.CustomerId, model.Amount, tenantIdForUpdate.Value,
+                fiscalYearForUpdate.Value, receipt.Id);
+            if (!invoiceValidation.IsValid)
+                return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = invoiceValidation.Error });
+
             receipt.SalesInvoiceId = model.SalesInvoiceId;
-            receipt.CustomerId = model.CustomerId;
+            receipt.CustomerId = invoiceValidation.CustomerId;
             receipt.BankAccountId = model.BankAccountId;
             receipt.ReceiptDate = model.ReceiptDate;
             receipt.Amount = model.Amount;
@@ -191,13 +217,23 @@ namespace HSCrm.WebApi.Controllers
                 });
             }
 
-            _context.receiptUW.Delete(receipt, cancellationToken);
-            await _accountingService.CancelVoucherByReferenceAsync(
-                HSCrm.Common.PublicTools.Enums.AccountingReferenceType.Receipt,
-                receipt.Id,
-                "حذف سند دریافت",
-                cancellationToken);
-            await _context.SaveAsync();
+            using var transaction = _context.BeginTransaction();
+            try
+            {
+                _context.receiptUW.Delete(receipt, cancellationToken);
+                await _accountingService.CancelVoucherByReferenceAsync(
+                    HSCrm.Common.PublicTools.Enums.AccountingReferenceType.Receipt,
+                    receipt.Id,
+                    "حذف سند دریافت",
+                    cancellationToken);
+                await _context.SaveAsync();
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
 
             return Ok(new ApiResponse<bool>
             {
@@ -205,6 +241,50 @@ namespace HSCrm.WebApi.Controllers
                 Data = true,
                 Message = "Receipt deleted successfully"
             });
+        }
+
+        private (bool IsValid, int? CustomerId, string? Error) ValidateInvoiceCustomerAndRemainingBalance(
+            int? salesInvoiceId,
+            int? customerId,
+            decimal amount,
+            int tenantId,
+            int fiscalYearId,
+            int? excludedReceiptId = null)
+        {
+            if (!salesInvoiceId.HasValue)
+                return (true, customerId, null);
+
+            var invoice = _context.salesInvoiceUW.Get(x =>
+                x.Id == salesInvoiceId.Value
+                && x.TenantId == tenantId
+                && x.FiscalYearId == fiscalYearId
+                && !x.IsDeleted).FirstOrDefault();
+
+            if (invoice == null)
+                return (false, null, "فاکتور فروش متعلق به شرکت/سال مالی جاری نیست.");
+
+            var project = _context.projectUW.Get(x =>
+                x.Id == invoice.ProjectId
+                && x.TenantId == tenantId
+                && !x.IsDeleted).FirstOrDefault();
+
+            if (project == null || !project.CustomerId.HasValue)
+                return (false, null, "مشتری پروژه فاکتور فروش مشخص یا معتبر نیست.");
+
+            if (customerId.HasValue && customerId.Value != project.CustomerId.Value)
+                return (false, null, "مشتری دریافت باید با مشتری پروژه فاکتور فروش یکسان باشد.");
+
+            var alreadyReceived = _context.receiptUW.Get(x =>
+                x.TenantId == tenantId
+                && x.FiscalYearId == fiscalYearId
+                && x.SalesInvoiceId == salesInvoiceId.Value
+                && x.Id != excludedReceiptId
+                && !x.IsDeleted).Sum(x => (decimal?)x.Amount) ?? 0m;
+
+            if (amount > invoice.Total - alreadyReceived)
+                return (false, null, "مبلغ دریافت از مانده فاکتور فروش بیشتر است.");
+
+            return (true, project.CustomerId.Value, null);
         }
     }
 }
