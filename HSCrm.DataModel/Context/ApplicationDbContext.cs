@@ -931,9 +931,6 @@ namespace HSCrm.DataModel.Context
                 // Tenant: never allow tenant-scoped writes without an authenticated tenant context.
                 if (entry.Entity is TenantScopedEntity tenantEntity)
                 {
-                    if (currentTenantId <= 0)
-                        throw new UnauthorizedAccessException("برای ثبت یا ویرایش اطلاعات، شرکت معتبر لازم است.");
-
                     var isProvisioningFiscalYear = entry.Entity is FiscalYear
                         && entry.State == EntityState.Added
                         && _tenantProvisioningTenantId.HasValue
