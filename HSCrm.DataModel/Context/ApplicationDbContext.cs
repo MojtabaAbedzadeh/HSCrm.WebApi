@@ -14,6 +14,7 @@ namespace HSCrm.DataModel.Context
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string, IdentityUserClaim<string>, UserRole, IdentityUserLogin<string>, IdentityRoleClaim<string>, IdentityUserToken<string>>
     {
         private bool _allowFiscalYearTransitionWrites;
+        private int? _tenantProvisioningTenantId;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         public int CurrentTenantId => _currentUserService?.TenantId ?? 0;
@@ -933,10 +934,22 @@ namespace HSCrm.DataModel.Context
                     if (currentTenantId <= 0)
                         throw new UnauthorizedAccessException("برای ثبت یا ویرایش اطلاعات، شرکت معتبر لازم است.");
 
+                    var isProvisioningFiscalYear = entry.Entity is FiscalYear
+                        && entry.State == EntityState.Added
+                        && _tenantProvisioningTenantId.HasValue
+                        && tenantEntity.TenantId == _tenantProvisioningTenantId.Value;
+
+                    if (currentTenantId <= 0 && !isProvisioningFiscalYear)
+                        throw new UnauthorizedAccessException("برای ثبت یا ویرایش اطلاعات، شرکت معتبر لازم است.");
+
                     var tenantProperty = entry.Property(nameof(TenantScopedEntity.TenantId));
                     if (entry.State == EntityState.Added)
                     {
-                        if (tenantEntity.TenantId == 0)
+                        if (isProvisioningFiscalYear)
+                        {
+                            // Only the just-created tenant's initial fiscal year may be provisioned anonymously.
+                        }
+                        else if (tenantEntity.TenantId == 0)
                             tenantEntity.TenantId = currentTenantId;
                         else if (tenantEntity.TenantId != currentTenantId)
                             throw new UnauthorizedAccessException("ثبت اطلاعات برای شرکت دیگری مجاز نیست.");
@@ -1002,6 +1015,19 @@ namespace HSCrm.DataModel.Context
                 }
             }
         }
+        // Anonymous tenant registration may create exactly one initial fiscal year
+        // for a tenant that was created and persisted in this same request.
+        public IDisposable BeginTenantProvisioningScope(int tenantId)
+        {
+            if (tenantId <= 0 || !Tenants.IgnoreQueryFilters()
+                .Any(t => t.Id == tenantId && t.IsActive && !t.IsDeleted))
+                throw new UnauthorizedAccessException("شرکت مقصد برای ایجاد سال مالی معتبر نیست.");
+
+            var previous = _tenantProvisioningTenantId;
+            _tenantProvisioningTenantId = tenantId;
+            return new CallbackScope(() => _tenantProvisioningTenantId = previous);
+        }
+
         // Restricted internal scope for the accounting year-close service only.
         // Cross-year writes remain tenant-bound and are validated against FiscalYears.
         internal IDisposable BeginFiscalYearTransitionWriteScope()
