@@ -32,7 +32,8 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Name, user.UserName ?? ""),
-            new Claim("UserId", user.Id)
+            new Claim("UserId", user.Id),
+            new Claim("SecurityStamp", user.SecurityStamp ?? string.Empty)
         };
 
         if (user.TenantId > 0)
