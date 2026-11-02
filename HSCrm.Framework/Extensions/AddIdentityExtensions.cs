@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using System.Text;
 
 namespace HSCrm.Framework.Extensions
@@ -59,7 +61,63 @@ namespace HSCrm.Framework.Extensions
                     ValidIssuer = jwtSettings["Issuer"],
                     ValidAudience = jwtSettings["Audience"],
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
-                    ClockSkew = TimeSpan.Zero // حذف تاخیر زمانی پیش‌فرض برای دقت بیشتر در Expiry
+                    ClockSkew = TimeSpan.Zero
+                };
+
+                // Re-check account, tenant and fiscal-year state on every authenticated request.
+                // This makes password/security-stamp changes and account deactivation revoke JWTs immediately.
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async context =>
+                    {
+                        var principal = context.Principal;
+                        var userId = principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                        var tokenStamp = principal?.FindFirst("SecurityStamp")?.Value;
+                        var tenantClaim = principal?.FindFirst("TenantId")?.Value;
+
+                        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(tokenStamp)
+                            || !int.TryParse(tenantClaim, out var tokenTenantId) || tokenTenantId <= 0)
+                        {
+                            context.Fail("Invalid account context.");
+                            return;
+                        }
+
+                        var services = context.HttpContext.RequestServices;
+                        var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+                        var db = services.GetRequiredService<ApplicationDbContext>();
+                        var user = await userManager.FindByIdAsync(userId);
+
+                        if (user == null || !user.UserStatus || user.TenantId != tokenTenantId
+                            || !string.Equals(user.SecurityStamp, tokenStamp, StringComparison.Ordinal))
+                        {
+                            context.Fail("Account credentials have changed or the account is inactive.");
+                            return;
+                        }
+
+                        var tenantIsActive = await db.Tenants.IgnoreQueryFilters()
+                            .AnyAsync(t => t.Id == tokenTenantId && t.IsActive && !t.IsDeleted, context.HttpContext.RequestAborted);
+                        if (!tenantIsActive)
+                        {
+                            context.Fail("Tenant is inactive.");
+                            return;
+                        }
+
+                        var fiscalYearClaim = principal?.FindFirst("FiscalYearId")?.Value;
+                        if (!string.IsNullOrWhiteSpace(fiscalYearClaim))
+                        {
+                            if (!int.TryParse(fiscalYearClaim, out var fiscalYearId) || fiscalYearId <= 0)
+                            {
+                                context.Fail("Invalid fiscal-year context.");
+                                return;
+                            }
+
+                            var fiscalYearIsValid = await db.FiscalYears.IgnoreQueryFilters()
+                                .AnyAsync(f => f.Id == fiscalYearId && f.TenantId == tokenTenantId && !f.IsClosed,
+                                    context.HttpContext.RequestAborted);
+                            if (!fiscalYearIsValid)
+                                context.Fail("Fiscal year is invalid or closed.");
+                        }
+                    }
                 };
             });
 
