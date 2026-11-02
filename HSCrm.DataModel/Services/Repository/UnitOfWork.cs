@@ -83,6 +83,11 @@ namespace HSCrm.DataModel.Services.Repository
         {
             return new EntityTransaction(_context);
         }
+
+        public IEntityTransaction BeginTransaction(System.Data.IsolationLevel isolationLevel)
+        {
+            return new EntityTransaction(_context, isolationLevel);
+        }
         public async Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default)
         {
             return await EntityTransaction.StartAsync(_context, ct);

@@ -6,6 +6,7 @@ using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
+using System.Data;
 
 namespace HSCrm.WebApi.Controllers
 {
@@ -97,6 +98,9 @@ namespace HSCrm.WebApi.Controllers
                 && !_context.salesInvoiceUW.Get(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Any())
                 return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "فاکتور فروش متعلق به شرکت/سال مالی جاری نیست." });
 
+            // Serializable isolation prevents concurrent requests from both consuming the same invoice balance.
+            using var transaction = _context.BeginTransaction(IsolationLevel.Serializable);
+
             var invoiceValidation = ValidateInvoiceCustomerAndRemainingBalance(
                 model.SalesInvoiceId, model.CustomerId, model.Amount, tenantId.Value, fiscalYearId.Value);
             if (!invoiceValidation.IsValid)
@@ -109,7 +113,6 @@ namespace HSCrm.WebApi.Controllers
             receipt.CreatedAt = DateTime.UtcNow;
             receipt.CreatedById = _currentUserService.UserId;
 
-            using var transaction = _context.BeginTransaction();
             try
             {
                 await _context.receiptUW.CreateAsync(receipt, cancellationToken);

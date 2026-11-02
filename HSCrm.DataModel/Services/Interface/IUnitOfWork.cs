@@ -38,6 +38,7 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<PurchaseReturnInvoiceItem> purchaseReturnInvoiceItemUW { get; }
 
         IEntityTransaction BeginTransaction();
+        IEntityTransaction BeginTransaction(System.Data.IsolationLevel isolationLevel);
         Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default);
         void Save();
         Task SaveAsync();
