@@ -15,15 +15,10 @@ public class CurrentFiscalYearService : ICurrentFiscalYearService
             var httpContext = _httpContextAccessor.HttpContext;
             if (httpContext == null) return null;
 
-            // ۱. اولویت با هدر است (برای تغییر سریع در داشبورد)
-            if (httpContext.Request.Headers.TryGetValue("X-FiscalYear-Id", out var headerValue))
-            {
-                if (int.TryParse(headerValue, out var id)) return id;
-            }
-
-            // ۲. اگر در هدر نبود، از کلیم توکن بخواند
+            // Fiscal year is a security boundary. Never trust a client-controlled header.
+            // Switching fiscal years must issue a token with a validated FiscalYearId claim.
             var claimValue = httpContext.User?.FindFirst("FiscalYearId")?.Value;
-            return int.TryParse(claimValue, out var fiscalYearId) ? fiscalYearId : null;
+            return int.TryParse(claimValue, out var fiscalYearId) && fiscalYearId > 0 ? fiscalYearId : null;
         }
     }
 }

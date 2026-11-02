@@ -884,14 +884,10 @@ namespace HSCrm.DataModel.Context
                     var fiscalProp = Expression.Property(parameter, nameof(IFiscalYearScoped.FiscalYearId));
                     var currentFiscal = Expression.Property(Expression.Constant(this), nameof(CurrentFiscalYearId));
 
-                    // مقایسه ایمن بر مبنای Nullable<int> بدون دسترسی مستقیم به Property Value
+                    // A missing FiscalYear claim must not disable the fiscal-year filter.
+                    // It should match only rows whose FiscalYearId is null.
                     var nullableFiscalProp = Expression.Convert(fiscalProp, typeof(int?));
-                    var nullConstant = Expression.Constant(null, typeof(int?));
-
-                    var isNullFiscal = Expression.Equal(currentFiscal, nullConstant);
-                    var isEqualFiscal = Expression.Equal(nullableFiscalProp, currentFiscal);
-
-                    var fiscalFilter = Expression.OrElse(isNullFiscal, isEqualFiscal);
+                    var fiscalFilter = Expression.Equal(nullableFiscalProp, currentFiscal);
 
                     combinedBody = combinedBody == null
                         ? fiscalFilter
@@ -929,10 +925,24 @@ namespace HSCrm.DataModel.Context
             foreach (var entry in entries)
             {
                 // Tenant
-                if (entry.Entity is TenantScopedEntity tenantEntity)
+                if (entry.Entity is TenantScopedEntity tenantEntity && _currentUserService.TenantId.HasValue)
                 {
-                    if (tenantEntity.TenantId == 0 && _currentUserService.TenantId.HasValue)
-                        tenantEntity.TenantId = _currentUserService.TenantId.Value;
+                    var currentTenantId = _currentUserService.TenantId.Value;
+                    var tenantProperty = entry.Property(nameof(TenantScopedEntity.TenantId));
+
+                    if (entry.State == EntityState.Added)
+                    {
+                        if (tenantEntity.TenantId == 0)
+                            tenantEntity.TenantId = currentTenantId;
+                        else if (tenantEntity.TenantId != currentTenantId)
+                            throw new UnauthorizedAccessException("ثبت اطلاعات برای شرکت دیگری مجاز نیست.");
+                    }
+                    else
+                    {
+                        var originalTenantId = tenantProperty.OriginalValue is int original ? original : 0;
+                        if (originalTenantId != currentTenantId || tenantEntity.TenantId != currentTenantId)
+                            throw new UnauthorizedAccessException("تغییر اطلاعات متعلق به شرکت دیگری مجاز نیست.");
+                    }
                 }
 
                 // FiscalYear
