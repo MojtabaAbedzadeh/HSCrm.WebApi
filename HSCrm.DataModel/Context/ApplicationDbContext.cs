@@ -15,6 +15,7 @@ namespace HSCrm.DataModel.Context
     {
         private bool _allowFiscalYearTransitionWrites;
         private int? _tenantProvisioningTenantId;
+        private bool _allowTenantFiscalYearMaintenanceWrites;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         public int CurrentTenantId => _currentUserService?.TenantId ?? 0;
@@ -931,20 +932,21 @@ namespace HSCrm.DataModel.Context
                 // Tenant: never allow tenant-scoped writes without an authenticated tenant context.
                 if (entry.Entity is TenantScopedEntity tenantEntity)
                 {
-                    var isProvisioningFiscalYear = entry.Entity is FiscalYear
-                        && entry.State == EntityState.Added
+                    var isScopedTenantFiscalYearWrite = entry.Entity is FiscalYear
                         && _tenantProvisioningTenantId.HasValue
-                        && tenantEntity.TenantId == _tenantProvisioningTenantId.Value;
+                        && tenantEntity.TenantId == _tenantProvisioningTenantId.Value
+                        && (entry.State == EntityState.Added
+                            || (_allowTenantFiscalYearMaintenanceWrites && entry.State == EntityState.Modified));
 
-                    if (currentTenantId <= 0 && !isProvisioningFiscalYear)
+                    if (currentTenantId <= 0 && !isScopedTenantFiscalYearWrite)
                         throw new UnauthorizedAccessException("برای ثبت یا ویرایش اطلاعات، شرکت معتبر لازم است.");
 
                     var tenantProperty = entry.Property(nameof(TenantScopedEntity.TenantId));
                     if (entry.State == EntityState.Added)
                     {
-                        if (isProvisioningFiscalYear)
+                        if (isScopedTenantFiscalYearWrite)
                         {
-                            // Only the just-created tenant's initial fiscal year may be provisioned anonymously.
+                            // Only a fiscal year for the verified scope tenant may be written here.
                         }
                         else if (tenantEntity.TenantId == 0)
                             tenantEntity.TenantId = currentTenantId;
@@ -954,7 +956,12 @@ namespace HSCrm.DataModel.Context
                     else
                     {
                         var originalTenantId = tenantProperty.OriginalValue is int original ? original : 0;
-                        if (originalTenantId != currentTenantId || tenantEntity.TenantId != currentTenantId)
+                        if (isScopedTenantFiscalYearWrite)
+                        {
+                            if (originalTenantId != _tenantProvisioningTenantId || tenantEntity.TenantId != _tenantProvisioningTenantId)
+                                throw new UnauthorizedAccessException("تغییر سال مالی خارج از شرکت مجاز نیست.");
+                        }
+                        else if (originalTenantId != currentTenantId || tenantEntity.TenantId != currentTenantId)
                             throw new UnauthorizedAccessException("تغییر اطلاعات متعلق به شرکت دیگری مجاز نیست.");
                     }
                 }
@@ -1023,6 +1030,25 @@ namespace HSCrm.DataModel.Context
             var previous = _tenantProvisioningTenantId;
             _tenantProvisioningTenantId = tenantId;
             return new CallbackScope(() => _tenantProvisioningTenantId = previous);
+        }
+
+        // Startup seeding may add/update fiscal-year metadata for one verified active tenant.
+        // The write guard limits this scope to FiscalYear entities only.
+        public IDisposable BeginTenantFiscalYearMaintenanceScope(int tenantId)
+        {
+            if (tenantId <= 0 || !Tenants.IgnoreQueryFilters()
+                .Any(t => t.Id == tenantId && t.IsActive && !t.IsDeleted))
+                throw new UnauthorizedAccessException("شرکت مقصد برای نگهداری سال مالی معتبر نیست.");
+
+            var previousTenantId = _tenantProvisioningTenantId;
+            var previousMaintenance = _allowTenantFiscalYearMaintenanceWrites;
+            _tenantProvisioningTenantId = tenantId;
+            _allowTenantFiscalYearMaintenanceWrites = true;
+            return new CallbackScope(() =>
+            {
+                _tenantProvisioningTenantId = previousTenantId;
+                _allowTenantFiscalYearMaintenanceWrites = previousMaintenance;
+            });
         }
 
         // Restricted internal scope for the accounting year-close service only.
