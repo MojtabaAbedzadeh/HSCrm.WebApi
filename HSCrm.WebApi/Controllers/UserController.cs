@@ -66,7 +66,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetUserById")]
         [Produces("application/json")]
-        [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(UserModelDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Users.View)]
         public ApiResponse<UserModelDto> GetById(string userId)
@@ -81,7 +81,7 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            return new ApiResponse<ApplicationUser>
+            return new ApiResponse<UserModelDto>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
