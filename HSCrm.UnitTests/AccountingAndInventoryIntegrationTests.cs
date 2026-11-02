@@ -913,6 +913,59 @@ namespace HSCrm.UnitTests
         }
     }
 
+    public class FiscalYearMaintenanceSecurityTests
+    {
+        [Fact]
+        public async Task StartupFiscalYearMaintenanceScope_AllowsScopedSeedAndUpdateWithoutAuthenticatedUser()
+        {
+            var currentUser = new MutableCurrentUserService
+            {
+                TenantId = null,
+                UserId = null,
+                IsAuthenticated = false
+            };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = null };
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("FiscalYearMaintenance_" + Guid.NewGuid().ToString("N"))
+                .Options;
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Tenants.Add(new Tenant
+            {
+                Id = 42,
+                TenantCode = "TENANT42",
+                TenantTitle = "Tenant 42",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            using (context.BeginTenantFiscalYearMaintenanceScope(42))
+            {
+                var fiscalYear = new FiscalYear
+                {
+                    TenantId = 42,
+                    Title = "Seeded year",
+                    StartDate = new DateTime(2026, 3, 21),
+                    EndDate = new DateTime(2027, 3, 20),
+                    IsCurrent = true,
+                    IsClosed = false,
+                    CreatedAt = DateTime.UtcNow
+                };
+                context.FiscalYears.Add(fiscalYear);
+                await context.SaveChangesAsync();
+
+                fiscalYear.IsCurrent = false;
+                await context.SaveChangesAsync();
+            }
+
+            Assert.False(await context.FiscalYears.IgnoreQueryFilters()
+                .Where(f => f.TenantId == 42)
+                .Select(f => f.IsCurrent)
+                .SingleAsync());
+        }
+    }
+
     public class TenantProvisioningSecurityTests
     {
         [Fact]
