@@ -56,7 +56,19 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 });
 
 // Require authentication by default; public endpoints must opt out explicitly.
-builder.Services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim("TenantId").RequireClaim("FiscalYearId").Build());
+builder.Services.AddAuthorization(options =>
+{
+    var authenticatedTenantFiscalYearPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .RequireClaim("TenantId")
+        .RequireClaim("FiscalYearId")
+        .Build();
+
+    // Apply the same tenant/fiscal-year requirements to both bare [Authorize]
+    // attributes and endpoints that rely on the fallback policy.
+    options.DefaultPolicy = authenticatedTenantFiscalYearPolicy;
+    options.FallbackPolicy = authenticatedTenantFiscalYearPolicy;
+});
 
 // ۴. سرویس‌های اصلی پروژه (DbContext و Identity)
 builder.Services.AddDbContextService(configuration);
