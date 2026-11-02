@@ -925,10 +925,11 @@ namespace HSCrm.DataModel.Context
 
             foreach (var entry in entries)
             {
+                var currentTenantId = _currentUserService?.TenantId ?? 0;
+
                 // Tenant: never allow tenant-scoped writes without an authenticated tenant context.
                 if (entry.Entity is TenantScopedEntity tenantEntity)
                 {
-                    var currentTenantId = _currentUserService?.TenantId ?? 0;
                     if (currentTenantId <= 0)
                         throw new UnauthorizedAccessException("برای ثبت یا ویرایش اطلاعات، شرکت معتبر لازم است.");
 
