@@ -39,6 +39,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("SettlementSummary/{id}")]
+        [Permission(Permissions.SalesInvoices.View)]
         public IActionResult SettlementSummary(int id)
         {
             var invoice = _context.salesInvoiceUW.GetById(id);

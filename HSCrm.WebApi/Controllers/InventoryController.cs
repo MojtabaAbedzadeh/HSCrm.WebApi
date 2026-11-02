@@ -1,3 +1,5 @@
+using Common.Permissions;
+using Framework.Authorization;
 ﻿using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models.Dto;
@@ -25,6 +27,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("kardex")]
+        [Permission(Permissions.Inventories.View)]
         public async Task<ActionResult<ApiResponse>> GetProductKardex([FromBody] KardexReportFilterDto filter)
         {
             if (filter == null || filter.ProductId <= 0)
@@ -66,6 +69,7 @@ namespace HSCrm.WebApi.Controllers
         /// گزارش ارزش‌گذاری ریالی موجودی انبار به هر دو روش میانگین موزون متحرک و FIFO
         /// </summary>
         [HttpGet("ValuationReport")]
+        [Permission(Permissions.Inventories.View)]
         public async Task<ActionResult<ApiResponse<List<InventoryValuationDto>>>> GetValuationReport(
             [FromQuery] int? warehouseId,
             CancellationToken ct)
@@ -81,6 +85,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("ApplyAdjustment")]
+        [Permission(Permissions.Inventories.Edit)]
         public async Task<IActionResult> ApplyAdjustment([FromBody] AdjustmentRequest model)
         {
             var tenantId = User.GetTenantId();
