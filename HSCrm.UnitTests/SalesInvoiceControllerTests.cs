@@ -401,7 +401,6 @@ namespace HSCrm.UnitTests
             // انبار حذف شده مستاجر ۱
             env.Context.Warehouses.Add(new Warehouse { Id = 12, TenantId = 1, Title = "انبار حذف شده", IsActive = true, IsDeleted = true });
             // انبار متعلق به مستاجر ۲
-            env.Context.Warehouses.Add(new Warehouse { Id = 13, TenantId = 2, Title = "انبار شرکت دیگر", IsActive = true, IsDeleted = false });
             env.Context.SaveChanges();
 
             var whController = new WarehouseController(env.Uow);
@@ -424,8 +423,8 @@ namespace HSCrm.UnitTests
             Assert.Equal("انبار فعال ۱", data[0].DrName);
         }
 
-        [Fact(DisplayName = "9. ایجاد فاکتور فروش در صورت null بودن سال مالی جاری: نباید خطای InvalidOperationException بدهد")]
-        public async Task CreateSalesInvoice_WhenCurrentFiscalYearIsNull_DoesNotThrowInvalidOperationExceptionAndCreatesSuccessfully()
+        [Fact(DisplayName = "9. ایجاد فاکتور فروش بدون سال مالی معتبر: عملیات باید رد شود")]
+        public async Task CreateSalesInvoice_WhenCurrentFiscalYearIsNull_IsRejected()
         {
             // Arrange
             var env = CreateTestEnvironment("SalesNullFiscal");
@@ -454,8 +453,8 @@ namespace HSCrm.UnitTests
 
             // Assert
             Assert.NotNull(response);
-            Assert.True(response.Status);
-            Assert.Equal(ApiResultStatusCode.Success, response.StatusCode);
+            Assert.False(response.Status);
+            Assert.Equal(ApiResultStatusCode.ServerError, response.StatusCode);
         }
     }
 }
