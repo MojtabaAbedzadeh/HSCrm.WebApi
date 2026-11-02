@@ -215,7 +215,7 @@ namespace HSCrm.WebApi.Controllers
                     ProjectId = model.ProjectId,
                     Number = model.InvoiceNumber,
                     IssueDate = issueDate,
-                    Status = model.Status,
+                    Status = InvoiceStatus.Proforma,
                     Subtotal = subtotal,
                     Discount = model.InvoiceDiscount,
                     Tax = model.InvoiceTax,

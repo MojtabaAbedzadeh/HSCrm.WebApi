@@ -198,7 +198,7 @@ namespace HSCrm.WebApi.Controllers
                     .Include(x => x.Items)
                     .FirstOrDefaultAsync(x => x.Id == model.PurchaseInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted, ct);
 
-                if (origPurchase == null)
+                if (origPurchase == null || origPurchase.SupplierId != model.SupplierId)
                 {
                     return BadRequest(new ApiResponse
                     {
@@ -251,7 +251,7 @@ namespace HSCrm.WebApi.Controllers
                     FiscalYearId = fiscalYearId.Value,
                     IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
                     PurchaserUserId = userId,
-                    Status = model.Status,
+                    Status = InvoiceStatus.Proforma,
                     CreatedById = userId,
                     CreatedAt = DateTime.UtcNow,
                     Description = model.Description ?? $"فاکتور برگشت از خرید شماره {model.InvoiceNumber}",

@@ -439,7 +439,7 @@ namespace HSCrm.WebApi.Controllers
                 invoice.SupplierId = model.SupplierId;
                 invoice.IssueDate = model.IssueDate;
                 invoice.Number = model.InvoiceNumber?.Trim();
-                invoice.Status = model.Status;
+                invoice.Status = InvoiceStatus.Proforma;
                 invoice.PurchaserUserId = User.GetUserId();
 
                 // 2. حذف کامل آیتم‌های قبلی از ChangeTracker و دیتابیس
