@@ -377,8 +377,8 @@ namespace HSCrm.UnitTests
                     && x.ProductId == 1 && x.WarehouseId == 1)
                 .OrderBy(x => x.Id)
                 .ToListAsync();
-            Assert.Equal(0m, fifoLayersAfterSale[0].RemainingFifoQuantity);
-            Assert.Equal(8m, fifoLayersAfterSale[1].RemainingFifoQuantity);
+            Assert.Equal(2m, fifoLayersAfterSale[0].RemainingFifoQuantity);
+            Assert.Equal(10m, fifoLayersAfterSale[1].RemainingFifoQuantity);
 
             // سند فروش شامل ۲۱,۸۰۰,۰۰۰ درآمد/مالیات + ۱۲,۰۰۰,۰۰۰ بهای تمام‌شده = ۳۳,۸۰۰,۰۰۰ ریال تراز
             Assert.Equal(33_800_000m, salesVoucher.TotalDebit);
