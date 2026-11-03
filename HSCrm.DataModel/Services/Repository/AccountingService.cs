@@ -34,6 +34,8 @@ namespace HSCrm.DataModel.Services.Repository
         public const string ACC_PURCHASE_COST = "5101";      // خرید کالا / بهای تمام‌شده
         public const string ACC_PURCHASE_DISCOUNT = "5102";  // تخفیفات خرید
         public const string ACC_PROJECT_EXPENSE = "5201";    // هزینه‌های اجرایی و عملیاتی پروژه
+        public const string ACC_INVENTORY_SHRINKAGE = "5202"; // هزینه کسری و ضایعات انبار
+        public const string ACC_INVENTORY_SURPLUS = "4201";   // درآمد/سود اضافات انبار
 
         public AccountingService(
             ApplicationDbContext context,
@@ -49,11 +51,8 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task EnsureDefaultChartOfAccountsAsync(int tenantId, CancellationToken ct = default)
         {
-            var exists = await _context.AccountingAccounts
-                .IgnoreQueryFilters()
-                .AnyAsync(x => x.TenantId == tenantId && !x.IsDeleted, ct);
-
-            if (exists) return;
+            if (tenantId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(tenantId));
 
             var defaultAccounts = new List<AccountingAccount>
             {
@@ -72,10 +71,37 @@ namespace HSCrm.DataModel.Services.Repository
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_SALES_RETURN, Title = "برگشت از فروش کالا و خدمات", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PURCHASE_COST, Title = "خرید کالا و بهای تمام‌شده", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PURCHASE_DISCOUNT, Title = "تخفیفات خرید", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
-                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PROJECT_EXPENSE, Title = "هزینه‌های اجرایی، پرسنلی و عمومی پروژه", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true }
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PROJECT_EXPENSE, Title = "هزینه‌های اجرایی، پرسنلی و عمومی پروژه", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_INVENTORY_SHRINKAGE, Title = "هزینه کسری و ضایعات انبار", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_INVENTORY_SURPLUS, Title = "درآمد/سود اضافات انبار", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.CreditOnly, IsSystemAccount = true }
             };
 
-            await _context.AccountingAccounts.AddRangeAsync(defaultAccounts, ct);
+            // Incrementally add missing system accounts for existing tenants too.
+            var existingAccounts = await _context.AccountingAccounts
+                .IgnoreQueryFilters()
+                .Where(x => x.TenantId == tenantId)
+                .ToDictionaryAsync(x => x.Code, ct);
+
+            var missingAccounts = new List<AccountingAccount>();
+            foreach (var expected in defaultAccounts)
+            {
+                if (!existingAccounts.TryGetValue(expected.Code, out var existing))
+                {
+                    missingAccounts.Add(expected);
+                    continue;
+                }
+
+                if (existing.IsDeleted || !existing.IsSystemAccount
+                    || existing.Level != expected.Level
+                    || existing.Category != expected.Category
+                    || existing.Nature != expected.Nature)
+                    throw new InvalidOperationException($"حساب سیستمی {expected.Code} در کدینگ شرکت حذف شده یا مشخصات ناسازگار دارد.");
+            }
+
+            if (missingAccounts.Count == 0)
+                return;
+
+            await _context.AccountingAccounts.AddRangeAsync(missingAccounts, ct);
             await _context.SaveChangesAsync(ct);
         }
 
@@ -268,6 +294,120 @@ namespace HSCrm.DataModel.Services.Repository
                 throw new InvalidOperationException("برای این مرجع سند حسابداری فعال اما قطعی‌نشده وجود دارد.");
 
             return existing;
+        }
+
+        public async Task<JournalVoucher> CreateVoucherForInventoryAdjustmentAsync(
+            InventoryTransaction adjustment,
+            CancellationToken ct = default)
+        {
+            if (adjustment == null)
+                throw new ArgumentNullException(nameof(adjustment));
+
+            var tenantId = _currentUser.TenantId
+                ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
+
+            if (adjustment.TenantId != tenantId || adjustment.FiscalYearId != fiscalYearId)
+                throw new UnauthorizedAccessException("تعدیل انبار متعلق به شرکت یا سال مالی جاری نیست.");
+
+            await EnsureFiscalYearIsOpenAsync(tenantId, fiscalYearId, ct);
+
+            if (adjustment.Id <= 0 || adjustment.ReferenceType != InventoryReferenceType.Adjustment
+                || adjustment.TransactionType != InventoryTransactionType.Adjustment
+                || adjustment.QuantityChange == 0 || adjustment.TotalCost <= 0
+                || adjustment.WarehouseId <= 0 || adjustment.ProductId <= 0)
+                throw new InvalidOperationException("اطلاعات تعدیل انبار برای صدور سند حسابداری معتبر نیست.");
+
+            // JournalVoucher.ReferenceId is Int32; use the server-generated transaction identity.
+            if (adjustment.Id > int.MaxValue)
+                throw new InvalidOperationException("شناسه تعدیل از محدوده قابل ثبت در مرجع سند حسابداری خارج شده است.");
+            var referenceId = checked((int)adjustment.Id);
+
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                tenantId, fiscalYearId, AccountingReferenceType.InventoryAdjustment, referenceId, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            var persistedAdjustment = await _context.InventoryTransactions
+                .IgnoreQueryFilters()
+                .AnyAsync(x => x.Id == adjustment.Id && x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId && x.ProductId == adjustment.ProductId
+                    && x.WarehouseId == adjustment.WarehouseId
+                    && x.ReferenceType == InventoryReferenceType.Adjustment
+                    && x.ReferenceId == adjustment.Id
+                    && x.TransactionType == InventoryTransactionType.Adjustment
+                    && !x.IsDeleted, ct);
+            if (!persistedAdjustment
+                || !await _context.Products.AnyAsync(x => x.Id == adjustment.ProductId
+                    && x.TenantId == tenantId && !x.IsDeleted, ct)
+                || !await _context.Warehouses.AnyAsync(x => x.Id == adjustment.WarehouseId
+                    && x.TenantId == tenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("مرجع تعدیل، کالا یا انبار متعلق به شرکت جاری نیست.");
+
+            var amount = Math.Round(adjustment.TotalCost, 2);
+            if (amount <= 0)
+                throw new InvalidOperationException("ارزش ریالی تعدیل باید بیشتر از صفر باشد.");
+
+            var inventoryAccount = await GetSystemAccountAsync(tenantId, ACC_INVENTORY, ct);
+            var offsetAccount = await GetSystemAccountAsync(
+                tenantId,
+                adjustment.QuantityChange < 0 ? ACC_INVENTORY_SHRINKAGE : ACC_INVENTORY_SURPLUS,
+                ct);
+
+            var isShortage = adjustment.QuantityChange < 0;
+            var items = new List<JournalVoucherItem>
+            {
+                new()
+                {
+                    TenantId = tenantId,
+                    RowNumber = 1,
+                    AccountId = isShortage ? offsetAccount.Id : inventoryAccount.Id,
+                    Description = isShortage ? "هزینه کسری و ضایعات انبار" : "افزایش موجودی انبار بابت انبارگردانی",
+                    Debit = amount,
+                    Credit = 0m,
+                    WarehouseId = adjustment.WarehouseId,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new()
+                {
+                    TenantId = tenantId,
+                    RowNumber = 2,
+                    AccountId = isShortage ? inventoryAccount.Id : offsetAccount.Id,
+                    Description = isShortage ? "کاهش موجودی کالا بابت انبارگردانی" : "سود اضافات انبار",
+                    Debit = 0m,
+                    Credit = amount,
+                    WarehouseId = adjustment.WarehouseId,
+                    CreatedAt = DateTime.UtcNow
+                }
+            };
+
+            var nextNumber = await GetNextVoucherNumberAsync(tenantId, fiscalYearId, ct);
+            var description = string.IsNullOrWhiteSpace(adjustment.Description)
+                ? "انبارگردانی"
+                : adjustment.Description.Trim();
+            if (description.Length > 400)
+                description = description[..400];
+
+            var voucher = new JournalVoucher
+            {
+                TenantId = tenantId,
+                FiscalYearId = fiscalYearId,
+                CreatedAt = DateTime.UtcNow,
+                VoucherNumber = nextNumber,
+                VoucherDate = adjustment.CreatedAt,
+                Description = $"سند تعدیل موجودی انبار - {description}",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.InventoryAdjustment,
+                ReferenceId = referenceId,
+                TotalDebit = amount,
+                TotalCredit = amount,
+                Items = items
+            };
+
+            await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
+            await _unitOfWork.SaveAsync();
+            return voucher;
         }
 
         private async Task ValidateSalesInvoiceForPostingAsync(SalesInvoice invoice, CancellationToken ct)

@@ -17,12 +17,10 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IInventoryService _inventoryService;
         private readonly ICurrentFiscalYearService _fiscalYearService;
-        private readonly IUnitOfWork _context;
 
-        public InventoryController(IInventoryService inventoryService, IUnitOfWork context, ICurrentFiscalYearService fiscalYearService)
+        public InventoryController(IInventoryService inventoryService, ICurrentFiscalYearService fiscalYearService)
         {
             _inventoryService = inventoryService;
-            _context = context;
             _fiscalYearService = fiscalYearService;
         }
 
@@ -109,11 +107,8 @@ namespace HSCrm.WebApi.Controllers
                 ProductId = model.ProductId,
                 WarehouseId = model.WarehouseId,
                 ActualQuantity = model.ActualQuantity,
-                ReferenceId = model.ReferenceId,
                 Description = model.Description
             });
-
-            await _context.SaveAsync();
 
             return Ok(new ApiResponse
             {
@@ -130,7 +125,5 @@ namespace HSCrm.WebApi.Controllers
         [Required] public int WarehouseId { get; set; }
         [Required] public decimal ActualQuantity { get; set; }
         public string? Description { get; set; }
-        public long ReferenceId { get; set; }
-        public InventoryReferenceType ReferenceType { get; set; }
     }
 }

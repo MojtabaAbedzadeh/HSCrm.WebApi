@@ -100,6 +100,11 @@ namespace HSCrm.DataModel.Services.Interface
         Task<ReopenFiscalYearResultDto> ReopenFiscalYearAsync(int fiscalYearId, int? nextFiscalYearId = null, CancellationToken ct = default);
 
         /// <summary>
+        /// صدور سند دوبل تعدیل موجودی بر اساس تراکنش ثبت‌شده انبارگردانی
+        /// </summary>
+        Task<JournalVoucher> CreateVoucherForInventoryAdjustmentAsync(InventoryTransaction adjustment, CancellationToken ct = default);
+
+        /// <summary>
         /// صدور خودکار سند حسابداری هنگام ثبت اولیه چک دریافتنی (از مشتری) یا چک پرداختنی (به تأمین‌کننده)
         /// </summary>
         Task<JournalVoucher> CreateVoucherForChequeRegistrationAsync(Cheque cheque, CancellationToken ct = default);

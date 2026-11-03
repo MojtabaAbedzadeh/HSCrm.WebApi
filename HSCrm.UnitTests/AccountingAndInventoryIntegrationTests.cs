@@ -123,7 +123,7 @@ namespace HSCrm.UnitTests
 
             var uow = new UnitOfWork(context);
             var accounting = new AccountingService(context, uow, currentUser, currentFy);
-            var inventory = new InventoryService(context, uow, currentFy, currentUser);
+            var inventory = new InventoryService(context, uow, currentFy, currentUser, accounting);
 
             return (context, uow, accounting, inventory, currentUser, currentFy);
         }
@@ -154,13 +154,15 @@ namespace HSCrm.UnitTests
             await accounting.EnsureDefaultChartOfAccountsAsync(1); // فراخوانی مجدد برای تست Idempotency
 
             var accounts = await context.AccountingAccounts.Where(a => a.TenantId == 1 && !a.IsDeleted).ToListAsync();
-            Assert.Equal(16, accounts.Count);
+            Assert.Equal(18, accounts.Count);
             Assert.Contains(accounts, a => a.Code == "1101" && a.Category == AccountCategory.Asset);
             Assert.Contains(accounts, a => a.Code == "1105" && a.Title.Contains("موجودی کالا"));
             Assert.Contains(accounts, a => a.Code == "2101" && a.Category == AccountCategory.Liability);
             Assert.Contains(accounts, a => a.Code == "3101" && a.Category == AccountCategory.Equity);            
             Assert.Contains(accounts, a => a.Code == "4103" && a.Title.Contains("برگشت از فروش"));
             Assert.Contains(accounts, a => a.Code == "5101" && a.Category == AccountCategory.Expense);
+            Assert.Contains(accounts, a => a.Code == "5202" && a.Category == AccountCategory.Expense && a.IsSystemAccount);
+            Assert.Contains(accounts, a => a.Code == "4201" && a.Category == AccountCategory.Revenue && a.IsSystemAccount);
         }
 
         [Fact(DisplayName = "02. کنترل تراز بودن سند روزنامه دستی (رد سند ناتراز و ثبت موفق سند تراز)")]
@@ -967,6 +969,15 @@ namespace HSCrm.UnitTests
                 x.TransactionType == InventoryTransactionType.Adjustment && x.QuantityChange < 0);
             Assert.Equal(-3m, decrease.QuantityChange);
             Assert.Equal(240m, decrease.TotalCost);
+            Assert.Equal(decrease.Id, decrease.ReferenceId);
+            var decreaseVoucher = await context.JournalVouchers
+                .Include(x => x.Items).ThenInclude(x => x.Account)
+                .SingleAsync(x => x.ReferenceType == AccountingReferenceType.InventoryAdjustment
+                    && x.ReferenceId == (int)decrease.Id && x.Status == JournalVoucherStatus.Posted);
+            Assert.Equal(240m, decreaseVoucher.TotalDebit);
+            Assert.Equal(240m, decreaseVoucher.TotalCredit);
+            Assert.Contains(decreaseVoucher.Items, x => x.Account.Code == "5202" && x.Debit == 240m && x.Credit == 0m);
+            Assert.Contains(decreaseVoucher.Items, x => x.Account.Code == "1105" && x.Credit == 240m && x.Debit == 0m);
 
             await inventoryService.ApplyAdjustmentAsync(new AdjustmentDto
             {
@@ -982,6 +993,17 @@ namespace HSCrm.UnitTests
             Assert.Equal(5m, increase.QuantityChange);
             Assert.Equal(500m, increase.TotalCost);
             Assert.Equal(5m, increase.RemainingFifoQuantity);
+            Assert.Equal(increase.Id, increase.ReferenceId);
+            var increaseVoucher = await context.JournalVouchers
+                .Include(x => x.Items).ThenInclude(x => x.Account)
+                .SingleAsync(x => x.ReferenceType == AccountingReferenceType.InventoryAdjustment
+                    && x.ReferenceId == (int)increase.Id && x.Status == JournalVoucherStatus.Posted);
+            Assert.Equal(500m, increaseVoucher.TotalDebit);
+            Assert.Equal(500m, increaseVoucher.TotalCredit);
+            Assert.Contains(increaseVoucher.Items, x => x.Account.Code == "1105" && x.Debit == 500m && x.Credit == 0m);
+            Assert.Contains(increaseVoucher.Items, x => x.Account.Code == "4201" && x.Credit == 500m && x.Debit == 0m);
+            Assert.Equal(2, await context.JournalVouchers.CountAsync(x =>
+                x.ReferenceType == AccountingReferenceType.InventoryAdjustment && x.Status == JournalVoucherStatus.Posted));
         }
 
     }

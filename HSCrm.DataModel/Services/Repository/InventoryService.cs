@@ -14,17 +14,20 @@ namespace HSCrm.DataModel.Services.Repository
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentFiscalYearService _currentFiscalYear;
         private readonly ICurrentUserService _currentUser;
+        private readonly IAccountingService _accountingService;
 
         public InventoryService(
             ApplicationDbContext context,
             IUnitOfWork unitOfWork,
             ICurrentFiscalYearService currentFiscalYear,
-            ICurrentUserService currentUser) : base(context)
+            ICurrentUserService currentUser,
+            IAccountingService accountingService) : base(context)
         {
             _context = context;
             _unitOfWork = unitOfWork;
             _currentFiscalYear = currentFiscalYear;
             _currentUser = currentUser;
+            _accountingService = accountingService;
         }
 
         /// <summary>
@@ -872,6 +875,9 @@ namespace HSCrm.DataModel.Services.Repository
                     totalCost = Math.Round(totalCost, 2);
                 }
 
+                if (totalCost <= 0)
+                    throw new InvalidOperationException("برای تعدیل انبار، بهای تمام‌شده مثبت و قابل اتکا لازم است.");
+
                 inventory.Quantity = dto.ActualQuantity;
 
                 var transactionLog = new InventoryTransaction
@@ -886,13 +892,19 @@ namespace HSCrm.DataModel.Services.Repository
                     RemainingFifoQuantity = quantityChange > 0 ? quantityChange : 0m,
                     TransactionType = InventoryTransactionType.Adjustment,
                     Description = dto.Description,
-                    ReferenceId = dto.ReferenceId,
                     ReferenceType = InventoryReferenceType.Adjustment,
                     CreatedAt = DateTime.UtcNow,
                 };
 
                 await _context.InventoryTransactions.AddAsync(transactionLog, ct);
-                await _unitOfWork.SaveAsync();
+                await _context.SaveChangesAsync(ct);
+
+                // Use the database-generated transaction identity as the stable accounting reference.
+                transactionLog.ReferenceId = transactionLog.Id;
+                await _context.SaveChangesAsync(ct);
+
+                // Both services share the scoped DbContext and the active transaction.
+                await _accountingService.CreateVoucherForInventoryAdjustmentAsync(transactionLog, ct);
                 await transaction.CommitAsync(ct);
             }
             catch
