@@ -1,6 +1,7 @@
 using Common.Permissions;
 using Framework.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SkiaSharp;
 
 namespace HSCrm.WebApi.PublicApi
 {
@@ -51,7 +52,12 @@ namespace HSCrm.WebApi.PublicApi
                     return StatusCode(StatusCodes.Status415UnsupportedMediaType,
                         new { statusCode = 415, message = "ساختار یا ابعاد تصویر معتبر نیست." });
 
-                validatedFiles.Add((content, extension));
+                if (!TryDecodeAndReencodeImage(content, extension, width, height, out var normalizedContent)
+                    || normalizedContent.Length == 0 || normalizedContent.Length > maxFileBytes)
+                    return StatusCode(StatusCodes.Status415UnsupportedMediaType,
+                        new { statusCode = 415, message = "تصویر قابل رمزگشایی یا بازرمزگذاری امن نیست." });
+
+                validatedFiles.Add((normalizedContent, extension));
             }
 
             // Store new uploads outside wwwroot. They are served only by the
@@ -74,6 +80,50 @@ namespace HSCrm.WebApi.PublicApi
                 return Ok(new { statusCode = 200, message = savedUrls[0] });
             return Ok(new { statusCode = 200, message = "آپلود موفق", urls = savedUrls });
         }
+        private static bool TryDecodeAndReencodeImage(
+            byte[] data,
+            string extension,
+            int expectedWidth,
+            int expectedHeight,
+            out byte[] normalized)
+        {
+            normalized = Array.Empty<byte>();
+
+            try
+            {
+                // The lightweight header parser runs first to cap dimensions before native decoding.
+                using var bitmap = SKBitmap.Decode(data);
+                if (bitmap == null
+                    || bitmap.Width != expectedWidth
+                    || bitmap.Height != expectedHeight
+                    || bitmap.Width <= 0
+                    || bitmap.Height <= 0
+                    || bitmap.Width > 4096
+                    || bitmap.Height > 4096
+                    || (long)bitmap.Width * bitmap.Height > 16_000_000)
+                    return false;
+
+                var outputFormat = extension == ".png"
+                    ? SKEncodedImageFormat.Png
+                    : SKEncodedImageFormat.Jpeg;
+                var quality = outputFormat == SKEncodedImageFormat.Jpeg ? 90 : 100;
+
+                using var image = SKImage.FromBitmap(bitmap);
+                using var encoded = image.Encode(outputFormat, quality);
+                if (encoded == null || encoded.Size <= 0)
+                    return false;
+
+                normalized = encoded.ToArray();
+                return normalized.Length > 0;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Invalid or unsupported bitstreams are rejected; raw uploaded bytes are never persisted.
+                normalized = Array.Empty<byte>();
+                return false;
+            }
+        }
+
         private string? GetPublicBaseUrl()
         {
             var configured = _configuration["PublicBaseUrl"];
