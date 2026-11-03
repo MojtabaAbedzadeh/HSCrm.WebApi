@@ -938,7 +938,7 @@ namespace HSCrm.UnitTests
         [Fact(DisplayName = "Stocktake uses actual counted quantity and updates FIFO layers")]
         public async Task ApplyAdjustment_UsesActualCountAndReconcilesFifoLayers()
         {
-            var (context, _, _, inventoryService, _, _) = CreateTestRig(nameof(ApplyAdjustment_UsesActualCountAndReconcilesFifoLayers));
+            var (context, _, accounting, inventoryService, _, _) = CreateTestRig(nameof(ApplyAdjustment_UsesActualCountAndReconcilesFifoLayers));
 
             var inventory = new Inventory
             {
@@ -992,6 +992,10 @@ namespace HSCrm.UnitTests
             Assert.Equal(240m, decreaseVoucher.TotalCredit);
             Assert.Contains(decreaseVoucher.Items, x => x.Account.Code == "5202" && x.Debit == 240m && x.Credit == 0m);
             Assert.Contains(decreaseVoucher.Items, x => x.Account.Code == "1105" && x.Credit == 240m && x.Debit == 0m);
+            var duplicateDecreaseVoucher = await accounting.CreateVoucherForInventoryAdjustmentAsync(decrease);
+            Assert.Equal(decreaseVoucher.Id, duplicateDecreaseVoucher.Id);
+            Assert.Equal(1, await context.JournalVouchers.CountAsync(x =>
+                x.ReferenceType == AccountingReferenceType.InventoryAdjustment && x.ReferenceId == (int)decrease.Id));
 
             await inventoryService.ApplyAdjustmentAsync(new AdjustmentDto
             {
