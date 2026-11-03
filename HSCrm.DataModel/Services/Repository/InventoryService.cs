@@ -410,6 +410,17 @@ namespace HSCrm.DataModel.Services.Repository
                 if (inventory == null || inventory.Quantity < item.Quantity)
                     throw new InvalidOperationException("موجودی انبار برای ابطال فاکتور برگشت از فروش کافی نیست.");
 
+                ConsumeReferenceFifoLayers(
+                    returnInvoice.TenantId,
+                    returnInvoice.FiscalYearId,
+                    returnInvoice.WarehouseId,
+                    item.ProductId,
+                    InventoryReferenceType.SalesReturnInvoice,
+                    returnInvoice.Id,
+                    InventoryTransactionType.ReturnSale,
+                    item.Quantity,
+                    "امکان ابطال برگشت از فروش وجود ندارد؛ بخشی از کالای برگشتی قبلاً از انبار خارج شده است.");
+
                 decimal unitCost = item.UnitCost > 0 ? item.UnitCost : inventory.AverageUnitCost;
                 decimal totalCost = item.TotalCost > 0 ? item.TotalCost : Math.Round(item.Quantity * unitCost, 2);
 
@@ -583,6 +594,48 @@ namespace HSCrm.DataModel.Services.Repository
             }
         }
 
+        private void ConsumeReferenceFifoLayers(
+            int tenantId,
+            int fiscalYearId,
+            int warehouseId,
+            int productId,
+            InventoryReferenceType referenceType,
+            long referenceId,
+            InventoryTransactionType transactionType,
+            decimal quantity,
+            string errorMessage)
+        {
+            var sourceLayers = _context.InventoryTransactions
+                .IgnoreQueryFilters()
+                .Where(x => x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId
+                    && x.WarehouseId == warehouseId
+                    && x.ProductId == productId
+                    && x.ReferenceType == referenceType
+                    && x.ReferenceId == referenceId
+                    && x.TransactionType == transactionType
+                    && x.QuantityChange > 0
+                    && x.RemainingFifoQuantity > 0
+                    && !x.IsDeleted)
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.Id)
+                .ToList();
+
+            if (sourceLayers.Sum(x => x.RemainingFifoQuantity) < quantity)
+                throw new InvalidOperationException(errorMessage);
+
+            var remainingToConsume = quantity;
+            foreach (var layer in sourceLayers)
+            {
+                if (remainingToConsume <= 0)
+                    break;
+
+                var consumed = Math.Min(remainingToConsume, layer.RemainingFifoQuantity);
+                layer.RemainingFifoQuantity -= consumed;
+                remainingToConsume -= consumed;
+            }
+        }
+
         public void RollbackInventoryForPurchaseInvoice(PurchaseInvoice invoice)
         {
             if (invoice == null || invoice.Items == null || !invoice.Items.Any())
@@ -605,6 +658,17 @@ namespace HSCrm.DataModel.Services.Repository
                 if (inventory == null || inventory.Quantity < item.Quantity)
                     throw new InvalidOperationException("موجودی انبار برای برگشت خرید کافی نیست.");
 
+                ConsumeReferenceFifoLayers(
+                    invoice.TenantId,
+                    invoice.FiscalYearId,
+                    invoice.WarehouseId,
+                    item.ProductId,
+                    InventoryReferenceType.PurchaseInvoice,
+                    invoice.Id,
+                    InventoryTransactionType.Purchase,
+                    item.Quantity,
+                    "امکان ابطال فاکتور خرید وجود ندارد؛ بخشی از موجودی همان فاکتور قبلاً مصرف یا برگشت داده شده است.");
+
                 decimal grossCost = item.Quantity * item.UnitPricePurchase;
                 decimal netLineCost = Math.Max(0m, grossCost - (item.Discount ?? 0m));
                 decimal purchaseUnitCost = item.Quantity > 0
@@ -618,6 +682,10 @@ namespace HSCrm.DataModel.Services.Repository
                 {
                     decimal remainingValue = Math.Max(0m, existingValue - netLineCost);
                     inventory.AverageUnitCost = Math.Round(remainingValue / newTotalQty, 2);
+                }
+                else
+                {
+                    inventory.AverageUnitCost = 0m;
                 }
 
                 inventory.Quantity = newTotalQty;

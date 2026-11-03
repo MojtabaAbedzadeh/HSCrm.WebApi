@@ -1032,6 +1032,108 @@ namespace HSCrm.UnitTests
                 x.ReferenceType == AccountingReferenceType.InventoryAdjustment && x.Status == JournalVoucherStatus.Posted));
         }
 
+        [Fact(DisplayName = "Purchase invoice cancellation is blocked after its source FIFO layer has been consumed")]
+        public async Task RollbackPurchaseInvoice_RejectsConsumedSourceLayer()
+        {
+            var (context, _, _, inventoryService, _, _) = CreateTestRig(nameof(RollbackPurchaseInvoice_RejectsConsumedSourceLayer));
+            var invoice = new PurchaseInvoice
+            {
+                Id = 901,
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                SupplierId = 1,
+                PurchaserUserId = "user-admin",
+                Number = "PI-ROLLBACK-901",
+                IssueDate = new DateTime(2025, 4, 1),
+                Status = InvoiceStatus.Final,
+                Description = "Purchase rollback test",
+                Items = new List<PurchaseInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 5m, UnitPricePurchase = 100m, LineTotal = 500m }
+                }
+            };
+            var inventory = new Inventory
+            {
+                TenantId = 1, WarehouseId = 1, ProductId = 1,
+                Quantity = 15m, AverageUnitCost = 100m, CreatedAt = DateTime.UtcNow
+            };
+            var sourceLayer = new InventoryTransaction
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProductId = 1,
+                QuantityChange = 5m, RemainingFifoQuantity = 2m, UnitCost = 100m, TotalCost = 500m,
+                TransactionType = InventoryTransactionType.Purchase,
+                ReferenceType = InventoryReferenceType.PurchaseInvoice,
+                ReferenceId = invoice.Id, CreatedAt = DateTime.UtcNow, Description = "Partially consumed source layer"
+            };
+            context.Inventories.Add(inventory);
+            context.InventoryTransactions.AddRange(sourceLayer, new InventoryTransaction
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProductId = 1,
+                QuantityChange = 10m, RemainingFifoQuantity = 10m, UnitCost = 100m, TotalCost = 1_000m,
+                TransactionType = InventoryTransactionType.Purchase,
+                ReferenceType = InventoryReferenceType.PurchaseInvoice,
+                ReferenceId = 902, CreatedAt = DateTime.UtcNow, Description = "Other purchase layer"
+            });
+            await context.SaveChangesAsync();
+
+            Assert.Throws<InvalidOperationException>(() => inventoryService.RollbackInventoryForPurchaseInvoice(invoice));
+            Assert.Equal(15m, inventory.Quantity);
+            Assert.Equal(2m, sourceLayer.RemainingFifoQuantity);
+
+            sourceLayer.RemainingFifoQuantity = 5m;
+            inventoryService.RollbackInventoryForPurchaseInvoice(invoice);
+            Assert.Equal(10m, inventory.Quantity);
+            Assert.Equal(0m, sourceLayer.RemainingFifoQuantity);
+        }
+
+        [Fact(DisplayName = "Sales return cancellation is blocked after its returned FIFO layer has been consumed")]
+        public async Task RollbackSalesReturn_RejectsConsumedReturnedLayer()
+        {
+            var (context, _, _, inventoryService, _, _) = CreateTestRig(nameof(RollbackSalesReturn_RejectsConsumedReturnedLayer));
+            var returnInvoice = new SalesReturnInvoice
+            {
+                Id = 903,
+                Number = "SR-ROLLBACK-903",
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProjectId = 1,
+                SellerUserId = "user-admin",
+                IssueDate = new DateTime(2025, 4, 1),
+                Status = InvoiceStatus.Final,
+                Items = new List<SalesReturnInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 5m, UnitPriceReturn = 120m, UnitCost = 100m, TotalCost = 500m, LineTotal = 600m }
+                }
+            };
+            var inventory = new Inventory
+            {
+                TenantId = 1, WarehouseId = 1, ProductId = 1,
+                Quantity = 12m, AverageUnitCost = 100m, CreatedAt = DateTime.UtcNow
+            };
+            var sourceLayer = new InventoryTransaction
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProductId = 1,
+                QuantityChange = 5m, RemainingFifoQuantity = 2m, UnitCost = 100m, TotalCost = 500m,
+                TransactionType = InventoryTransactionType.ReturnSale,
+                ReferenceType = InventoryReferenceType.SalesReturnInvoice,
+                ReferenceId = returnInvoice.Id, CreatedAt = DateTime.UtcNow, Description = "Partially consumed returned layer"
+            };
+            context.Inventories.Add(inventory);
+            context.InventoryTransactions.Add(sourceLayer);
+            await context.SaveChangesAsync();
+
+            Assert.Throws<InvalidOperationException>(() => inventoryService.RollbackInventoryForSalesReturn(returnInvoice));
+            Assert.Equal(12m, inventory.Quantity);
+            Assert.Equal(2m, sourceLayer.RemainingFifoQuantity);
+
+            sourceLayer.RemainingFifoQuantity = 5m;
+            inventoryService.RollbackInventoryForSalesReturn(returnInvoice);
+            Assert.Equal(7m, inventory.Quantity);
+            Assert.Equal(0m, sourceLayer.RemainingFifoQuantity);
+        }
+
     }
 
     public class FiscalYearMaintenanceSecurityTests
