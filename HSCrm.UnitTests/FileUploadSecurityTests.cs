@@ -61,6 +61,52 @@ namespace HSCrm.UnitTests
         }
 
         [Fact]
+        public async Task UserImageUpload_DecodesAndReencodesValidJpegBeforeSaving()
+        {
+            var contentRoot = Path.Combine(Path.GetTempPath(), "HSCrmUploadTests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(contentRoot);
+
+            try
+            {
+                using var bitmap = new SKBitmap(new SKImageInfo(8, 6, SKColorType.Rgba8888, SKAlphaType.Premul));
+                using var canvas = new SKCanvas(bitmap);
+                canvas.Clear(SKColors.DarkOrange);
+                using var image = SKImage.FromBitmap(bitmap);
+                using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+                var inputBytes = encoded.ToArray();
+
+                using var stream = new MemoryStream(inputBytes);
+                var formFile = new FormFile(stream, 0, stream.Length, "imagearray", "avatar.jpg")
+                {
+                    Headers = new HeaderDictionary(),
+                    ContentType = "image/jpeg"
+                };
+
+                var environment = new Mock<IWebHostEnvironment>();
+                environment.SetupGet(x => x.ContentRootPath).Returns(contentRoot);
+                var controller = new FileUploadController(environment.Object, new ConfigurationBuilder().Build());
+
+                var result = await controller.UserImageUpload(new[] { formFile }, CancellationToken.None);
+
+                Assert.IsType<OkObjectResult>(result);
+                var uploadsRoot = Path.Combine(contentRoot, "App_Data", "UserImages");
+                var savedFile = Assert.Single(Directory.GetFiles(uploadsRoot));
+                Assert.EndsWith(".jpg", savedFile, StringComparison.OrdinalIgnoreCase);
+
+                var storedBytes = await File.ReadAllBytesAsync(savedFile);
+                using var decoded = SKBitmap.Decode(storedBytes);
+                Assert.NotNull(decoded);
+                Assert.Equal(8, decoded.Width);
+                Assert.Equal(6, decoded.Height);
+            }
+            finally
+            {
+                if (Directory.Exists(contentRoot))
+                    Directory.Delete(contentRoot, recursive: true);
+            }
+        }
+
+        [Fact]
         public async Task UserImageUpload_RejectsPngHeaderWithoutDecodableImageBody()
         {
             var contentRoot = Path.Combine(Path.GetTempPath(), "HSCrmUploadTests", Guid.NewGuid().ToString("N"));
