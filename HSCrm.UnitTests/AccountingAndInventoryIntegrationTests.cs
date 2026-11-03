@@ -150,6 +150,20 @@ namespace HSCrm.UnitTests
         {
             var (context, _, accounting, _, _, _) = CreateTestRig(nameof(Test01_EnsureDefaultChartOfAccounts_SeedsAll20StandardAccounts_Idempotently));
 
+            // Simulate a tenant that already has part of the system chart; new defaults must still be added.
+            context.AccountingAccounts.Add(new AccountingAccount
+            {
+                TenantId = 1,
+                Code = "1101",
+                Title = "موجودی نقد و بانک (خزانه)",
+                Level = AccountLevel.Subsidiary,
+                Category = AccountCategory.Asset,
+                Nature = AccountNature.DebitOnly,
+                IsSystemAccount = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
             await accounting.EnsureDefaultChartOfAccountsAsync(1);
             await accounting.EnsureDefaultChartOfAccountsAsync(1); // فراخوانی مجدد برای تست Idempotency
 
