@@ -154,6 +154,7 @@ namespace HSCrm.DataModel.Services.Repository
                     TotalCost = cogsTotalCost,
                     RemainingFifoQuantity = 0,
                     CreatedAt = DateTime.UtcNow,
+                    CreatedById = _currentUser.UserId,
                     Description = $"خروج انبار بابت فاکتور فروش شماره {invoice.Number}",
                     TransactionType = InventoryTransactionType.Sale,
                     ReferenceId = invoice.Id,
@@ -892,6 +893,7 @@ namespace HSCrm.DataModel.Services.Repository
                     RemainingFifoQuantity = quantityChange > 0 ? quantityChange : 0m,
                     TransactionType = InventoryTransactionType.Adjustment,
                     Description = dto.Description,
+                    CreatedById = _currentUser.UserId,
                     ReferenceType = InventoryReferenceType.Adjustment,
                     CreatedAt = DateTime.UtcNow,
                 };

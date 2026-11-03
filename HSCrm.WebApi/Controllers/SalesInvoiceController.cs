@@ -458,48 +458,23 @@ namespace HSCrm.WebApi.Controllers
                 if (invoice.Status == InvoiceStatus.Final)
                     return BadRequest("قبلاً تأیید شده");
 
-                // ۱. بررسی اولیه موجودی تمام اقلام
-                var inventoriesToUpdate = new List<(Inventory Inventory, SalesInvoiceItem Item)>();
-
+                // Validate all lines before the shared inventory service mutates stock or FIFO layers.
                 foreach (var item in invoice.Items)
                 {
                     var inventory = (await _context.inventoryUW.GetAsync(
-                        x => x.TenantId == tenantId && x.WarehouseId == invoice.WarehouseId && x.ProductId == item.ProductId && !x.IsDeleted,
+                        x => x.TenantId == tenantId && x.WarehouseId == invoice.WarehouseId
+                            && x.ProductId == item.ProductId && !x.IsDeleted,
                         asNoTracking: false
                     )).FirstOrDefault();
 
                     if (inventory == null || inventory.Quantity < item.Quantity)
                         return Conflict($"موجودی کالای {item.ProductId} کافی نیست");
-
-                    inventoriesToUpdate.Add((inventory, item));
-                }
-
-                // ۲. کسر موجودی، محاسبه بهای تمام‌شده (COGS) و ثبت تراکنش انبار با WarehouseId معتبر
-                foreach (var (inventory, item) in inventoriesToUpdate)
-                {
-                    item.UnitCost = inventory.AverageUnitCost;
-                    item.TotalCost = Math.Round(item.Quantity * inventory.AverageUnitCost, 2);
-                    inventory.Quantity -= item.Quantity;
-
-                    _context.inventoryTransactionUW.Create(new InventoryTransaction
-                    {
-                        TenantId = tenantId,
-                        FiscalYearId = invoice.FiscalYearId,
-                        WarehouseId = inventory.WarehouseId,
-                        ProductId = item.ProductId,
-                        QuantityChange = -item.Quantity,
-                        UnitCost = item.UnitCost,
-                        TotalCost = item.TotalCost,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedById = userId,
-                        Description = "تأیید فاکتور فروش شماره " + invoice.Number,
-                        TransactionType = InventoryTransactionType.Sale,
-                        ReferenceId = invoice.Id,
-                        ReferenceType = InventoryReferenceType.SalesInvoice
-                    });
                 }
 
                 invoice.Status = InvoiceStatus.Final;
+
+                // Keep stock quantity, COGS valuation, FIFO layers, and transaction logs in one path.
+                _inventory.ApplyInventoryForSalesInvoice(invoice, InventoryCostingMethod.WeightedAverage);
 
                 await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
                 await _context.SaveAsync();

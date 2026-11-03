@@ -372,6 +372,14 @@ namespace HSCrm.UnitTests
             Assert.Equal(1_500_000m, saleItem.UnitCost);
             Assert.Equal(12_000_000m, saleItem.TotalCost); // 8 * 1,500,000 = 12,000,000
 
+            var fifoLayersAfterSale = await context.InventoryTransactions
+                .Where(x => x.TransactionType == InventoryTransactionType.Purchase
+                    && x.ProductId == 1 && x.WarehouseId == 1)
+                .OrderBy(x => x.Id)
+                .ToListAsync();
+            Assert.Equal(0m, fifoLayersAfterSale[0].RemainingFifoQuantity);
+            Assert.Equal(8m, fifoLayersAfterSale[1].RemainingFifoQuantity);
+
             // سند فروش شامل ۲۱,۸۰۰,۰۰۰ درآمد/مالیات + ۱۲,۰۰۰,۰۰۰ بهای تمام‌شده = ۳۳,۸۰۰,۰۰۰ ریال تراز
             Assert.Equal(33_800_000m, salesVoucher.TotalDebit);
             Assert.Equal(33_800_000m, salesVoucher.TotalCredit);
