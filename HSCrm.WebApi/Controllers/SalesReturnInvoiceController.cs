@@ -485,6 +485,10 @@ namespace HSCrm.WebApi.Controllers
             if (string.IsNullOrWhiteSpace(reason))
                 return BadRequest("ذکر دلیل ابطال الزامی است.");
 
+            // Read and mutate the return invoice under the same serializable transaction
+            // used by Confirm, preventing a stale Proforma read from racing with confirmation.
+            using var transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
             var returnInvoice = await _context.salesReturnInvoiceUW
                 .Query()
                 .Include(x => x.Items)
@@ -496,7 +500,6 @@ namespace HSCrm.WebApi.Controllers
             if (returnInvoice.Status == InvoiceStatus.Cancelled)
                 return BadRequest("این فاکتور برگشتی قبلاً باطل شده است.");
 
-            using var transaction = await _context.BeginTransactionAsync(ct);
             try
             {
                 if (returnInvoice.Status == InvoiceStatus.Final)
@@ -526,7 +529,18 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync(ct);
+                try
+                {
+                    await transaction.RollbackAsync(ct);
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogWarning(rollbackException,
+                        "Rollback failed after cancelling SalesReturnInvoice {ReturnInvoiceId}; the database may already have rolled back the transaction.",
+                        id);
+                }
+
+                _logger.LogError(ex, "Error cancelling SalesReturnInvoice {ReturnInvoiceId}", id);
                 return BadRequest(new ApiResponse
                 {
                     Status = false,
