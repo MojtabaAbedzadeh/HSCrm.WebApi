@@ -378,8 +378,14 @@ namespace HSCrm.WebApi.Controllers
                 {
                     // Lock the source invoice row before reading prior returns. This serializes
                     // confirmations that target the same invoice on SQL Server.
-                    await _context.AcquireSalesInvoiceReturnLockAsync(
+                    var sourceInvoiceLocked = await _context.AcquireSalesInvoiceReturnLockAsync(
                         returnInvoice.SalesInvoiceId.Value, tenantId!.Value, fiscalYearId!.Value, ct);
+
+                    if (!sourceInvoiceLocked)
+                    {
+                        await transaction.RollbackAsync(ct);
+                        return BadRequest("فاکتور فروش مرجع یافت نشد یا متعلق به شرکت/سال مالی جاری نیست.");
+                    }
 
                     var sourceInvoice = await _context.salesInvoiceUW
                         .Query()
@@ -450,7 +456,17 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync(ct);
+                try
+                {
+                    await transaction.RollbackAsync(ct);
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogWarning(rollbackException,
+                        "Rollback failed after confirming SalesReturnInvoice {ReturnInvoiceId}; the database may already have rolled back the transaction.",
+                        id);
+                }
+
                 _logger.LogError(ex, "Error confirming SalesReturnInvoice {ReturnInvoiceId}", id);
                 return StatusCode(500, new ApiResponse
                 {
