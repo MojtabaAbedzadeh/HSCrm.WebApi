@@ -21,7 +21,7 @@ jobs:
         ports:
           - 1433:1433
         options: >-
-          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Test_only_Password!2026' -Q 'SELECT 1' || exit 1"
+          --health-cmd "bash -c 'echo > /dev/tcp/127.0.0.1/1433' || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 20
