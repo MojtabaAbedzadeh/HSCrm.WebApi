@@ -556,6 +556,9 @@ namespace HSCrm.UnitTests
                 && x.ReferenceId == purchaseReturn.Id);
             Assert.Equal(1_100_000m, returnTransaction.UnitCost);
             Assert.Equal(3_300_000m, returnTransaction.TotalCost);
+            var sourceFifoLayer = await context.InventoryTransactions.SingleAsync(x =>
+                x.ReferenceType == InventoryReferenceType.PurchaseInvoice && x.ReferenceId == pi.Id);
+            Assert.Equal(7m, sourceFifoLayer.RemainingFifoQuantity);
 
             // سند حسابداری برگشت با تخفیف جداگانه متوازن می‌ماند.
             Assert.Equal(3_600_000m, prVoucher.TotalDebit);
