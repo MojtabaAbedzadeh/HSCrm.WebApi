@@ -5,9 +5,8 @@ using Xunit.Abstractions;
 namespace HSCrm.UnitTests;
 
 /// <summary>
-/// SQL Server regression test for the aggregate-return race.
-/// This uses two independent connections and real SERIALIZABLE transactions;
-/// EF Core InMemory cannot validate this behavior.
+/// SQL Server regression test for serializing returns against the same source invoice.
+/// Uses two independent connections and the same UPDLOCK/HOLDLOCK strategy as UnitOfWork.
 /// </summary>
 public sealed class SqlServerReturnConcurrencyTests
 {
@@ -26,8 +25,9 @@ public sealed class SqlServerReturnConcurrencyTests
             return;
         }
 
-        var table = "ReturnConcurrency_" + Guid.NewGuid().ToString("N");
-        var quotedTable = "[dbo].[" + table + "]";
+        var suffix = Guid.NewGuid().ToString("N");
+        var sourceTable = "[dbo].[ReturnSource_" + suffix + "]";
+        var returnTable = "[dbo].[ReturnRows_" + suffix + "]";
         var connectionString = new SqlConnectionStringBuilder(configuredConnection)
         {
             ConnectTimeout = 15,
@@ -41,15 +41,24 @@ public sealed class SqlServerReturnConcurrencyTests
                 await setup.OpenAsync();
                 await using var command = setup.CreateCommand();
                 command.CommandText = $@"
-CREATE TABLE {quotedTable}
+CREATE TABLE {sourceTable}
+(
+    Id int NOT NULL PRIMARY KEY,
+    TenantId int NOT NULL,
+    FiscalYearId int NOT NULL,
+    IsDeleted bit NOT NULL
+);
+CREATE TABLE {returnTable}
 (
     Id int IDENTITY(1,1) NOT NULL PRIMARY KEY,
     SourceInvoiceId int NOT NULL,
     ProductId int NOT NULL,
     Quantity decimal(18,2) NOT NULL
 );
-CREATE INDEX IX_{table}_Source_Product
-    ON {quotedTable}(SourceInvoiceId, ProductId);";
+CREATE INDEX IX_{suffix}_Source_Product
+    ON {returnTable}(SourceInvoiceId, ProductId);
+INSERT INTO {sourceTable}(Id, TenantId, FiscalYearId, IsDeleted)
+VALUES (1001, 7, 12, 0);";
                 await command.ExecuteNonQueryAsync();
             }
 
@@ -70,13 +79,29 @@ CREATE INDEX IX_{table}_Source_Product
 
                 try
                 {
+                    // Mirrors UnitOfWork.AcquireSalesInvoiceReturnLockAsync:
+                    // one transaction at a time may validate returns for this source invoice.
+                    await using (var lockCommand = connection.CreateCommand())
+                    {
+                        lockCommand.Transaction = transaction;
+                        lockCommand.CommandText = $@"
+SELECT Id FROM {sourceTable} WITH (UPDLOCK, HOLDLOCK)
+WHERE Id = 1001 AND TenantId = 7 AND FiscalYearId = 12 AND IsDeleted = 0;";
+                        var lockedId = await lockCommand.ExecuteScalarAsync();
+                        if (lockedId == null || lockedId == DBNull.Value)
+                        {
+                            await transaction.RollbackAsync();
+                            return false;
+                        }
+                    }
+
                     decimal alreadyReturned;
                     await using (var read = connection.CreateCommand())
                     {
                         read.Transaction = transaction;
                         read.CommandText = $@"
 SELECT COALESCE(SUM(Quantity), 0)
-FROM {quotedTable}
+FROM {returnTable}
 WHERE SourceInvoiceId = 1001 AND ProductId = 501;";
                         alreadyReturned = Convert.ToDecimal(await read.ExecuteScalarAsync());
                     }
@@ -92,7 +117,7 @@ WHERE SourceInvoiceId = 1001 AND ProductId = 501;";
                     {
                         insert.Transaction = transaction;
                         insert.CommandText = $@"
-INSERT INTO {quotedTable}(SourceInvoiceId, ProductId, Quantity)
+INSERT INTO {returnTable}(SourceInvoiceId, ProductId, Quantity)
 VALUES (1001, 501, 6);";
                         await insert.ExecuteNonQueryAsync();
                     }
@@ -102,8 +127,7 @@ VALUES (1001, 501, 6);";
                 }
                 catch (SqlException ex) when (ex.Number == 1205)
                 {
-                    // SQL Server selected this transaction as the deadlock victim.
-                    // The server has already rolled back the deadlock victim transaction.
+                    // SQL Server has already rolled back the deadlock victim transaction.
                     return false;
                 }
             }
@@ -118,11 +142,10 @@ VALUES (1001, 501, 6);";
             {
                 await verify.OpenAsync();
                 await using var command = verify.CreateCommand();
-                command.CommandText = $"SELECT COALESCE(SUM(Quantity), 0) FROM {quotedTable};";
+                command.CommandText = $"SELECT COALESCE(SUM(Quantity), 0) FROM {returnTable};";
                 var totalReturned = Convert.ToDecimal(await command.ExecuteScalarAsync());
 
                 Assert.Equal(1, outcomes.Count(x => x));
-                Assert.InRange(totalReturned, 0m, 10m);
                 Assert.Equal(6m, totalReturned);
                 _output.WriteLine($"Concurrent outcomes: {string.Join(", ", outcomes)}; total returned: {totalReturned}.");
             }
@@ -132,7 +155,9 @@ VALUES (1001, 501, 6);";
             await using var cleanup = new SqlConnection(connectionString);
             await cleanup.OpenAsync();
             await using var command = cleanup.CreateCommand();
-            command.CommandText = $"IF OBJECT_ID(N'{quotedTable}', N'U') IS NOT NULL DROP TABLE {quotedTable};";
+            command.CommandText = $@"
+IF OBJECT_ID(N'{sourceTable}', N'U') IS NOT NULL DROP TABLE {sourceTable};
+IF OBJECT_ID(N'{returnTable}', N'U') IS NOT NULL DROP TABLE {returnTable};";
             await command.ExecuteNonQueryAsync();
         }
     }
