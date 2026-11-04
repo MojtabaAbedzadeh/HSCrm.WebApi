@@ -526,10 +526,16 @@ namespace HSCrm.UnitTests
             {
                 TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1, PurchaseInvoiceId = pi.Id, PurchaserUserId = "u1",
                 Number = "PR-1", IssueDate = new DateTime(2025, 4, 6), Status = InvoiceStatus.Final,
-                Subtotal = 3_000_000m, Total = 3_000_000m, Description = "برگشت ۳ عدد معیوب به تأمین‌کننده",
+                Subtotal = 3_600_000m, Discount = 300_000m, Total = 3_300_000m,
+                Description = "برگشت ۳ عدد با قیمت فاکتور برگشت متفاوت از بهای لایه FIFO",
                 Items = new List<PurchaseReturnInvoiceItem>
                 {
-                    new() { TenantId = 1, ProductId = 1, Quantity = 3, UnitPriceReturn = 1_000_000m, LineTotal = 3_000_000m }
+                    new()
+                    {
+                        TenantId = 1, ProductId = 1, Quantity = 3,
+                        UnitPriceReturn = 1_200_000m, Discount = 300_000m,
+                        LineTotal = 3_300_000m
+                    }
                 }
             };
             context.PurchaseReturnInvoices.Add(purchaseReturn);
@@ -541,8 +547,25 @@ namespace HSCrm.UnitTests
 
             var inv = await context.Inventories.FirstAsync(x => x.ProductId == 1);
             Assert.Equal(7m, inv.Quantity); // 10 - 3 = 7
-            Assert.Equal(3_000_000m, prVoucher.TotalDebit);
-            Assert.Equal(3_000_000m, prVoucher.TotalCredit);
+
+            // بهای برگشت باید از فاکتور برگشت (۱.۲M فی، ۳۰۰K تخفیف) گرفته شود،
+            // نه از بهای ۱M لایه FIFO فاکتور خرید.
+            Assert.Equal(957_142.86m, inv.AverageUnitCost); // (10M - 3.3M) / 7
+            var returnTransaction = await context.InventoryTransactions.SingleAsync(x =>
+                x.ReferenceType == InventoryReferenceType.PurchaseReturnInvoice
+                && x.ReferenceId == purchaseReturn.Id);
+            Assert.Equal(1_100_000m, returnTransaction.UnitCost);
+            Assert.Equal(3_300_000m, returnTransaction.TotalCost);
+
+            // سند حسابداری برگشت با تخفیف جداگانه متوازن می‌ماند.
+            Assert.Equal(3_600_000m, prVoucher.TotalDebit);
+            Assert.Equal(3_600_000m, prVoucher.TotalCredit);
+
+            // ابطال برگشت باید همان بهای فاکتور برگشت را به ارزش موجودی بازگرداند.
+            inventory.RollbackInventoryForPurchaseReturn(purchaseReturn);
+            await context.SaveChangesAsync();
+            Assert.Equal(10m, inv.Quantity);
+            Assert.Equal(1_000_000m, inv.AverageUnitCost);
         }
 
         [Fact(DisplayName = "09. اسناد دریافت و پرداخت خزانه‌داری و کنترل مانده تفصیلی بانک")]
