@@ -215,7 +215,16 @@ namespace HSCrm.WebApi.Controllers
                     .Where(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && x.PurchaseInvoiceId == model.PurchaseInvoiceId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted)
                     .ToListAsync(ct);
 
-                foreach (var reqItem in model.Items)
+                // Group request rows by product so duplicate rows cannot bypass the total return limit.
+                var requestedQuantities = model.Items
+                    .GroupBy(x => x.ProductId)
+                    .Select(group => new
+                    {
+                        ProductId = group.Key,
+                        Quantity = group.Sum(x => x.Quantity)
+                    });
+
+                foreach (var reqItem in requestedQuantities)
                 {
                     var purchasedQty = origPurchase.Items
                         .Where(x => x.ProductId == reqItem.ProductId)
