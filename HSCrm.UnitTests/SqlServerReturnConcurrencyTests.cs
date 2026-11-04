@@ -19,11 +19,9 @@ public sealed class SqlServerReturnConcurrencyTests
     public async Task ConcurrentReturns_CannotExceedSourceInvoiceQuantity()
     {
         var configuredConnection = Environment.GetEnvironmentVariable("HSCrmSqlServer");
-        if (string.IsNullOrWhiteSpace(configuredConnection))
-        {
-            _output.WriteLine("SKIPPED: HSCrmSqlServer is not configured. CI supplies an ephemeral SQL Server.");
-            return;
-        }
+        Assert.False(
+            string.IsNullOrWhiteSpace(configuredConnection),
+            "HSCrmSqlServer must be configured for this SQL Server integration test. The test must not silently pass without running.");
 
         var suffix = Guid.NewGuid().ToString("N");
         var sourceTable = "[dbo].[ReturnSource_" + suffix + "]";
