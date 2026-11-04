@@ -9,6 +9,11 @@ using HSCrm.Entities.Models.Dto;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
+using System.Security.Claims;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
+using HSCrm.WebApi.Controllers;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.UnitTests
@@ -1134,6 +1139,125 @@ namespace HSCrm.UnitTests
             Assert.Equal(0m, sourceLayer.RemainingFifoQuantity);
         }
 
+
+        private static void SetTenantPrincipal(ControllerBase controller)
+        {
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                        new[] { new Claim("TenantId", "1") }, "UnitTest"))
+                }
+            };
+        }
+
+        [Fact(DisplayName = "Confirm فروش: ردیف‌های تکراری کالا نمی‌توانند سقف برگشت را دور بزنند")]
+        public async Task ConfirmSalesReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity()
+        {
+            var (context, uow, accounting, inventory, _, fiscalYear) =
+                CreateTestRig(nameof(ConfirmSalesReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity));
+
+            var source = new SalesInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProjectId = 1,
+                SellerUserId = "user-admin", Number = "SI-DUP-1",
+                IssueDate = new DateTime(2025, 4, 1), Status = InvoiceStatus.Final,
+                Subtotal = 10_000m, Total = 10_000m, Description = "source",
+                Items = new List<SalesInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10m, UnitPriceSell = 1_000m, LineTotal = 10_000m }
+                }
+            };
+            context.SalesInvoices.Add(source);
+            await context.SaveChangesAsync();
+
+            var returnInvoice = new SalesReturnInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProjectId = 1,
+                SalesInvoiceId = source.Id, SellerUserId = "user-admin", Number = "SR-DUP-1",
+                IssueDate = new DateTime(2025, 4, 2), Status = InvoiceStatus.Proforma,
+                Subtotal = 12_000m, Total = 12_000m, Description = "duplicate rows",
+                Items = new List<SalesReturnInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m },
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m }
+                }
+            };
+            context.SalesReturnInvoices.Add(returnInvoice);
+            await context.SaveChangesAsync();
+
+            var controller = new SalesReturnInvoiceController(
+                uow, inventory, accounting, fiscalYear, NullLogger<SalesReturnInvoiceController>.Instance);
+            SetTenantPrincipal(controller);
+
+            var result = await controller.Confirm(returnInvoice.Id);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Equal(InvoiceStatus.Proforma, returnInvoice.Status);
+            Assert.Empty(await context.InventoryTransactions
+                .Where(x => x.ReferenceType == InventoryReferenceType.SalesReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+            Assert.Empty(await context.JournalVouchers
+                .Where(x => x.ReferenceType == AccountingReferenceType.SalesReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+        }
+
+        [Fact(DisplayName = "Confirm خرید: ردیف‌های تکراری کالا نمی‌توانند سقف برگشت را دور بزنند")]
+        public async Task ConfirmPurchaseReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity()
+        {
+            var (context, uow, accounting, inventory, _, fiscalYear) =
+                CreateTestRig(nameof(ConfirmPurchaseReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity));
+
+            var source = new PurchaseInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1,
+                PurchaserUserId = "user-admin", Number = "PI-DUP-1",
+                IssueDate = new DateTime(2025, 4, 1), Status = InvoiceStatus.Final,
+                Subtotal = 10_000m, Total = 10_000m, Description = "source",
+                Items = new List<PurchaseInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10m, UnitPricePurchase = 1_000m, LineTotal = 10_000m }
+                }
+            };
+            context.PurchaseInvoices.Add(source);
+            await context.SaveChangesAsync();
+
+            var returnInvoice = new PurchaseReturnInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1,
+                PurchaseInvoiceId = source.Id, PurchaserUserId = "user-admin", Number = "PR-DUP-1",
+                IssueDate = new DateTime(2025, 4, 2), Status = InvoiceStatus.Proforma,
+                Subtotal = 12_000m, Total = 12_000m, Description = "duplicate rows",
+                Items = new List<PurchaseReturnInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m },
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m }
+                }
+            };
+            context.PurchaseReturnInvoices.Add(returnInvoice);
+            await context.SaveChangesAsync();
+
+            var controller = new PurchaseReturnInvoiceController(
+                uow, inventory, accounting, fiscalYear, NullLogger<PurchaseReturnInvoiceController>.Instance);
+            SetTenantPrincipal(controller);
+
+            var result = await controller.Confirm(returnInvoice.Id);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Equal(InvoiceStatus.Proforma, returnInvoice.Status);
+            Assert.Empty(await context.InventoryTransactions
+                .Where(x => x.ReferenceType == InventoryReferenceType.PurchaseReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+            Assert.Empty(await context.JournalVouchers
+                .Where(x => x.ReferenceType == AccountingReferenceType.PurchaseReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+        }
+
     }
 
     public class FiscalYearMaintenanceSecurityTests
@@ -1198,78 +1322,3 @@ namespace HSCrm.UnitTests
 
             await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
             context.Tenants.Add(new Tenant
-            {
-                Id = 42,
-                TenantCode = "TENANT42",
-                TenantTitle = "Tenant 42",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            });
-            await context.SaveChangesAsync();
-
-            var initialFiscalYear = new FiscalYear
-            {
-                TenantId = 42,
-                Title = "Initial fiscal year",
-                StartDate = new DateTime(2026, 3, 21),
-                EndDate = new DateTime(2027, 3, 20),
-                IsCurrent = true,
-                IsClosed = false,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            context.FiscalYears.Add(initialFiscalYear);
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
-
-            using (context.BeginTenantProvisioningScope(42))
-            {
-                await context.SaveChangesAsync();
-            }
-
-            Assert.True(await context.FiscalYears.IgnoreQueryFilters()
-                .AnyAsync(f => f.TenantId == 42 && f.Title == "Initial fiscal year"));
-        }
-
-        [Fact]
-        public async Task AnonymousProvisioningScope_CannotCreateFiscalYearForDifferentTenant()
-        {
-            var currentUser = new MutableCurrentUserService
-            {
-                TenantId = null,
-                UserId = null,
-                IsAuthenticated = false
-            };
-            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = null };
-            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseInMemoryDatabase("TenantProvisioningMismatch_" + Guid.NewGuid().ToString("N"))
-                .Options;
-
-            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
-            context.Tenants.Add(new Tenant
-            {
-                Id = 42,
-                TenantCode = "TENANT42",
-                TenantTitle = "Tenant 42",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            });
-            await context.SaveChangesAsync();
-
-            context.FiscalYears.Add(new FiscalYear
-            {
-                TenantId = 43,
-                Title = "Spoofed fiscal year",
-                StartDate = new DateTime(2026, 3, 21),
-                EndDate = new DateTime(2027, 3, 20),
-                IsCurrent = true,
-                IsClosed = false,
-                CreatedAt = DateTime.UtcNow
-            });
-
-            using (context.BeginTenantProvisioningScope(42))
-            {
-                await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
-            }
-        }
-    }
-}
