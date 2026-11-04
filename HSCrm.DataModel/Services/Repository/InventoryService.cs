@@ -478,6 +478,10 @@ namespace HSCrm.DataModel.Services.Repository
                 if (inventory == null || inventory.Quantity < item.Quantity)
                     throw new InvalidOperationException("موجودی انبار برای ثبت فاکتور برگشت از خرید کافی نیست.");
 
+                // سیاست ارزش‌گذاری برگشت خرید: بهای خروج از انبار از خود فاکتور برگشت محاسبه می‌شود
+                // (قیمت واحد × تعداد، پس از کسر تخفیف ردیف و بدون مالیات قابل استرداد).
+                // بهای لایه‌های FIFO صرفاً برای به‌روزرسانی مقدار باقیمانده لایه‌هاست و نباید
+                // جایگزین قیمت ثبت‌شده در فاکتور برگشت شود.
                 decimal grossReturn = item.Quantity * item.UnitPriceReturn;
                 decimal netLineReturn = Math.Max(0m, grossReturn - (item.Discount ?? 0m));
                 decimal returnUnitCost = item.Quantity > 0
