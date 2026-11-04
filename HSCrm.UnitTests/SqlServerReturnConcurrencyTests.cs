@@ -103,7 +103,7 @@ VALUES (1001, 501, 6);";
                 catch (SqlException ex) when (ex.Number == 1205)
                 {
                     // SQL Server selected this transaction as the deadlock victim.
-                    await transaction.RollbackAsync();
+                    // The server has already rolled back the deadlock victim transaction.
                     return false;
                 }
             }
