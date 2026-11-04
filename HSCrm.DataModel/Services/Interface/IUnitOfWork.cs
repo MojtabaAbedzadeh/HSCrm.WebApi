@@ -1,5 +1,6 @@
 ﻿using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace HSCrm.DataModel.Services.Interface
 {
@@ -36,6 +37,9 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<SalesReturnInvoiceItem> salesReturnInvoiceItemUW { get; }
         GenericCRUDClass<PurchaseReturnInvoice> purchaseReturnInvoiceUW { get; }
         GenericCRUDClass<PurchaseReturnInvoiceItem> purchaseReturnInvoiceItemUW { get; }
+
+        Task<bool> AcquireSalesInvoiceReturnLockAsync(int invoiceId, int tenantId, int fiscalYearId, CancellationToken ct = default);
+        Task<bool> AcquirePurchaseInvoiceReturnLockAsync(int invoiceId, int tenantId, int fiscalYearId, CancellationToken ct = default);
 
         IEntityTransaction BeginTransaction();
         IEntityTransaction BeginTransaction(System.Data.IsolationLevel isolationLevel);
