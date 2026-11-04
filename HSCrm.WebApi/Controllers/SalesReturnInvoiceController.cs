@@ -376,6 +376,11 @@ namespace HSCrm.WebApi.Controllers
 
                 if (returnInvoice.SalesInvoiceId.HasValue)
                 {
+                    // Lock the source invoice row before reading prior returns. This serializes
+                    // confirmations that target the same invoice on SQL Server.
+                    await _context.AcquireSalesInvoiceReturnLockAsync(
+                        returnInvoice.SalesInvoiceId.Value, tenantId!.Value, fiscalYearId!.Value, ct);
+
                     var sourceInvoice = await _context.salesInvoiceUW
                         .Query()
                         .AsNoTracking()
