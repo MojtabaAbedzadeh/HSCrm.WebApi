@@ -53,11 +53,16 @@ CREATE INDEX IX_{table}_Source_Product
                 await command.ExecuteNonQueryAsync();
             }
 
-            var bothRead = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var readCount = 0;
+            var startGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var readyCount = 0;
+            var bothReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             async Task<bool> TryPostReturnAsync()
             {
+                if (Interlocked.Increment(ref readyCount) == 2)
+                    bothReady.TrySetResult(true);
+
+                await startGate.Task;
                 await using var connection = new SqlConnection(connectionString);
                 await connection.OpenAsync();
                 await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
@@ -75,11 +80,6 @@ FROM {quotedTable}
 WHERE SourceInvoiceId = 1001 AND ProductId = 501;";
                         alreadyReturned = Convert.ToDecimal(await read.ExecuteScalarAsync());
                     }
-
-                    if (Interlocked.Increment(ref readCount) == 2)
-                        bothRead.TrySetResult(true);
-
-                    await bothRead.Task.WaitAsync(TimeSpan.FromSeconds(20));
 
                     // Both requests attempt to return 6 while the source invoice contains 10.
                     if (alreadyReturned + 6m > 10m)
@@ -108,7 +108,11 @@ VALUES (1001, 501, 6);";
                 }
             }
 
-            var outcomes = await Task.WhenAll(TryPostReturnAsync(), TryPostReturnAsync());
+            var firstAttempt = TryPostReturnAsync();
+            var secondAttempt = TryPostReturnAsync();
+            await bothReady.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            startGate.TrySetResult(true);
+            var outcomes = await Task.WhenAll(firstAttempt, secondAttempt);
 
             await using (var verify = new SqlConnection(connectionString))
             {
