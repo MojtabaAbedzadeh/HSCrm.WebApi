@@ -65,6 +65,9 @@ namespace HSCrm.DataModel.Services.Repository
             if (role == null)
                 return false;
 
+            if (IsProtectedSystemRole(role))
+                throw new InvalidOperationException("Protected system roles cannot be modified.");
+
             if (string.IsNullOrWhiteSpace(roleName))
                 throw new ArgumentException("Role name is required.");
 
@@ -83,6 +86,12 @@ namespace HSCrm.DataModel.Services.Repository
                 : null;
             if (role == null)
                 return false;
+
+            if (IsProtectedSystemRole(role))
+                throw new InvalidOperationException("Protected system roles cannot be deleted.");
+
+            if (await _context.UserRoles.AnyAsync(ur => ur.RoleId == roleId))
+                throw new InvalidOperationException("A role assigned to users cannot be deleted.");
 
             var rolePermissions = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId)
@@ -121,10 +130,18 @@ namespace HSCrm.DataModel.Services.Repository
             if (!roleExists)
                 throw new InvalidOperationException("Role not found.");
 
+            var requestedNames = permissionNames
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
             var permissionIds = await _context.Permissions
-                .Where(p => permissionNames.Contains(p.Name))
+                .Where(p => requestedNames.Contains(p.Name))
                 .Select(p => p.Id)
                 .ToListAsync();
+
+            if (permissionIds.Count != requestedNames.Count)
+                throw new InvalidOperationException("One or more requested permissions do not exist.");
 
             var existing = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId)
@@ -141,6 +158,11 @@ namespace HSCrm.DataModel.Services.Repository
             await _context.RolePermissions.AddRangeAsync(newMappings);
             await _context.SaveChangesAsync();
         }
+
+        private static bool IsProtectedSystemRole(ApplicationRole role) =>
+            role.TenantId == 1 &&
+            new[] { "Admin", "Owner", "Customer", "User" }
+                .Contains(role.Name, StringComparer.OrdinalIgnoreCase);
 
         public async Task AssignRoleToUserAsync(string userId, string roleId)
         {
