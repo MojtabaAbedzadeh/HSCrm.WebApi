@@ -1983,7 +1983,10 @@ namespace HSCrm.DataModel.Services.Repository
             var fiscalYearId = _currentFiscalYear.FiscalYearId ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
 
             var cheque = await _context.Set<Cheque>()
-                .FirstOrDefaultAsync(x => x.Id == model.ChequeId && x.TenantId == tenantId && !x.IsDeleted, ct)
+                .FirstOrDefaultAsync(x => x.Id == model.ChequeId
+                    && x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId
+                    && !x.IsDeleted, ct)
                 ?? throw new InvalidOperationException("چک مورد نظر یافت نشد.");
 
             if (cheque.Status == model.NewStatus)
