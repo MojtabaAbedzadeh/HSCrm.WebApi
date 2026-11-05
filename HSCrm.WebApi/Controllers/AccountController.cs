@@ -287,6 +287,36 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
+        [Authorize]
+        [HttpPost("SwitchFiscalYear")]
+        public async Task<IActionResult> SwitchFiscalYear([FromBody] int fiscalYearId, CancellationToken ct)
+        {
+            if (fiscalYearId <= 0)
+                return BadRequest(new { message = "سال مالی انتخاب‌شده معتبر نیست." });
+
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null || user.TenantId <= 0 || !user.UserStatus)
+                return Unauthorized(new { message = "کاربر احراز هویت‌شده معتبر نیست." });
+
+            var fiscalYear = await _iuwcontext.fiscalYearUW
+                .Get(f => f.Id == fiscalYearId && f.TenantId == user.TenantId)
+                .IgnoreQueryFilters()
+                .Where(f => !f.IsDeleted && !f.IsClosed && f.Tenant.IsActive && !f.Tenant.IsDeleted)
+                .SingleOrDefaultAsync(ct);
+
+            if (fiscalYear == null)
+                return BadRequest(new { message = "سال مالی انتخاب‌شده برای شرکت جاری معتبر یا باز نیست." });
+
+            var token = await _token.GenerateTokenAsync(user, fiscalYear.Id, ct);
+
+            return Ok(new
+            {
+                Token = token,
+                FiscalYearId = fiscalYear.Id,
+                FiscalYearTitle = fiscalYear.Title
+            });
+        }
+
         private async Task<IActionResult?> ValidateCredentialsAsync(ApplicationUser? user, string password)
         {
             if (user == null)
