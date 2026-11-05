@@ -176,13 +176,18 @@ namespace HSCrm.WebApi.Controllers
                 || (model.SalesInvoiceId.HasValue && !_context.salesInvoiceUW.Get(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantIdForUpdate.Value && x.FiscalYearId == fiscalYearForUpdate.Value && !x.IsDeleted).Any()))
                 return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = "مشتری، حساب بانکی، فاکتور یا سال مالی معتبر نیست." });
 
-            var invoiceValidation = ValidateInvoiceCustomerAndRemainingBalance(
-                model.SalesInvoiceId, model.CustomerId, model.Amount, tenantIdForUpdate.Value,
-                fiscalYearForUpdate.Value, receipt.Id);
-            if (!invoiceValidation.IsValid)
-                return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = invoiceValidation.Error });
+            // Serialize the remaining-balance check and update so concurrent edits
+            // cannot both consume the same invoice balance.
+            using var transaction = _context.BeginTransaction(IsolationLevel.Serializable);
+            try
+            {
+                var invoiceValidation = ValidateInvoiceCustomerAndRemainingBalance(
+                    model.SalesInvoiceId, model.CustomerId, model.Amount, tenantIdForUpdate.Value,
+                    fiscalYearForUpdate.Value, receipt.Id);
+                if (!invoiceValidation.IsValid)
+                    return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = invoiceValidation.Error });
 
-            receipt.SalesInvoiceId = model.SalesInvoiceId;
+                receipt.SalesInvoiceId = model.SalesInvoiceId;
             receipt.CustomerId = invoiceValidation.CustomerId;
             receipt.BankAccountId = model.BankAccountId;
             receipt.ReceiptDate = model.ReceiptDate;
@@ -193,8 +198,15 @@ namespace HSCrm.WebApi.Controllers
             receipt.ModifiedAt = DateTime.Now;
             receipt.ModifiedById = _currentUserService.UserId;
 
-            _context.receiptUW.Update(receipt, cancellationToken);
-            await _context.SaveAsync();
+                _context.receiptUW.Update(receipt, cancellationToken);
+                await _context.SaveAsync();
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
 
             var result = _mapper.Map<ReceiptModel>(receipt);
 
