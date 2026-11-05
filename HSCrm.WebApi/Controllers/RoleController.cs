@@ -239,6 +239,18 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            var isAssigned = await _dbContext.UserRoles.AnyAsync(x => x.RoleId == roleId);
+            if (isAssigned)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "این نقش به کاربران اختصاص داده شده است؛ ابتدا نقش کاربران را تغییر دهید.",
+                    Data = null
+                };
+            }
+
             var result = await _roleManager.DeleteAsync(role);
 
             if (!result.Succeeded)
