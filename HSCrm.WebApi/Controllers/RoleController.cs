@@ -394,8 +394,7 @@ namespace HSCrm.WebApi.Controllers
 
             _dbContext.RolePermissions.RemoveRange(oldPermissions);
 
-            var newPermissions = model.PermissionIds
-                .Distinct()
+            var newPermissions = requestedPermissionIds
                 .Select(permissionId => new RolePermission
                 {
                     RoleId = model.RoleId,
