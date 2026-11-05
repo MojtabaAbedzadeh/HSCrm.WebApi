@@ -106,12 +106,26 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                // بررسی تکراری بودن
-                var userNameExist = await _userManager.FindByNameAsync(model.UserNameC);
-                var emailExist = await _userManager.FindByEmailAsync(model.EmailC);
-                var phoneExist = _userManager.Users.FirstOrDefault(x => x.PhoneNumber == model.PhoneNumberC);
+                var tenantId = User.GetTenantId();
+                if (!tenantId.HasValue || tenantId.Value <= 0)
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.BadRequest,
+                        Message = "شرکت جاری معتبر نیست."
+                    };
+                }
 
-                if (userNameExist != null || emailExist != null || phoneExist != null)
+                // Identity usernames/emails are globally unique; phone numbers are checked consistently.
+                var userNameExist = await _userManager.FindByNameAsync(model.UserNameC);
+                var emailExist = string.IsNullOrWhiteSpace(model.EmailC)
+                    ? null
+                    : await _userManager.FindByEmailAsync(model.EmailC);
+                var phoneExist = await _userManager.Users
+                    .AnyAsync(x => x.PhoneNumber == model.PhoneNumberC);
+
+                if (userNameExist != null || emailExist != null || phoneExist)
                 {
                     return new ApiResponse<UserModelDto>
                     {
@@ -131,7 +145,7 @@ namespace HSCrm.WebApi.Controllers
                     UserGender = model.UserGenderC,
                     PhoneNumber = model.PhoneNumberC,
                     Email = model.EmailC,
-                    TenantId = User.GetTenantId().Value,                    
+                    TenantId = tenantId.Value,                    
                     IsTenantOwner = false,
                     UserName = model.UserNameC
                 };
@@ -335,12 +349,6 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
                 };
             }
-            return new ApiResponse<UserModelDto>
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.ServerError,
-                Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
-            };
         }
 
         [HttpPost("AssignRole")]
@@ -368,22 +376,22 @@ namespace HSCrm.WebApi.Controllers
                     AdditionalData = null
                 };
             }
-            catch (InvalidOperationException invalidOpEx)
+            catch (InvalidOperationException)
             {
                 return new ApiResponse<object>
                 {
                     Status = false,
-                    Message = $"خطای عملیاتی: {invalidOpEx.Message}",
-                    StatusCode = ApiResultStatusCode.NotFound                                 
+                    Message = "کاربر یا نقش موردنظر یافت نشد یا انجام این تغییر مجاز نیست.",
+                    StatusCode = ApiResultStatusCode.Conflict
                 };
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return new ApiResponse<object>
                 {
                     Status = false,
-                    Message = $"یک خطای غیرمنتظره رخ داد: {ex.Message}",
-                    StatusCode = ApiResultStatusCode.ServerError 
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                    StatusCode = ApiResultStatusCode.ServerError
                 };
             }
         }
