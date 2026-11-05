@@ -30,7 +30,7 @@ namespace HSCrm.DataModel.Services.Repository
                 .Where(r => r.TenantId == tenantId.Value &&
                     !(r.TenantId == 1 &&
                       new[] { "Admin", "Owner", "Customer", "User" }
-                          .Contains(r.Name, StringComparer.OrdinalIgnoreCase)))
+                          .Contains(r.Name)))
                 .OrderBy(r => r.Name)
                 .ToListAsync();
         }
