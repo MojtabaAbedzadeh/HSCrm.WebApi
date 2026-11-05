@@ -139,23 +139,37 @@ namespace HSCrm.WebApi.Controllers
                 if (string.IsNullOrWhiteSpace(model.PasswordC))
                     return new ApiResponse<UserModelDto> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "برای کاربر باید رمز عبور اختصاصی تعیین شود." };
 
-                IdentityResult result = await _userManager.CreateAsync(user, model.PasswordC);
+                // Keep user creation and initial role assignment atomic.
+                await using var transaction = await _dbContext.Database.BeginTransactionAsync();
 
+                IdentityResult result = await _userManager.CreateAsync(user, model.PasswordC);
                 if (!result.Succeeded)
                 {
                     return new ApiResponse<UserModelDto>
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.ServerError,
+                        StatusCode = ApiResultStatusCode.BadRequest,
                         Message = string.Join(" | ", result.Errors.Select(x => x.Description))
                     };
                 }
 
-                // افزودن نقش
+                // افزودن نقش اولیه؛ در صورت شکست، تراکنش ایجاد کاربر نیز Rollback می‌شود.
                 string roleName = user.UserType == 1 ? "Admin" : "user";
-                await _userManager.AddToRoleAsync(user, roleName);
+                var roleResult = await _userManager.AddToRoleAsync(user, roleName);
+                if (!roleResult.Succeeded)
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.ServerError,
+                        Message = "ایجاد نقش اولیه برای کاربر ناموفق بود: " +
+                                  string.Join(" | ", roleResult.Errors.Select(x => x.Description))
+                    };
+                }
 
-                // ✅ ساخت DTO (دیگه Entity برنمی‌گردونیم)
+                await transaction.CommitAsync();
+
+                // ساخت DTO؛ هیچ Entity مربوط به Identity به خروجی API نشت نمی‌کند.
                 var dto = new UserModelDto
                 {
                     Id = user.Id,
