@@ -59,7 +59,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetUserRole")]
         [Permission(Permissions.Roles.View)]
-        public async Task<ApiResponse<UserRole>> GetUserRole(string userId, CancellationToken ct)
+        public async Task<ApiResponse<UserRole?>> GetUserRole(string userId, CancellationToken ct)
         {
             var currentTenantId = _userService.TenantId;
 
@@ -73,7 +73,7 @@ namespace HSCrm.WebApi.Controllers
                 })
                 .FirstOrDefaultAsync(ct);
 
-            return new ApiResponse<UserRole>
+            return new ApiResponse<UserRole?>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
