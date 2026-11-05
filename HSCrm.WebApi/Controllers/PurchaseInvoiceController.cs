@@ -131,7 +131,7 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<PurchaseInvoice>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.PurchaseInvoices.View)]
-        public ApiResponse GetById(int InvoiceId)
+        public ApiResponse GetById([FromRoute(Name = "id")] int InvoiceId)
         {
             var factor = _context.purchaseInvoiceUW
        .Query()
