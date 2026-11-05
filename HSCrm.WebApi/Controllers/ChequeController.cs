@@ -53,6 +53,7 @@ namespace HSCrm.WebApi.Controllers
             CancellationToken ct)
         {
             var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
             if (!tenantId.HasValue)
                 return Unauthorized(new ApiResponse<List<Cheque>>
                 {
@@ -61,8 +62,16 @@ namespace HSCrm.WebApi.Controllers
                     Message = "دسترسی نامعتبر"
                 });
 
+            if (!fiscalYearId.HasValue)
+                return BadRequest(new ApiResponse<List<Cheque>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "سال مالی فعال انتخاب نشده است."
+                });
+
             var query = _unitOfWork.chequeUW.Get(
-                x => x.TenantId == tenantId.Value && !x.IsDeleted
+                x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted
                      && (!type.HasValue || x.Type == type.Value)
                      && (!status.HasValue || x.Status == status.Value)
                      && (!customerId.HasValue || x.CustomerId == customerId.Value)
