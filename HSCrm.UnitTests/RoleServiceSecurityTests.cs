@@ -43,6 +43,7 @@ namespace HSCrm.UnitTests
                 Id = "ordinary-role",
                 Name = "Accountant",
                 NormalizedName = "ACCOUNTANT",
+                RoleFaName = "حسابدار",
                 TenantId = 7
             });
             await context.SaveChangesAsync();
