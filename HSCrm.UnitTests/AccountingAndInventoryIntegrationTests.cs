@@ -700,6 +700,46 @@ namespace HSCrm.UnitTests
             Assert.Equal(50_000_000m, statement.BouncedChequesAmount);
         }
 
+        [Fact(DisplayName = "عودت چک دریافتنی سند متوازن صادر می‌کند و وضعیت چک را تغییر می‌دهد")]
+        public async Task ReceivableCheque_Returned_RestoresCustomerReceivableDebt()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ReceivableCheque_Returned_RestoresCustomerReceivableDebt));
+
+            var cheque = new Cheque
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                Type = ChequeType.Receivable,
+                Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-RETURN-01",
+                Amount = 25_000_000m,
+                IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1),
+                BankName = "بانک ملی",
+                CustomerId = 1
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+
+            var voucher = await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id,
+                NewStatus = ChequeStatus.Returned,
+                ActionDateShamsi = "1404/03/16",
+                Description = "عودت چک به مشتری"
+            });
+
+            Assert.Equal(ChequeStatus.Returned, cheque.Status);
+            Assert.Equal(25_000_000m, voucher.TotalDebit);
+            Assert.Equal(25_000_000m, voucher.TotalCredit);
+            Assert.Equal(AccountingReferenceType.ChequeOperation, voucher.ReferenceType);
+            Assert.Equal(cheque.Id, voucher.ReferenceId);
+            Assert.Contains(voucher.Items, item => item.Debit == 25_000_000m && item.Credit == 0m);
+            Assert.Contains(voucher.Items, item => item.Debit == 0m && item.Credit == 25_000_000m);
+        }
+
         [Fact(DisplayName = "13. خرج (پشت‌نویسی) چک دریافتنی مشتری به تأمین‌کننده (EndorsedToSupplier)")]
         public async Task Test13_ReceivableCheque_EndorsedToSupplier_TransfersReceivableNoteToSupplierPayable()
         {
