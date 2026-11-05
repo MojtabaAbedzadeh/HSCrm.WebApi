@@ -1989,6 +1989,27 @@ namespace HSCrm.DataModel.Services.Repository
             if (cheque.Status == model.NewStatus)
                 throw new InvalidOperationException("وضعیت جدید چک با وضعیت فعلی آن یکسان است.");
 
+            // Prevent transitions from terminal states and transitions that do not
+            // make sense for the cheque's direction. The caller uses a Serializable
+            // transaction so concurrent status changes cannot post duplicate vouchers.
+            var allowedNextStatuses = cheque.Type == ChequeType.Receivable
+                ? cheque.Status switch
+                {
+                    ChequeStatus.InSafe => new[] { ChequeStatus.InBankForCollection, ChequeStatus.Cleared, ChequeStatus.Bounced, ChequeStatus.EndorsedToSupplier, ChequeStatus.Returned },
+                    ChequeStatus.InBankForCollection => new[] { ChequeStatus.Cleared, ChequeStatus.Bounced, ChequeStatus.Returned },
+                    ChequeStatus.Bounced => new[] { ChequeStatus.InBankForCollection, ChequeStatus.Cleared, ChequeStatus.EndorsedToSupplier, ChequeStatus.Returned },
+                    _ => Array.Empty<ChequeStatus>()
+                }
+                : cheque.Status switch
+                {
+                    ChequeStatus.InSafe => new[] { ChequeStatus.Cleared, ChequeStatus.Bounced, ChequeStatus.Returned },
+                    ChequeStatus.Bounced => new[] { ChequeStatus.Cleared, ChequeStatus.Returned },
+                    _ => Array.Empty<ChequeStatus>()
+                };
+
+            if (!allowedNextStatuses.Contains(model.NewStatus))
+                throw new InvalidOperationException("تغییر وضعیت درخواستی با وضعیت فعلی یا نوع چک سازگار نیست.");
+
             var previousStatus = cheque.Status;
             var actionDate = !string.IsNullOrWhiteSpace(model.ActionDateShamsi)
                 ? ConvertDate.ConvertShamsiToMiladi(model.ActionDateShamsi)
