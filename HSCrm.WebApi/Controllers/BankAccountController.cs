@@ -33,8 +33,19 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.BankAccounts.View)]
         public async Task<ActionResult<ApiResponse<List<BankAccount>>>> GetAll(CancellationToken ct)
         {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+            {
+                return Unauthorized(new ApiResponse<List<BankAccount>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "دسترسی نامعتبر"
+                });
+            }
+
             var list = await _unitOfWork.bankAccountUW
-                .Get(x => !x.IsDeleted, asNoTracking: true)
+                .Get(x => x.TenantId == tenantId.Value && !x.IsDeleted, asNoTracking: true)
                 .OrderByDescending(x => x.IsDefault)
                 .ThenBy(x => x.Id)
                 .ToListAsync(ct);
