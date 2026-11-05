@@ -162,6 +162,8 @@ namespace HSCrm.DataModel.Services.Repository
 
             if (user == null)
                 throw new InvalidOperationException("User not found in the current tenant.");
+            if (user.IsTenantOwner)
+                throw new InvalidOperationException("The tenant owner account cannot be reassigned to another role.");
             if (role == null)
                 throw new InvalidOperationException("Role not found or is a protected system role.");
 
