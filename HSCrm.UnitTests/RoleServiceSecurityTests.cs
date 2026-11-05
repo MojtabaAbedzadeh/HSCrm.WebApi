@@ -252,5 +252,76 @@ namespace HSCrm.UnitTests
 
             Assert.Empty(await context.RolePermissions.ToListAsync());
         }
+
+        [Fact]
+        public async Task CreateRoleAsync_RejectsNameAlreadyUsedByAnotherTenant()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("global-role-name-create-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService { TenantId = 7, UserId = "admin", IsAuthenticated = true };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Roles.Add(new ApplicationRole
+            {
+                Id = "tenant-one-role",
+                Name = "Accountant",
+                NormalizedName = "ACCOUNTANT",
+                RoleFaName = "حسابدار",
+                TenantId = 1
+            });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.CreateRoleAsync("accountant"));
+
+            Assert.Single(await context.Roles.ToListAsync());
+        }
+
+        [Fact]
+        public async Task UpdateRoleAsync_RejectsNameAlreadyUsedByAnotherTenant()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("global-role-name-update-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService { TenantId = 7, UserId = "admin", IsAuthenticated = true };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Roles.AddRange(
+                new ApplicationRole
+                {
+                    Id = "tenant-seven-role",
+                    Name = "Sales",
+                    NormalizedName = "SALES",
+                    RoleFaName = "فروش",
+                    TenantId = 7
+                },
+                new ApplicationRole
+                {
+                    Id = "tenant-one-role",
+                    Name = "Accountant",
+                    NormalizedName = "ACCOUNTANT",
+                    RoleFaName = "حسابدار",
+                    TenantId = 1
+                });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.UpdateRoleAsync("tenant-seven-role", "accountant"));
+
+            Assert.Equal("Sales", (await context.Roles.FindAsync("tenant-seven-role"))!.Name);
+        }
     }
 }
