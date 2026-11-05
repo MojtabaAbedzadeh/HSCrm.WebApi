@@ -788,13 +788,34 @@ namespace HSCrm.UnitTests
             await context.SaveChangesAsync();
 
             await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+
+            // صدور چک پرداختنی باید فقط حساب اسناد پرداختنی (2103) را درگیر کند؛
+            // این رویداد نباید به‌عنوان گردش نقدی بانک گزارش شود.
+            var afterIssue = Assert.Single(await accounting.GetBankAccountsBalanceSummaryAsync());
+            Assert.Equal(200_000_000m, afterIssue.TotalDeposits);
+            Assert.Equal(0m, afterIssue.TotalWithdrawals);
+
+            var ledgerAfterIssue = await accounting.GetLedgerAsync(bankAccountId: bank.Id);
+            Assert.Single(ledgerAfterIssue);
+            Assert.All(ledgerAfterIssue, item => Assert.Equal("1101", item.AccountCode));
+
             await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
             {
                 ChequeId = cheque.Id, NewStatus = ChequeStatus.Cleared, TargetBankAccountId = bank.Id, ActionDateShamsi = "1404/03/25"
             });
 
-            var summary = await accounting.GetBankAccountsBalanceSummaryAsync();
-            Assert.Equal(130_000_000m, summary[0].CurrentBalance); // 200M - 70M = 130M
+            var summary = Assert.Single(await accounting.GetBankAccountsBalanceSummaryAsync());
+            Assert.Equal(200_000_000m, summary.TotalDeposits);
+            Assert.Equal(70_000_000m, summary.TotalWithdrawals);
+            Assert.Equal(130_000_000m, summary.CurrentBalance); // 200M - 70M = 130M
+
+            // صورت‌حساب بانک فقط باید ردیف‌های حساب نقد و بانک (1101) را نشان دهد؛
+            // ردیف‌های اسناد پرداختنی (2103) نباید وارد گردش بانک شوند.
+            var bankLedger = await accounting.GetLedgerAsync(bankAccountId: bank.Id);
+            Assert.Equal(2, bankLedger.Count);
+            Assert.All(bankLedger, item => Assert.Equal("1101", item.AccountCode));
+            Assert.Equal(200_000_000m, bankLedger[0].RunningBalance);
+            Assert.Equal(130_000_000m, bankLedger[1].RunningBalance);
         }
 
         [Fact(DisplayName = "15. ماشین‌حساب رأس‌گیری چک‌ها: میانگین موزون زمانی/ریالی، تاریخ دقیق رأس و ارزش فعلی (NPV)")]
