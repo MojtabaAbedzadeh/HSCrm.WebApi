@@ -141,6 +141,39 @@ namespace HSCrm.WebApi.PublicApi
             return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         }
 
+        // Profile images are intentionally served by a constrained endpoint because
+        // uploads are stored outside wwwroot. Filenames are random GUIDs generated here.
+        [HttpGet("/upload/userimage/{fileName}")]
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+        [ResponseCache(Duration = 300, Location = ResponseCacheLocation.Client)]
+        public IActionResult GetUserImage(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName)
+                || !System.Text.RegularExpressions.Regex.IsMatch(
+                    fileName,
+                    @"^[0-9a-fA-F]{32}\.(png|jpg|jpeg)$",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return NotFound();
+
+            var uploadsRoot = Path.GetFullPath(
+                Path.Combine(_hosting.ContentRootPath, "App_Data", "UserImages"));
+            var physicalPath = Path.GetFullPath(Path.Combine(uploadsRoot, fileName));
+
+            if (!physicalPath.StartsWith(uploadsRoot + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase)
+                || !System.IO.File.Exists(physicalPath))
+                return NotFound();
+
+            var contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                _ => "application/octet-stream"
+            };
+
+            return PhysicalFile(physicalPath, contentType, enableRangeProcessing: false);
+        }
+
         private static bool TryGetImageDimensions(byte[] data, string extension, out int width, out int height)
         {
             width = 0;
