@@ -155,8 +155,9 @@ namespace HSCrm.DataModel.Services.Repository
                 throw new UnauthorizedAccessException("Current tenant is not available.");
 
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value);
+            // The shared system Owner role must never be assignable through a tenant administrator endpoint.
             var role = await _context.Roles.FirstOrDefaultAsync(r =>
-                r.Id == roleId && (r.TenantId == tenantId.Value || (r.TenantId == 1 && r.Name == "Owner")));
+                r.Id == roleId && r.TenantId == tenantId.Value && r.Name != "Owner");
 
             if (user == null)
                 throw new InvalidOperationException("User not found in the current tenant.");
