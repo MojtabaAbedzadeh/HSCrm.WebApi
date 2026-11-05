@@ -262,6 +262,12 @@ namespace HSCrm.WebApi.Controllers
             var tenantId = _currentUserService.TenantId;
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
             var userId = User.GetUserId();
+
+            // Balance validation and payment insertion must share one serializable
+            // transaction; otherwise concurrent requests can both pass the remaining
+            // balance check and overpay the same invoice or expense.
+            using var transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
             if (!tenantId.HasValue || !fiscalYearId.HasValue || model.Amount <= 0
                 || !await _context.fiscalYearUW.Get(x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).AnyAsync())
                 return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
@@ -289,8 +295,8 @@ namespace HSCrm.WebApi.Controllers
                     return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "مبلغ پرداخت از مانده هزینه بیشتر است." };
             }
 
-            // شروع تراکنش برای اطمینان از ثبت پرداخت و آپدیت فاکتور با هم
-            using var transaction = _context.BeginTransaction();
+            // The transaction was opened before balance validation so that the
+            // validation and all resulting writes are atomic.
             try
             {
                 // 2. ثبت رکورد پرداخت جدید
