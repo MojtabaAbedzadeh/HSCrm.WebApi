@@ -84,13 +84,30 @@ namespace HSCrm.DataModel.Services
         {
             if (!await roleManager.RoleExistsAsync(roleName))
             {
-                await roleManager.CreateAsync(new ApplicationRole
+                var role = new ApplicationRole
                 {
-                    Id = Guid.NewGuid().ToString(),   // ✅ مهم
+                    Id = Guid.NewGuid().ToString(),
                     Name = roleName,
                     NormalizedName = roleName.ToUpperInvariant(),
+                    RoleFaName = roleName switch
+                    {
+                        "Admin" => "ادمین",
+                        "Owner" => "مدیر",
+                        "User" => "کاربر",
+                        "Customer" => "مشتری",
+                        _ => roleName
+                    },
+                    TenantId = 1,
                     ConcurrencyStamp = Guid.NewGuid().ToString()
-                });
+                };
+
+                var result = await roleManager.CreateAsync(role);
+                if (!result.Succeeded)
+                {
+                    var errors = string.Join(" | ", result.Errors.Select(error => error.Code));
+                    throw new InvalidOperationException(
+                        $"Could not seed required system role '{roleName}'. Identity errors: {errors}");
+                }
             }
         }
     }
