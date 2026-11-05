@@ -82,6 +82,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost]
+        [HttpPost("Create")] // Backward-compatible route used by older dashboard clients.
         [Permission(Permissions.Receipt.Create)]
         public async Task<ActionResult<ApiResponse<ReceiptModel>>> Create([FromBody] ReceiptCreateModel model, CancellationToken cancellationToken)
         {
