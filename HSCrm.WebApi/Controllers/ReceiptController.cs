@@ -171,6 +171,7 @@ namespace HSCrm.WebApi.Controllers
                     Message = "این دریافت دارای سابقه سند حسابداری است؛ اصلاح آن باید از مسیر ابطال و ثبت مجدد حسابداری انجام شود."
                 });
             if (!tenantIdForUpdate.HasValue || !fiscalYearForUpdate.HasValue || receipt.FiscalYearId != fiscalYearForUpdate.Value || model.Amount <= 0
+                || !_context.fiscalYearUW.Get(x => x.Id == fiscalYearForUpdate.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsClosed && !x.IsDeleted).Any()
                 || (model.BankAccountId.HasValue && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted && x.IsActive).Any())
                 || (model.CustomerId.HasValue && !_context.customerUW.Get(x => x.Id == model.CustomerId.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any())
                 || (model.SalesInvoiceId.HasValue && !_context.salesInvoiceUW.Get(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantIdForUpdate.Value && x.FiscalYearId == fiscalYearForUpdate.Value && !x.IsDeleted).Any()))
@@ -188,15 +189,15 @@ namespace HSCrm.WebApi.Controllers
                     return BadRequest(new ApiResponse<ReceiptModel> { Status = false, Message = invoiceValidation.Error });
 
                 receipt.SalesInvoiceId = model.SalesInvoiceId;
-            receipt.CustomerId = invoiceValidation.CustomerId;
-            receipt.BankAccountId = model.BankAccountId;
-            receipt.ReceiptDate = model.ReceiptDate;
-            receipt.Amount = model.Amount;
-            receipt.Method = model.Method;
-            receipt.ReferenceNo = model.ReferenceNo;
-            receipt.Description = model.Description;
-            receipt.ModifiedAt = DateTime.Now;
-            receipt.ModifiedById = _currentUserService.UserId;
+                receipt.CustomerId = invoiceValidation.CustomerId;
+                receipt.BankAccountId = model.BankAccountId;
+                receipt.ReceiptDate = model.ReceiptDate;
+                receipt.Amount = model.Amount;
+                receipt.Method = model.Method;
+                receipt.ReferenceNo = model.ReferenceNo;
+                receipt.Description = model.Description;
+                receipt.ModifiedAt = DateTime.Now;
+                receipt.ModifiedById = _currentUserService.UserId;
 
                 _context.receiptUW.Update(receipt, cancellationToken);
                 await _context.SaveAsync();
