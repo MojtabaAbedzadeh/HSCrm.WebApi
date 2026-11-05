@@ -145,7 +145,7 @@ namespace HSCrm.WebApi.Controllers
         {
             var receipt = await _context.receiptUW.GetByIdAsync(id, cancellationToken);
 
-            if (receipt == null || receipt.TenantId != _currentUserService.TenantId || receipt.FiscalYearId != _currentFiscalYearService.FiscalYearId)
+            if (receipt == null || receipt.IsDeleted || receipt.TenantId != _currentUserService.TenantId || receipt.FiscalYearId != _currentFiscalYearService.FiscalYearId)
             {
                 return NotFound(new ApiResponse<ReceiptModel>
                 {
@@ -212,7 +212,7 @@ namespace HSCrm.WebApi.Controllers
         {
             var receipt = await _context.receiptUW.GetByIdAsync(id, cancellationToken);
 
-            if (receipt == null || receipt.TenantId != _currentUserService.TenantId || receipt.FiscalYearId != _currentFiscalYearService.FiscalYearId)
+            if (receipt == null || receipt.IsDeleted || receipt.TenantId != _currentUserService.TenantId || receipt.FiscalYearId != _currentFiscalYearService.FiscalYearId)
             {
                 return NotFound(new ApiResponse<bool>
                 {
