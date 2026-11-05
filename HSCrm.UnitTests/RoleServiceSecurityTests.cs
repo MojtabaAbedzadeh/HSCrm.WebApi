@@ -11,6 +11,59 @@ namespace HSCrm.UnitTests
     public class RoleServiceSecurityTests
     {
         [Fact]
+        public async Task GetRolesAsync_ExcludesProtectedSystemRolesFromAssignableList()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("assignable-role-list-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService
+            {
+                TenantId = 1,
+                UserId = "admin",
+                IsAuthenticated = true
+            };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Roles.AddRange(
+                new ApplicationRole
+                {
+                    Id = "system-owner",
+                    Name = "Owner",
+                    NormalizedName = "OWNER",
+                    RoleFaName = "مالک",
+                    TenantId = 1
+                },
+                new ApplicationRole
+                {
+                    Id = "system-user",
+                    Name = "User",
+                    NormalizedName = "USER",
+                    RoleFaName = "کاربر",
+                    TenantId = 1
+                },
+                new ApplicationRole
+                {
+                    Id = "tenant-accountant",
+                    Name = "Accountant",
+                    NormalizedName = "ACCOUNTANT",
+                    RoleFaName = "حسابدار",
+                    TenantId = 1
+                });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            var roles = await service.GetRolesAsync();
+
+            Assert.Single(roles);
+            Assert.Equal("tenant-accountant", roles[0].Id);
+        }
+
+        [Fact]
         public async Task AssignRoleToUserAsync_RejectsTenantOwnerAccount()
         {
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
