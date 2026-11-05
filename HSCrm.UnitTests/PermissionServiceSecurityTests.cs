@@ -101,7 +101,10 @@ public class PermissionServiceSecurityTests
         var (context, service) = await CreateContextAsync(tenantId, isTenantOwner: false);
         await using (context)
         {
-            var userId = await context.Users.IgnoreQueryFilters().Select(x => x.Id).SingleAsync();
+            var userId = await context.Users.IgnoreQueryFilters()
+                .Where(x => x.UserName == "test-user")
+                .Select(x => x.Id)
+                .SingleAsync();
 
             Assert.False(await service.HasPermissionAsync(userId, "owner.privileged.test"));
             Assert.Empty(await service.GetUserPermissionsAsync(userId));
@@ -114,7 +117,10 @@ public class PermissionServiceSecurityTests
         var (context, service) = await CreateContextAsync(tenantId: 2, isTenantOwner: true);
         await using (context)
         {
-            var userId = await context.Users.IgnoreQueryFilters().Select(x => x.Id).SingleAsync();
+            var userId = await context.Users.IgnoreQueryFilters()
+                .Where(x => x.UserName == "test-user")
+                .Select(x => x.Id)
+                .SingleAsync();
 
             Assert.True(await service.HasPermissionAsync(userId, "owner.privileged.test"));
             Assert.Contains("owner.privileged.test", await service.GetUserPermissionsAsync(userId));
