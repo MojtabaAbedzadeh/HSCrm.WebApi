@@ -16,7 +16,6 @@ public class PermissionHandler : AuthorizationHandler<PermissionRequirement>
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
     {
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var claims = context.User.Claims.Select(c => $"{c.Type} = {c.Value}").ToList();
         if (string.IsNullOrWhiteSpace(userId))
             return; // یا لاگ بزن / یا شکست صریح
 
