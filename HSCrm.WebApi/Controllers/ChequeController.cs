@@ -49,8 +49,17 @@ namespace HSCrm.WebApi.Controllers
             [FromQuery] int? bankAccountId,
             CancellationToken ct)
         {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return Unauthorized(new ApiResponse<List<Cheque>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "دسترسی نامعتبر"
+                });
+
             var query = _unitOfWork.chequeUW.Get(
-                x => !x.IsDeleted
+                x => x.TenantId == tenantId.Value && !x.IsDeleted
                      && (!type.HasValue || x.Type == type.Value)
                      && (!status.HasValue || x.Status == status.Value)
                      && (!customerId.HasValue || x.CustomerId == customerId.Value)
