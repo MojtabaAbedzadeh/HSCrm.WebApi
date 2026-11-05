@@ -41,7 +41,7 @@ namespace HSCrm.WebApi.Controllers
                 .Where(x => currentTenantId.HasValue &&
                     x.TenantId == currentTenantId.Value &&
                     !(x.TenantId == 1 && new[] { "Admin", "Owner", "Customer", "User" }
-                        .Contains(x.Name, StringComparer.OrdinalIgnoreCase)))
+                        .Contains(x.Name)))
                 .Select(x => new RoleListModel
                 {
                     Id = x.Id,
