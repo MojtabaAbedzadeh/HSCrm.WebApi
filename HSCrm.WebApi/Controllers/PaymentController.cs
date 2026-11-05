@@ -71,8 +71,9 @@ namespace HSCrm.WebApi.Controllers
         public async Task<ApiResponse<IEnumerable<PaymentDto>>> Get(CancellationToken cancellationToken)
         {
             var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
 
-            if (tenantId is null)
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
             {
                 return new ApiResponse<IEnumerable<PaymentDto>>
                 {
@@ -83,7 +84,7 @@ namespace HSCrm.WebApi.Controllers
             }
 
             var payments = await _context.paymentUW.GetAsync(
-                predicate: p => p.TenantId == tenantId.Value && p.FiscalYearId == _currentFiscalYearService.FiscalYearId,
+                predicate: p => p.TenantId == tenantId.Value && p.FiscalYearId == fiscalYearId.Value && !p.IsDeleted,
                 asNoTracking: true,
                 ct: cancellationToken,
 
@@ -439,6 +440,9 @@ namespace HSCrm.WebApi.Controllers
                 if (!tenantId.HasValue || !fiscalYearId.HasValue || model.Amount <= 0)
                     return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
 
+                // Lock the invoice balance before reading it to prevent concurrent overpayment.
+                transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
                 if (model.BankAccountId.HasValue
                     && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
                     return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "حساب بانکی متعلق به شرکت جاری نیست." };
@@ -469,8 +473,6 @@ namespace HSCrm.WebApi.Controllers
                     StatusCode = ApiResultStatusCode.BadRequest,
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
-
-                transaction = _context.BeginTransaction();
 
                 var payment = new Payment
                 {
