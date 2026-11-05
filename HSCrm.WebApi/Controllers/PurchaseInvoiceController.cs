@@ -416,6 +416,13 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse { Status = false, Message = "حداقل یک قلم کالا باید ثبت شود.", StatusCode = ApiResultStatusCode.BadRequest };
             }
 
+            var normalizedInvoiceNumber = model.InvoiceNumber?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedInvoiceNumber) || model.IssueDate == default)
+                return new ApiResponse { Status = false, Message = "شماره و تاریخ فاکتور الزامی و معتبر است.", StatusCode = ApiResultStatusCode.BadRequest };
+
+            if (model.Items.Any(item => item.ProductId <= 0 || item.Quantity <= 0 || item.UnitPrice < 0 || item.Discount < 0 || item.Tax < 0))
+                return new ApiResponse { Status = false, Message = "مقادیر کالا، تعداد، قیمت، تخفیف یا مالیات معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+
             // لود کردن فاکتور به همراه آیتم‌های فعلی
             var invoice = _context.purchaseInvoiceUW
                 .Get()
@@ -436,6 +443,13 @@ namespace HSCrm.WebApi.Controllers
                 || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantIdForUpdate.Value && x.IsActive && !x.IsDeleted).Any())
                 return new ApiResponse { Status = false, Message = "فاکتور، تأمین‌کننده یا انبار متعلق به شرکت/سال مالی جاری نیست.", StatusCode = ApiResultStatusCode.BadRequest };
 
+            if (_context.purchaseInvoiceUW.Get(x => x.Id != invoice.Id
+                && x.TenantId == tenantIdForUpdate.Value
+                && x.FiscalYearId == fiscalYearForUpdate.Value
+                && x.Number == normalizedInvoiceNumber
+                && !x.IsDeleted).Any())
+                return new ApiResponse { Status = false, Message = "شماره فاکتور در سال مالی جاری تکراری است.", StatusCode = ApiResultStatusCode.Conflict };
+
             var updateProductIds = model.Items.Select(x => x.ProductId).Distinct().ToList();
             if (updateProductIds.Any(id => id <= 0)
                 || _context.productUW.Get(x => updateProductIds.Contains(x.Id) && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != updateProductIds.Count)
@@ -455,7 +469,7 @@ namespace HSCrm.WebApi.Controllers
                 invoice.WarehouseId = model.WarehouseId;
                 invoice.SupplierId = model.SupplierId;
                 invoice.IssueDate = model.IssueDate;
-                invoice.Number = model.InvoiceNumber?.Trim();
+                invoice.Number = normalizedInvoiceNumber;
                 invoice.Status = InvoiceStatus.Proforma;
                 invoice.PurchaserUserId = User.GetUserId();
 
@@ -479,7 +493,7 @@ namespace HSCrm.WebApi.Controllers
                     var lineTax = item.Tax;
                     var lineTotal = (item.Quantity * item.UnitPrice) - lineDiscount + lineTax;
 
-                    subtotal += (item.Quantity * item.UnitPrice);
+                    subtotal += lineTotal;
 
                     invoice.Items.Add(new PurchaseInvoiceItem
                     {
@@ -500,7 +514,7 @@ namespace HSCrm.WebApi.Controllers
                 invoice.Subtotal = subtotal;
                 invoice.Tax = model.InvoiceTax;
                 invoice.Discount = model.InvoiceDiscount;
-                invoice.Total = subtotal - invoice.Discount + invoice.Tax;
+                invoice.Total = Math.Max(0m, subtotal - invoice.Discount + invoice.Tax);
 
                 // 4. آپدیت هدر و ذخیره تغییرات
                 _context.purchaseInvoiceUW.Update(invoice);
