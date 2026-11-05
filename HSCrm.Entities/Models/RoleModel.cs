@@ -35,6 +35,7 @@ namespace HSCrm.Entities.Models
         public required string Name { get; set; }
         public required string Title { get; set; }
         public required string Category { get; set; }
+        public string CategoryTitleFa { get; set; } = string.Empty;
     }
 
     public class RolePermissionsModel
