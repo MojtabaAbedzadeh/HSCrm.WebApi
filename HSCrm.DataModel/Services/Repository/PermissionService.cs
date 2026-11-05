@@ -26,7 +26,10 @@ namespace HSCrm.DataModel.Services.Repository
 
             return await _context.UserRoles
                 .Where(userRole => userRole.UserId == userId
+                    && userRole.User.UserStatus
                     && userRole.User.TenantId == tenantId.Value
+                    && userRole.User.Tenant.IsActive
+                    && !userRole.User.Tenant.IsDeleted
                     && (
                         // A shared Owner role is privileged even for users in tenant 1.
                         // Only the account explicitly provisioned as the tenant owner may use it.
@@ -51,7 +54,10 @@ namespace HSCrm.DataModel.Services.Repository
 
             return await _context.UserRoles
                 .Where(userRole => userRole.UserId == userId
+                    && userRole.User.UserStatus
                     && userRole.User.TenantId == tenantId.Value
+                    && userRole.User.Tenant.IsActive
+                    && !userRole.User.Tenant.IsDeleted
                     && (
                         // A shared Owner role is privileged even for users in tenant 1.
                         // Only the account explicitly provisioned as the tenant owner may use it.
