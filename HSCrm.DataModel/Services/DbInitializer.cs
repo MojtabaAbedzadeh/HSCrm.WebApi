@@ -82,31 +82,62 @@ namespace HSCrm.DataModel.Services
 
         private static async Task EnsureRoleExistsAsync(RoleManager<ApplicationRole> roleManager, string roleName)
         {
-            if (!await roleManager.RoleExistsAsync(roleName))
+            var roleFaName = roleName switch
             {
-                var role = new ApplicationRole
+                "Admin" => "ادمین",
+                "Owner" => "مدیر",
+                "User" => "کاربر",
+                "Customer" => "مشتری",
+                _ => roleName
+            };
+
+            var role = await roleManager.FindByNameAsync(roleName);
+            if (role == null)
+            {
+                role = new ApplicationRole
                 {
                     Id = Guid.NewGuid().ToString(),
                     Name = roleName,
                     NormalizedName = roleName.ToUpperInvariant(),
-                    RoleFaName = roleName switch
-                    {
-                        "Admin" => "ادمین",
-                        "Owner" => "مدیر",
-                        "User" => "کاربر",
-                        "Customer" => "مشتری",
-                        _ => roleName
-                    },
+                    RoleFaName = roleFaName,
                     TenantId = 1,
                     ConcurrencyStamp = Guid.NewGuid().ToString()
                 };
 
-                var result = await roleManager.CreateAsync(role);
-                if (!result.Succeeded)
+                var createResult = await roleManager.CreateAsync(role);
+                if (!createResult.Succeeded)
                 {
-                    var errors = string.Join(" | ", result.Errors.Select(error => error.Code));
+                    var errors = string.Join(" | ", createResult.Errors.Select(error => error.Code));
                     throw new InvalidOperationException(
                         $"Could not seed required system role '{roleName}'. Identity errors: {errors}");
+                }
+
+                return;
+            }
+
+            // Repair legacy/partially seeded system roles without replacing their IDs
+            // or breaking existing user-role assignments.
+            var needsUpdate = false;
+            if (role.TenantId != 1)
+            {
+                role.TenantId = 1;
+                needsUpdate = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(role.RoleFaName))
+            {
+                role.RoleFaName = roleFaName;
+                needsUpdate = true;
+            }
+
+            if (needsUpdate)
+            {
+                var updateResult = await roleManager.UpdateAsync(role);
+                if (!updateResult.Succeeded)
+                {
+                    var errors = string.Join(" | ", updateResult.Errors.Select(error => error.Code));
+                    throw new InvalidOperationException(
+                        $"Could not repair required system role '{roleName}'. Identity errors: {errors}");
                 }
             }
         }
