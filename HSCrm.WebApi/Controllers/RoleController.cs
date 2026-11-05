@@ -36,7 +36,9 @@ namespace HSCrm.WebApi.Controllers
             var roles = await _dbContext.Roles
                 .AsNoTracking()
                 // فقط نقش‌های تننت جاری به همراه نقش Owner از سیستم
-                .Where(x => x.TenantId == currentTenantId || (x.TenantId == 1 && x.Name == "Owner"))
+                .Where(x => x.TenantId == currentTenantId
+                    && !(x.TenantId == 1 && new[] { "Admin", "Owner", "Customer", "User" }
+                        .Contains(x.Name, StringComparer.OrdinalIgnoreCase)))
                 .Select(x => new RoleListModel
                 {
                     Id = x.Id,
