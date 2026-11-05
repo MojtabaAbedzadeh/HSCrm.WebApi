@@ -313,7 +313,8 @@ namespace HSCrm.WebApi.Controllers
             {
                 Token = token,
                 FiscalYearId = fiscalYear.Id,
-                FiscalYearTitle = fiscalYear.Title
+                FiscalYearTitle = fiscalYear.Title,
+                FiscalYearStatus = ResolveFiscalYearStatus(fiscalYear)
             });
         }
 
