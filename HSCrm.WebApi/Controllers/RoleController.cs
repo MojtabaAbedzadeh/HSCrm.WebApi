@@ -191,6 +191,17 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            if (IsProtectedSystemRole(role))
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "ویرایش نقش‌های سیستمی مجاز نیست.",
+                    Data = null
+                };
+            }
+
             role.Name = model.Name;
             role.NormalizedName = model.Name.ToUpperInvariant();
             role.TenantId = User.GetTenantId().Value;
@@ -235,6 +246,17 @@ namespace HSCrm.WebApi.Controllers
                     Status = false,
                     StatusCode = ApiResultStatusCode.NotFound,
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
+
+            if (IsProtectedSystemRole(role))
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "حذف نقش‌های سیستمی مجاز نیست.",
                     Data = null
                 };
             }
@@ -327,15 +349,41 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.ManagePermissions)]
         public async Task<ApiResponse<bool>> UpdateRolePermissions([FromBody] RolePermissionsModel model, CancellationToken ct)
         {
-            var exists = await _dbContext.Roles.AnyAsync(x => x.Id == model.RoleId && x.TenantId == _userService.TenantId, ct);
+            var targetRole = await _dbContext.Roles
+                .FirstOrDefaultAsync(x => x.Id == model.RoleId && x.TenantId == _userService.TenantId, ct);
 
-            if (!exists)
+            if (targetRole == null)
             {
                 return new ApiResponse<bool>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.NotFound,
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = false
+                };
+            }
+
+            if (IsProtectedSystemRole(targetRole))
+            {
+                return new ApiResponse<bool>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "تغییر مجوزهای نقش‌های سیستمی مجاز نیست.",
+                    Data = false
+                };
+            }
+
+            var requestedPermissionIds = (model.PermissionIds ?? new List<int>()).Distinct().ToList();
+            var validPermissionCount = await _dbContext.Permissions
+                .CountAsync(x => requestedPermissionIds.Contains(x.Id), ct);
+            if (validPermissionCount != requestedPermissionIds.Count)
+            {
+                return new ApiResponse<bool>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "یک یا چند مجوز ارسالی معتبر نیستند.",
                     Data = false
                 };
             }
@@ -366,5 +414,10 @@ namespace HSCrm.WebApi.Controllers
                 Data = true
             };
         }
+
+        private static bool IsProtectedSystemRole(ApplicationRole role) =>
+            role.TenantId == 1 &&
+            new[] { "Admin", "Owner", "Customer", "User" }
+                .Contains(role.Name, StringComparer.OrdinalIgnoreCase);
     }
 }
