@@ -129,16 +129,30 @@ namespace HSCrm.WebApi.Controllers
             };
 
             var currentTenantId = _userService.TenantId;
-
-            var existsInTenant = await _dbContext.Roles.AnyAsync(r => r.TenantId == currentTenantId && r.Name == model.Name);
-
-            if (existsInTenant)
+            if (!currentTenantId.HasValue || currentTenantId.Value <= 0)
             {
                 return new ApiResponse<RoleListModel>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "این نقش قبلاً در این مجموعه ثبت شده است.",
+                    Message = "شرکت جاری معتبر نیست.",
+                    Data = null
+                };
+            }
+
+            var normalizedName = model.Name.Trim().ToUpperInvariant();
+            // ASP.NET Identity has a global unique index on NormalizedName.
+            // Check globally before CreateAsync so a cross-tenant collision is reported cleanly.
+            var nameExists = await _dbContext.Roles
+                .AnyAsync(r => r.NormalizedName == normalizedName);
+
+            if (nameExists)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "این نام نقش قبلاً در سامانه استفاده شده است.",
                     Data = null
                 };
             }
@@ -146,10 +160,10 @@ namespace HSCrm.WebApi.Controllers
             var role = new ApplicationRole
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = model.Name,
-                NormalizedName = model.Name.ToUpperInvariant(),
+                Name = model.Name.Trim(),
+                NormalizedName = normalizedName,
                 RoleFaName = model.FaName,
-                TenantId = User.GetTenantId().Value
+                TenantId = currentTenantId.Value
             };
 
             var result = await _roleManager.CreateAsync(role);
@@ -171,7 +185,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = role.Id,
                     Name = role.Name!,
-                    TenantId = User.GetTenantId().Value
+                    TenantId = currentTenantId.Value
                 }
             };
         }
@@ -204,9 +218,33 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
-            role.Name = model.Name;
-            role.NormalizedName = model.Name.ToUpperInvariant();
-            role.TenantId = User.GetTenantId().Value;
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "نام نقش الزامی است.",
+                    Data = null
+                };
+            }
+
+            var normalizedName = model.Name.Trim().ToUpperInvariant();
+            var nameExists = await _dbContext.Roles
+                .AnyAsync(r => r.Id != role.Id && r.NormalizedName == normalizedName);
+            if (nameExists)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "این نام نقش قبلاً در سامانه استفاده شده است.",
+                    Data = null
+                };
+            }
+
+            role.Name = model.Name.Trim();
+            role.NormalizedName = normalizedName;
 
             var result = await _roleManager.UpdateAsync(role);
 
@@ -216,6 +254,9 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
+                    StatusCode = result.Errors.Any(e => e.Code == "DuplicateRoleName")
+                        ? ApiResultStatusCode.Conflict
+                        : ApiResultStatusCode.BadRequest,
                     Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
                     Data = null
                 };
@@ -230,7 +271,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = role.Id,
                     Name = role.Name!,
-                    TenantId = User.GetTenantId().Value
+                    TenantId = role.TenantId
                 }
             };
         }
