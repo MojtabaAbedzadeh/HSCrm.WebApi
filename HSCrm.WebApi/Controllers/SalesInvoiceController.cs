@@ -42,7 +42,12 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.View)]
         public IActionResult SettlementSummary(int id)
         {
-            var invoice = _context.salesInvoiceUW.GetById(id);
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized("شرکت یا سال مالی معتبر مشخص نیست.");
+
+            var invoice = _context.salesInvoiceUW.Get(x => x.Id == id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).FirstOrDefault();
             if (invoice == null)
                 return NotFound();
 
@@ -56,7 +61,12 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoice>> Get()
         {
-            var invoices = _context.salesInvoiceUW.Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant).ToList();
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse<IEnumerable<SalesInvoice>> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "شرکت یا سال مالی معتبر مشخص نیست." };
+
+            var invoices = _context.salesInvoiceUW.Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted, true, x => x.Project, x => x.Project.Customer, x => x.Tenant).ToList();
 
             return new ApiResponse<IEnumerable<SalesInvoice>>
             {
@@ -74,7 +84,11 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse GetById(int invoiceId)
         {
-            var invoice = _context.salesInvoiceUW.GetById(invoiceId);
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+            var invoice = tenantId.HasValue && fiscalYearId.HasValue
+                ? _context.salesInvoiceUW.Get(x => x.Id == invoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).FirstOrDefault()
+                : null;
 
             if (invoice == null) return new ApiResponse<SalesInvoice>
             {
