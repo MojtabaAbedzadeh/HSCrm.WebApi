@@ -265,19 +265,52 @@ namespace HSCrm.WebApi.Controllers
             {
 
                 var tenantId = User.GetTenantId();
-                var getUser = tenantId.HasValue ? await _userManager.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value) : null;
+                var currentUserId = User.GetUserId();
+                var getUser = tenantId.HasValue
+                    ? await _userManager.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value)
+                    : null;
 
-                if (getUser != null)
+                if (getUser == null)
                 {
-                    _context.userManagerUW.Delete(getUser);
                     return new ApiResponse<UserModelDto>
                     {
-                        Status = true,
-                        StatusCode = ApiResultStatusCode.Success,
-                        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                        Data = ToUserDto(getUser)
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.NotFound,
+                        Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
                     };
                 }
+
+                // Preserve financial/audit references and invalidate existing JWTs instead of hard-deleting Identity rows.
+                if (getUser.IsTenantOwner || getUser.UserType == 4 || getUser.UserType == 110
+                    || string.Equals(getUser.Id, currentUserId, StringComparison.Ordinal))
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.Conflict,
+                        Message = "حذف یا غیرفعال‌سازی مدیر مالک، مدیر سیستم یا حساب کاربری جاری مجاز نیست."
+                    };
+                }
+
+                getUser.UserStatus = false;
+                var result = await _userManager.UpdateSecurityStampAsync(getUser);
+                if (!result.Succeeded)
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.ServerError,
+                        Message = string.Join(" | ", result.Errors.Select(x => x.Description))
+                    };
+                }
+
+                return new ApiResponse<UserModelDto>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "کاربر با موفقیت غیرفعال شد و نشست‌های قبلی او باطل شدند.",
+                    Data = ToUserDto(getUser)
+                };
             }
             catch
             {
