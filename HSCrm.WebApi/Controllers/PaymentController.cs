@@ -10,6 +10,7 @@ using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -24,17 +25,20 @@ namespace HSCrm.WebApi.Controllers
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly IAccountingService _accountingService;
+        private readonly ILogger<PaymentController> _logger;
 
         public PaymentController(
             IUnitOfWork context,
             ICurrentUserService currentUserService,
             ICurrentFiscalYearService currentFiscalYearService,
-            IAccountingService accountingService)
+            IAccountingService accountingService,
+            ILogger<PaymentController> logger)
         {
             _context = context;
             _currentUserService = currentUserService;
             _currentFiscalYearService = currentFiscalYearService;
             _accountingService = accountingService;
+            _logger = logger;
         }
 
         //[HttpGet("GetPayments")]
@@ -343,9 +347,10 @@ namespace HSCrm.WebApi.Controllers
                     Message = "پرداخت با موفقیت ثبت و وضعیت فاکتور به‌روزرسانی شد."
                 };
             }
-            catch
+            catch (Exception ex)
             {
                 transaction.Rollback();
+                _logger.LogError(ex, "Failed to create payment for tenant {TenantId} and fiscal year {FiscalYearId}.", tenantId, fiscalYearId);
                 return new ApiResponse
                 {
                     Status = false,
@@ -518,9 +523,10 @@ namespace HSCrm.WebApi.Controllers
                 
                 };
             }
-            catch
+            catch (Exception ex)
             {
                 transaction?.Rollback();
+                _logger.LogError(ex, "Failed to register purchase payment.");
                 return new ApiResponse
                 {
                     Status = false,
