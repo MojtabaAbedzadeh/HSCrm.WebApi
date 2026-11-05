@@ -10,7 +10,7 @@ namespace HSCrm.UnitTests;
 
 public class PermissionServiceSecurityTests
 {
-    private static async Task<(ApplicationDbContext Context, PermissionService Service)> CreateContextAsync(
+    private static async Task<(ApplicationDbContext Context, PermissionService Service, string UserId)> CreateContextAsync(
         int tenantId, bool isTenantOwner)
     {
         var currentUser = new Mock<ICurrentUserService>();
@@ -90,7 +90,7 @@ public class PermissionServiceSecurityTests
         });
 
         await context.SaveChangesAsync();
-        return (context, new PermissionService(context));
+        return (context, new PermissionService(context), user.Id);
     }
 
     [Theory]
@@ -98,14 +98,9 @@ public class PermissionServiceSecurityTests
     [InlineData(2)]
     public async Task SharedOwnerRole_DoesNotGrantPermissionsToNonOwnerAccounts(int tenantId)
     {
-        var (context, service) = await CreateContextAsync(tenantId, isTenantOwner: false);
+        var (context, service, userId) = await CreateContextAsync(tenantId, isTenantOwner: false);
         await using (context)
         {
-            var userId = await context.Users.IgnoreQueryFilters()
-                .Where(x => x.UserName == "test-user")
-                .Select(x => x.Id)
-                .SingleAsync();
-
             Assert.False(await service.HasPermissionAsync(userId, "owner.privileged.test"));
             Assert.Empty(await service.GetUserPermissionsAsync(userId));
         }
@@ -114,14 +109,9 @@ public class PermissionServiceSecurityTests
     [Fact]
     public async Task SharedOwnerRole_GrantsPermissionsToProvisionedTenantOwner()
     {
-        var (context, service) = await CreateContextAsync(tenantId: 2, isTenantOwner: true);
+        var (context, service, userId) = await CreateContextAsync(tenantId: 2, isTenantOwner: true);
         await using (context)
         {
-            var userId = await context.Users.IgnoreQueryFilters()
-                .Where(x => x.UserName == "test-user")
-                .Select(x => x.Id)
-                .SingleAsync();
-
             Assert.True(await service.HasPermissionAsync(userId, "owner.privileged.test"));
             Assert.Contains("owner.privileged.test", await service.GetUserPermissionsAsync(userId));
         }
