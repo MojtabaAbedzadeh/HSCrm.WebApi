@@ -57,7 +57,23 @@ public class PermissionServiceSecurityTests
         context.Users.Add(user);
 
         var ownerRole = await context.Roles.IgnoreQueryFilters()
-            .SingleAsync(x => x.Id == "OwnerId");
+            .SingleOrDefaultAsync(x => x.Id == "OwnerId");
+
+        // InMemory EnsureCreated does not consistently materialize Identity seed rows
+        // across provider/runtime versions; arrange the shared system role explicitly.
+        if (ownerRole == null)
+        {
+            ownerRole = new ApplicationRole
+            {
+                Id = "OwnerId",
+                Name = "Owner",
+                RoleFaName = "مدیر",
+                NormalizedName = "OWNER",
+                ConcurrencyStamp = "OwnerId",
+                TenantId = 1
+            };
+            context.Roles.Add(ownerRole);
+        }
         var permission = new Permission
         {
             Name = "owner.privileged.test",
