@@ -113,7 +113,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("Vouchers")]
         [Permission(Permissions.JournalVouchers.View)]
-        public async Task<ActionResult<ApiResponse<IEnumerable<JournalVoucher>>>> GetVouchers(CancellationToken ct)
+        public async Task<ActionResult<ApiResponse<object>>> GetVouchers(CancellationToken ct)
         {
             var tenantId = User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
@@ -126,16 +126,31 @@ namespace HSCrm.WebApi.Controllers
                     Message = "شرکت یا سال مالی معتبر برای کاربر مشخص نیست."
                 });
 
+            // Project voucher headers only. Returning EF entities serializes the
+            // bidirectional Voucher.Items -> Item.JournalVoucher navigation cycle.
+            // Detailed rows are loaded independently by the Dashboard from Ledger.
             var vouchers = await _unitOfWork.journalVoucherUW
                 .Get(x => x.TenantId == tenantId.Value
                     && x.FiscalYearId == fiscalYearId.Value
                     && !x.IsDeleted,
-                    asNoTracking: true, x => x.Items)
+                    asNoTracking: true)
                 .OrderByDescending(x => x.VoucherDate)
                 .ThenByDescending(x => x.VoucherNumber)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.VoucherNumber,
+                    x.VoucherDate,
+                    x.ReferenceType,
+                    x.ReferenceId,
+                    x.Description,
+                    x.TotalDebit,
+                    x.TotalCredit,
+                    x.Status
+                })
                 .ToListAsync(ct);
 
-            return Ok(new ApiResponse<IEnumerable<JournalVoucher>>
+            return Ok(new ApiResponse<object>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
