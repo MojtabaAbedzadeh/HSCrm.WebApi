@@ -24,15 +24,18 @@ namespace HSCrm.WebApi.Controllers
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAccountingService _accountingService;
         private readonly ICurrentFiscalYearService _currentFiscalYear;
+        private readonly ILogger<ChequeController> _logger;
 
         public ChequeController(
             IUnitOfWork unitOfWork,
             IAccountingService accountingService,
-            ICurrentFiscalYearService currentFiscalYear)
+            ICurrentFiscalYearService currentFiscalYear,
+            ILogger<ChequeController> logger)
         {
             _unitOfWork = unitOfWork;
             _accountingService = accountingService;
             _currentFiscalYear = currentFiscalYear;
+            _logger = logger;
         }
 
         /// <summary>
@@ -99,10 +102,16 @@ namespace HSCrm.WebApi.Controllers
                 return Unauthorized(new ApiResponse { Status = false, Message = "دسترسی نامعتبر" });
 
             var fiscalYearId = _currentFiscalYear.FiscalYearId;
-            if (!fiscalYearId.HasValue)
-                return BadRequest(new ApiResponse { Status = false, Message = "سال مالی فعال انتخاب نشده است." });
+            if (!fiscalYearId.HasValue
+                || !await _unitOfWork.fiscalYearUW.Get(
+                    x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted,
+                    asNoTracking: true).AnyAsync(ct))
+                return BadRequest(new ApiResponse { Status = false, Message = "سال مالی فعال و معتبر برای شرکت جاری انتخاب نشده است." });
 
-            if (model.Amount <= 0)
+            if (model == null
+                || string.IsNullOrWhiteSpace(model.ChequeNumber)
+                || string.IsNullOrWhiteSpace(model.BankName)
+                || model.Amount <= 0)
                 return BadRequest(new ApiResponse { Status = false, Message = "مبلغ چک باید بزرگتر از صفر باشد." });
 
             if (!Enum.IsDefined(model.Type))
@@ -203,11 +212,12 @@ namespace HSCrm.WebApi.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(ct);
-                return BadRequest(new ApiResponse
+                _logger.LogError(ex, "Failed to register cheque for tenant {TenantId} and fiscal year {FiscalYearId}.", tenantId.Value, fiscalYearId.Value);
+                return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponse
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "خطا در ثبت چک: " + ex.Message
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = "خطا در ثبت چک رخ داد. جزئیات در گزارش سرور ثبت شده است."
                 });
             }
         }
@@ -240,11 +250,12 @@ namespace HSCrm.WebApi.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(ct);
+                _logger.LogError(ex, "Failed to change cheque status for cheque {ChequeId}.", model.ChequeId);
                 return BadRequest(new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "خطا در تغییر وضعیت چک: " + ex.Message
+                    Message = "تغییر وضعیت چک انجام نشد. اطلاعات ورودی یا وضعیت فعلی چک را بررسی کنید."
                 });
             }
         }
@@ -272,11 +283,12 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Cheque ras-giri calculation failed.");
                 return BadRequest(new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ex.Message
+                    Message = "محاسبه راس‌گیری انجام نشد. فیلترها و تاریخ‌های ورودی را بررسی کنید."
                 });
             }
         }
