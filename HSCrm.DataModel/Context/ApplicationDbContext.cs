@@ -75,7 +75,8 @@ namespace HSCrm.DataModel.Context
                     TenantCode = "Central",
                     TenantTitle = "سیستم مرکزی",
                     Currency = "IRR",
-                    CreatedAt = new DateTime(2024, 1, 1), 
+                    CreatedAt = new DateTime(2024, 1, 1),
+                    IsActive = true,
                     IsDeleted = false
                 }
             );
@@ -160,7 +161,7 @@ namespace HSCrm.DataModel.Context
                 e.HasKey(rp => new { rp.RoleId, rp.PermissionId });
                 e.HasOne(rp => rp.Role).WithMany(r => r.RolePermissions).HasForeignKey(rp => rp.RoleId);
                 e.HasOne(rp => rp.Permission).WithMany(p => p.RolePermissions).HasForeignKey(rp => rp.PermissionId);
-            });            
+            });
 
             // ======================= ApplicationUser Configuration =======================
             builder.Entity<ApplicationUser>(e =>
@@ -1009,12 +1010,12 @@ namespace HSCrm.DataModel.Context
                             auditedEntity.CreatedAt = DateTime.UtcNow;
 
                         if (string.IsNullOrWhiteSpace(auditedEntity.CreatedById))
-                            auditedEntity.CreatedById = _currentUserService.UserId;
+                            auditedEntity.CreatedById = _currentUserService?.UserId;
                     }
                     else if (entry.State == EntityState.Modified)
                     {
                         auditedEntity.ModifiedAt = DateTime.UtcNow;
-                        auditedEntity.ModifiedById = _currentUserService.UserId;
+                        auditedEntity.ModifiedById = _currentUserService?.UserId;
                     }
                 }
             }
@@ -1127,9 +1128,9 @@ namespace HSCrm.DataModel.Context
                 {
                     //اگر پراپرتي مقدار داشت
                     var propName = property.Name;
-                    var val = (string)property.GetValue(item.Entity, null);
+                    var val = property.GetValue(item.Entity, null) as string;
 
-                    if (val.HasValue())
+                    if (!string.IsNullOrWhiteSpace(val))
                     {
                         var newVal = val.Fa2En().FixPersianChars();
                         if (newVal == val)

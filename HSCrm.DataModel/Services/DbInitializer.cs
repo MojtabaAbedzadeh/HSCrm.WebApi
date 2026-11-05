@@ -1,7 +1,9 @@
 ﻿using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Seeders;
+using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HSCrm.DataModel.Services
@@ -15,7 +17,21 @@ namespace HSCrm.DataModel.Services
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
 
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
             await context.Database.MigrateAsync();
+
+            // Ensure central system tenant is active.
+            var centralTenant = await context.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == 1 && !t.IsDeleted);
+
+            if (centralTenant != null && !centralTenant.IsActive)
+            {
+                centralTenant.IsActive = true;
+                await context.SaveChangesAsync();
+            }
 
             // 1) Seed permissions
             await PermissionSeeder.SeedAsync(context);
@@ -36,7 +52,33 @@ namespace HSCrm.DataModel.Services
             await RoleSeeder.AssignPermissionsToRoles(context);
 
             // 5) If there is a tenant, seed fiscal year safely
+            // Bootstrap the initial administrator password once.
             const string adminUserId = "28dfc395-0464-4b47-8aae-c73953a9d153";
+            const string initialSecurityStamp = "C674E456-6515-4D19-9B9D-9988D41C488F";
+            var seedPassword = configuration["Seed:AdminPassword"];
+
+            if (!string.IsNullOrWhiteSpace(seedPassword))
+            {
+                var admin = await userManager.FindByIdAsync(adminUserId);
+
+                if (admin != null &&
+                    admin.SecurityStamp == initialSecurityStamp)
+                {
+                    var token = await userManager.GeneratePasswordResetTokenAsync(admin);
+
+                    var result = await userManager.ResetPasswordAsync(
+                        admin,
+                        token,
+                        seedPassword);
+
+                    if (!result.Succeeded)
+                    {
+                        throw new InvalidOperationException(
+                            "Failed to initialize administrator password: " +
+                            string.Join(", ", result.Errors.Select(x => x.Code)));
+                    }
+                }
+            }
 
             var tenant = await context.Tenants.FirstOrDefaultAsync();
             if (tenant != null)

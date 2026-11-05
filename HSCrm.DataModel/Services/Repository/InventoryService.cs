@@ -964,7 +964,7 @@ namespace HSCrm.DataModel.Services.Repository
                     TotalCost = totalCost,
                     RemainingFifoQuantity = quantityChange > 0 ? quantityChange : 0m,
                     TransactionType = InventoryTransactionType.Adjustment,
-                    Description = dto.Description,
+                    Description = dto.Description ?? string.Empty,
                     CreatedById = _currentUser.UserId,
                     ReferenceType = InventoryReferenceType.Adjustment,
                     CreatedAt = DateTime.UtcNow,
