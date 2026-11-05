@@ -1,6 +1,7 @@
 using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.Common.PublicTools;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
@@ -19,11 +20,13 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAccountingService _accountingService;
+        private readonly ApplicationDbContext _dbContext;
 
-        public BankAccountController(IUnitOfWork unitOfWork, IAccountingService accountingService)
+        public BankAccountController(IUnitOfWork unitOfWork, IAccountingService accountingService, ApplicationDbContext dbContext)
         {
             _unitOfWork = unitOfWork;
             _accountingService = accountingService;
+            _dbContext = dbContext;
         }
 
         /// <summary>
@@ -262,12 +265,14 @@ namespace HSCrm.WebApi.Controllers
             if (bankAccount == null || bankAccount.TenantId != tenantId.Value || bankAccount.IsDeleted)
                 return NotFound(new ApiResponse { Status = false, Message = "حساب بانکی یافت نشد." });
 
-            var hasLedgerEntries = await _unitOfWork.journalVoucherItemUW
-                .Get(x => x.TenantId == tenantId.Value && x.BankAccountId == id, asNoTracking: true)
-                .AnyAsync(ct);
-            var hasCheques = await _unitOfWork.chequeUW
-                .Get(x => x.TenantId == tenantId.Value && x.BankAccountId == id && !x.IsDeleted, asNoTracking: true)
-                .AnyAsync(ct);
+            // Ignore the active fiscal-year filter so historical usage in prior years also blocks deletion.
+            // Tenant and soft-delete predicates are reapplied explicitly.
+            var hasLedgerEntries = await _dbContext.JournalVoucherItems
+                .IgnoreQueryFilters()
+                .AnyAsync(x => x.TenantId == tenantId.Value && x.BankAccountId == id && !x.IsDeleted, ct);
+            var hasCheques = await _dbContext.Cheques
+                .IgnoreQueryFilters()
+                .AnyAsync(x => x.TenantId == tenantId.Value && x.BankAccountId == id && !x.IsDeleted, ct);
 
             if (hasLedgerEntries || hasCheques)
                 return Conflict(new ApiResponse
