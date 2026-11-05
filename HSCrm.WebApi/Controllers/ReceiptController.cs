@@ -40,7 +40,8 @@ namespace HSCrm.WebApi.Controllers
         {
             var receipts = await _context.receiptUW.GetAsync(
                 x => x.TenantId == _currentUserService.TenantId
-                     && x.FiscalYearId == _currentFiscalYearService.FiscalYearId,
+                     && x.FiscalYearId == _currentFiscalYearService.FiscalYearId
+                     && !x.IsDeleted,
                 true,
                 cancellationToken,
                 x => x.BankAccount!,
@@ -62,7 +63,7 @@ namespace HSCrm.WebApi.Controllers
         {
             var receipt = await _context.receiptUW.GetByIdAsync(id, cancellationToken);
 
-            if (receipt == null || receipt.TenantId != _currentUserService.TenantId || receipt.FiscalYearId != _currentFiscalYearService.FiscalYearId)
+            if (receipt == null || receipt.IsDeleted || receipt.TenantId != _currentUserService.TenantId || receipt.FiscalYearId != _currentFiscalYearService.FiscalYearId)
             {
                 return NotFound(new ApiResponse<ReceiptModel>
                 {
@@ -220,7 +221,7 @@ namespace HSCrm.WebApi.Controllers
                 });
             }
 
-            using var transaction = _context.BeginTransaction();
+            using var transaction = _context.BeginTransaction(IsolationLevel.Serializable);
             try
             {
                 _context.receiptUW.Delete(receipt, cancellationToken);
