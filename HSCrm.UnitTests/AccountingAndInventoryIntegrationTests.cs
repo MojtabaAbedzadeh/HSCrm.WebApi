@@ -814,8 +814,9 @@ namespace HSCrm.UnitTests
             var bankLedger = await accounting.GetLedgerAsync(bankAccountId: bank.Id);
             Assert.Equal(2, bankLedger.Count);
             Assert.All(bankLedger, item => Assert.Equal("1101", item.AccountCode));
-            Assert.Equal(200_000_000m, bankLedger[0].RunningBalance);
-            Assert.Equal(130_000_000m, bankLedger[1].RunningBalance);
+            Assert.Equal(200_000_000m, bankLedger.Sum(item => item.Debit));
+            Assert.Equal(70_000_000m, bankLedger.Sum(item => item.Credit));
+            Assert.Equal(130_000_000m, bankLedger[^1].RunningBalance);
         }
 
         [Fact(DisplayName = "15. ماشین‌حساب رأس‌گیری چک‌ها: میانگین موزون زمانی/ریالی، تاریخ دقیق رأس و ارزش فعلی (NPV)")]
