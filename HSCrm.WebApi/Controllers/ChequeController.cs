@@ -96,6 +96,58 @@ namespace HSCrm.WebApi.Controllers
             if (model.Amount <= 0)
                 return BadRequest(new ApiResponse { Status = false, Message = "مبلغ چک باید بزرگتر از صفر باشد." });
 
+            if (!Enum.IsDefined(model.Type))
+                return BadRequest(new ApiResponse { Status = false, Message = "نوع چک معتبر نیست." });
+
+            if (model.Type == ChequeType.Receivable)
+            {
+                if (!model.CustomerId.HasValue || model.SupplierId.HasValue)
+                    return BadRequest(new ApiResponse { Status = false, Message = "چک دریافتنی باید به یک مشتری متعلق باشد و تأمین‌کننده نداشته باشد." });
+
+                var customerExists = await _unitOfWork.customerUW
+                    .Get(x => x.Id == model.CustomerId.Value && x.TenantId == tenantId.Value && !x.IsDeleted, asNoTracking: true)
+                    .AnyAsync(ct);
+                if (!customerExists)
+                    return BadRequest(new ApiResponse { Status = false, Message = "مشتری انتخاب‌شده در شرکت جاری وجود ندارد." });
+
+                if (model.BankAccountId.HasValue)
+                {
+                    var bankExists = await _unitOfWork.bankAccountUW
+                        .Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted && x.IsActive, asNoTracking: true)
+                        .AnyAsync(ct);
+                    if (!bankExists)
+                        return BadRequest(new ApiResponse { Status = false, Message = "حساب بانکی انتخاب‌شده معتبر یا فعال نیست." });
+                }
+            }
+            else if (model.Type == ChequeType.Payable)
+            {
+                if (!model.SupplierId.HasValue || model.CustomerId.HasValue || !model.BankAccountId.HasValue)
+                    return BadRequest(new ApiResponse { Status = false, Message = "چک پرداختنی باید به یک تأمین‌کننده و حساب بانکی شرکت متصل باشد." });
+
+                var supplierExists = await _unitOfWork.supplierUW
+                    .Get(x => x.Id == model.SupplierId.Value && x.TenantId == tenantId.Value && !x.IsDeleted, asNoTracking: true)
+                    .AnyAsync(ct);
+                if (!supplierExists)
+                    return BadRequest(new ApiResponse { Status = false, Message = "تأمین‌کننده انتخاب‌شده در شرکت جاری وجود ندارد." });
+
+                var bankExists = await _unitOfWork.bankAccountUW
+                    .Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted && x.IsActive, asNoTracking: true)
+                    .AnyAsync(ct);
+                if (!bankExists)
+                    return BadRequest(new ApiResponse { Status = false, Message = "حساب بانکی انتخاب‌شده معتبر یا فعال نیست." });
+            }
+
+            if (model.ProjectId.HasValue)
+            {
+                var projectExists = await _unitOfWork.projectUW
+                    .Get(x => x.Id == model.ProjectId.Value && x.TenantId == tenantId.Value && !x.IsDeleted
+                        && (model.Type != ChequeType.Receivable || x.CustomerId == model.CustomerId),
+                        asNoTracking: true)
+                    .AnyAsync(ct);
+                if (!projectExists)
+                    return BadRequest(new ApiResponse { Status = false, Message = "پروژه انتخاب‌شده متعلق به شرکت یا مشتری انتخاب‌شده نیست." });
+            }
+
             using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
