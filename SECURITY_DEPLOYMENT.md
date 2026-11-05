@@ -23,4 +23,5 @@ Image uploads require the user-edit permission and are limited to five PNG/JPEG 
 3. Configure the exact frontend origins in CORS.
 4. Review the existing Git history and repository forks/clones. The current change removes secrets from the latest tracked settings file but does not rewrite Git history.
 5. Ensure `App_Data/UserImages` is on persistent storage and included in backup/restore procedures.
-6. Run the full .NET build and unit/integration test suite in CI before merging.
+6. The API currently runs `Database.MigrateAsync()` and database seeders during application startup. Before the first production start, take and verify a restorable database backup, review the pending EF Core migration SQL against the production schema, and start only one API instance until migration and seeding complete. Do not let multiple replicas race through startup migrations.
+7. Run the full .NET build and unit/integration test suite in CI before merging.
