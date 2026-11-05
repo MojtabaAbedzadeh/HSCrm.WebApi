@@ -777,7 +777,13 @@ namespace HSCrm.UnitTests
                 ChequeNumber = "1002", Amount = 300_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(70),
                 BankName = "بانک ملت", CustomerId = 1
             };
-            context.Cheques.AddRange(c1, c2);
+            var otherFiscalYearCheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 2, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "1003", Amount = 900_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(90),
+                BankName = "بانک ملت", CustomerId = 1
+            };
+            context.Cheques.AddRange(c1, c2, otherFiscalYearCheque);
             await context.SaveChangesAsync();
 
             // چک ۱: ۱۰۰ میلیون به سررسید ۳۰ روز | چک ۲: ۳۰۰ میلیون به سررسید ۷۰ روز
@@ -786,7 +792,7 @@ namespace HSCrm.UnitTests
             {
                 BaseDateShamsi = baseDateShamsi,
                 MonthlyDiscountRatePercent = 3m, // ۳ درصد ماهانه
-                ChequeIds = new List<int> { c1.Id, c2.Id }
+                ChequeIds = new List<int> { c1.Id, c2.Id, otherFiscalYearCheque.Id }
             });
 
             Assert.Equal(2, result.ChequeCount);
