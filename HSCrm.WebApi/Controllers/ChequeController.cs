@@ -221,7 +221,9 @@ namespace HSCrm.WebApi.Controllers
             [FromBody] ChequeStatusChangeModel model,
             CancellationToken ct)
         {
-            using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
+            // Serialize status changes for the same cheque to prevent concurrent
+            // requests from posting duplicate accounting vouchers.
+            using var transaction = _unitOfWork.BeginTransaction(System.Data.IsolationLevel.Serializable);
             try
             {
                 var voucher = await _accountingService.ChangeChequeStatusAndCreateVoucherAsync(model, ct);
