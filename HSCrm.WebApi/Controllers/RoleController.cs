@@ -171,7 +171,9 @@ namespace HSCrm.WebApi.Controllers
             if (!result.Succeeded) return new ApiResponse<RoleListModel>
             {
                 Status = false,
-                StatusCode = ApiResultStatusCode.ServerError,
+                StatusCode = result.Errors.Any(e => e.Code == "DuplicateRoleName")
+                    ? ApiResultStatusCode.Conflict
+                    : ApiResultStatusCode.BadRequest,
                 Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
                 Data = null
             };
@@ -253,7 +255,6 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse<RoleListModel>
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
                     StatusCode = result.Errors.Any(e => e.Code == "DuplicateRoleName")
                         ? ApiResultStatusCode.Conflict
                         : ApiResultStatusCode.BadRequest,
