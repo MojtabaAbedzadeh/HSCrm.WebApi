@@ -268,12 +268,21 @@ namespace HSCrm.WebApi.Controllers
 
                 transaction?.Commit();
 
-                return new ApiResponse<SalesInvoice>
+                // Return a compact payload instead of the tracked EF entity.
+                // Serializing invoice navigation properties after Commit can fail on
+                // circular references even though the transaction has already succeeded.
+                return new ApiResponse
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = invoice
+                    AdditionalData = new
+                    {
+                        invoice.Id,
+                        invoice.Number,
+                        invoice.Total,
+                        Status = (byte)invoice.Status
+                    }
                 };
             }
             catch (NotEnoughInventoryException)
