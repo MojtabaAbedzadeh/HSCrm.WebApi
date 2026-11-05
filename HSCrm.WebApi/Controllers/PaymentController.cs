@@ -274,7 +274,7 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
 
             if (model.BankAccountId.HasValue
-                && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted && x.IsActive).Any())
                 return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "حساب بانکی متعلق به شرکت جاری نیست." };
 
             if (model.PurchaseInvoiceId.HasValue)
@@ -444,7 +444,7 @@ namespace HSCrm.WebApi.Controllers
                 transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
                 if (model.BankAccountId.HasValue
-                    && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                    && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted && x.IsActive).Any())
                     return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "حساب بانکی متعلق به شرکت جاری نیست." };
 
                 var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == model.PurchaseInvoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
