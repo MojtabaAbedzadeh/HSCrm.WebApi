@@ -155,24 +155,26 @@ namespace HSCrm.DataModel.Services.Repository
                 throw new UnauthorizedAccessException("Current tenant is not available.");
 
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value);
-            // The shared system Owner role must never be assignable through a tenant administrator endpoint.
+            // Shared system roles carry global privileges and are never assignable through this tenant endpoint.
             var role = await _context.Roles.FirstOrDefaultAsync(r =>
-                r.Id == roleId && r.TenantId == tenantId.Value && r.Name != "Owner");
+                r.Id == roleId && r.TenantId == tenantId.Value
+                && !(r.TenantId == 1 && new[] { "Admin", "Owner", "Customer", "User" }.Contains(r.Name)));
 
             if (user == null)
                 throw new InvalidOperationException("User not found in the current tenant.");
             if (role == null)
-                throw new InvalidOperationException("Role not found in the current tenant.");
+                throw new InvalidOperationException("Role not found or is a protected system role.");
 
-            var exists = await _context.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId);
-            if (exists)
-                return;
-
+            // Replace all current assignments. Do not early-return when the requested role
+            // already exists: a legacy Owner assignment must also be removed.
             var currentUserRoles = await _userManager.GetRolesAsync(user);
-
             if (currentUserRoles.Any())
             {
-                await _userManager.RemoveFromRolesAsync(user, currentUserRoles);
+                var removeResult = await _userManager.RemoveFromRolesAsync(user, currentUserRoles);
+                if (!removeResult.Succeeded)
+                    throw new InvalidOperationException(
+                        "Could not remove the user's previous roles: " +
+                        string.Join(" | ", removeResult.Errors.Select(x => x.Description)));
             }
 
             _context.UserRoles.Add(new UserRole
