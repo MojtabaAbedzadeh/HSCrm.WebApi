@@ -361,7 +361,8 @@ namespace HSCrm.WebApi.Controllers
                     Id = x.Id,
                     Name = x.Name,
                     Title = x.Title,
-                    Category = x.CategoryTitleEn
+                    Category = x.CategoryTitleEn,
+                    CategoryTitleFa = x.CategoryTitleFa
                 })
                 .ToListAsync(ct);
 
