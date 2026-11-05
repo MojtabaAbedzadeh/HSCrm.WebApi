@@ -139,9 +139,12 @@ namespace HSCrm.WebApi.Controllers
                     return BadRequest(roleResult.Errors);
                 }
 
-                await transaction.CommitAsync(ct);
-
+                // Generate the response token before committing provisioning.
+                // If token generation fails, tenant, fiscal year, owner and role assignment
+                // are still rolled back together instead of leaving an unusable registration.
                 var token = await _token.GenerateTokenAsync(user, defaultFiscalYear.Id, ct);
+
+                await transaction.CommitAsync(ct);
 
                 return Ok(new
                 {
