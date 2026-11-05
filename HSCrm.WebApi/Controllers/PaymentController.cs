@@ -411,7 +411,6 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Payments.Create)]
         public async Task<ApiResponse> RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
         {
-            IEntityTransaction? transaction = null;
             try
             {
                 if (model == null) return new ApiResponse
@@ -441,7 +440,7 @@ namespace HSCrm.WebApi.Controllers
                     return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
 
                 // Lock the invoice balance before reading it to prevent concurrent overpayment.
-                transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
+                using var transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
                 if (model.BankAccountId.HasValue
                     && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
