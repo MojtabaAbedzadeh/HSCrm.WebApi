@@ -167,25 +167,46 @@ namespace HSCrm.DataModel.Services.Repository
             if (role == null)
                 throw new InvalidOperationException("Role not found or is a protected system role.");
 
-            // Replace all current assignments. Do not early-return when the requested role
-            // already exists: a legacy Owner assignment must also be removed.
-            var currentUserRoles = await _userManager.GetRolesAsync(user);
-            if (currentUserRoles.Any())
+            // Identity's EF store and this service share the scoped ApplicationDbContext.
+            // Keep removal of old roles and insertion of the new role in one SQL transaction:
+            // UserManager persists its changes before returning from RemoveFromRolesAsync.
+            // EF InMemory does not support transactions, so retain its normal unit-test path.
+            await using var transaction = _context.Database.IsRelational()
+                ? await _context.Database.BeginTransactionAsync()
+                : null;
+
+            try
             {
-                var removeResult = await _userManager.RemoveFromRolesAsync(user, currentUserRoles);
-                if (!removeResult.Succeeded)
-                    throw new InvalidOperationException(
-                        "Could not remove the user's previous roles: " +
-                        string.Join(" | ", removeResult.Errors.Select(x => x.Description)));
+                // Do not early-return when the requested role already exists: a legacy
+                // Owner assignment must also be removed.
+                var currentUserRoles = await _userManager.GetRolesAsync(user);
+                if (currentUserRoles.Any())
+                {
+                    var removeResult = await _userManager.RemoveFromRolesAsync(user, currentUserRoles);
+                    if (!removeResult.Succeeded)
+                        throw new InvalidOperationException(
+                            "Could not remove the user's previous roles: " +
+                            string.Join(" | ", removeResult.Errors.Select(x => x.Description)));
+                }
+
+                _context.UserRoles.Add(new UserRole
+                {
+                    UserId = userId,
+                    RoleId = roleId
+                });
+
+                await _context.SaveChangesAsync();
+
+                if (transaction != null)
+                    await transaction.CommitAsync();
             }
-
-            _context.UserRoles.Add(new UserRole
+            catch
             {
-                UserId = userId,
-                RoleId = roleId
-            });
+                if (transaction != null)
+                    await transaction.RollbackAsync();
 
-            await _context.SaveChangesAsync();
+                throw;
+            }
         }
     }
 }
