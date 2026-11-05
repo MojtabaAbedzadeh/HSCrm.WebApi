@@ -42,7 +42,12 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.PurchaseInvoices.View)]
         public IActionResult SettlementSummary(int id)
         {
-            var invoice = _context.purchaseInvoiceUW.GetById(id);
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized("شرکت یا سال مالی معتبر مشخص نیست.");
+
+            var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).FirstOrDefault();
             if (invoice == null)
                 return NotFound();
 
@@ -55,8 +60,13 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse<IEnumerable<PurchaseInvoiceModel>> Get(string supplierFullName = null, DateTime? fromDate = null, DateTime? toDate = null, decimal? minTotal = null, decimal? maxTotal = null)
         {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse<IEnumerable<PurchaseInvoiceModel>> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "شرکت یا سال مالی معتبر مشخص نیست." };
+
             var query = _context.purchaseInvoiceUW
-                .Get(null, true, x => x.Supplier, x => x.Tenant)
+                .Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted, true, x => x.Supplier, x => x.Tenant)
                 .AsQueryable();
 
             if (!string.IsNullOrEmpty(supplierFullName))
@@ -129,7 +139,8 @@ namespace HSCrm.WebApi.Controllers
            .ThenInclude(x => x.Product)
        .Include(x => x.Supplier)
        .Include(x => x.Warehouse)
-       .FirstOrDefault(x => x.Id == InvoiceId);
+       .FirstOrDefault(x => x.Id == InvoiceId && x.TenantId == User.GetTenantId()
+           && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted);
 
             if (factor == null)
             {
@@ -164,8 +175,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse<IEnumerable<PurchaseInvoice>> GetBySupplierId(int supplierId)
         {
-            // ✅ فیلتر بر اساس تامین‌کننده (Supplier) به جای پروژه
-            var factors = _context.purchaseInvoiceUW.Get(x => x.SupplierId == supplierId).ToList();
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue
+                || !_context.supplierUW.Get(x => x.Id == supplierId && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                return new ApiResponse<IEnumerable<PurchaseInvoice>> { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "تأمین‌کننده یافت نشد." };
+
+            var factors = _context.purchaseInvoiceUW.Get(x => x.SupplierId == supplierId && x.TenantId == tenantId.Value
+                && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).ToList();
 
             if (factors == null || !factors.Any())
             {
