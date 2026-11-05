@@ -35,14 +35,13 @@ namespace HSCrm.WebApi.Controllers
 
             var roles = await _dbContext.Roles
                 .AsNoTracking()
-                // فقط نقش‌های تننت جاری به همراه نقش Owner از سیستم
+                // Only tenant-defined roles are offered for assignment.
+                // Shared system roles (Admin, Owner, Customer, User) are protected
+                // and must not appear in this assignable list.
                 .Where(x => currentTenantId.HasValue &&
-                    (
-                        (x.TenantId == currentTenantId.Value &&
-                         !(x.TenantId == 1 && new[] { "Admin", "Owner", "Customer", "User" }
-                             .Contains(x.Name, StringComparer.OrdinalIgnoreCase)))
-                        || (x.TenantId == 1 && x.Name == "Owner")
-                    ))
+                    x.TenantId == currentTenantId.Value &&
+                    !(x.TenantId == 1 && new[] { "Admin", "Owner", "Customer", "User" }
+                        .Contains(x.Name, StringComparer.OrdinalIgnoreCase)))
                 .Select(x => new RoleListModel
                 {
                     Id = x.Id,
