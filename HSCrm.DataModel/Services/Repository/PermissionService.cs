@@ -27,8 +27,14 @@ namespace HSCrm.DataModel.Services.Repository
             return await _context.UserRoles
                 .Where(userRole => userRole.UserId == userId
                     && userRole.User.TenantId == tenantId.Value
-                    && (userRole.Role.TenantId == tenantId.Value
-                        || (userRole.Role.TenantId == 1 && userRole.Role.Name == "Owner")))
+                    && (
+                        // A shared Owner role is privileged even for users in tenant 1.
+                        // Only the account explicitly provisioned as the tenant owner may use it.
+                        (userRole.Role.TenantId == tenantId.Value
+                            && (userRole.Role.Name != "Owner" || userRole.User.IsTenantOwner))
+                        || (userRole.Role.TenantId == 1
+                            && userRole.Role.Name == "Owner"
+                            && userRole.User.IsTenantOwner)))
                 .SelectMany(userRole => userRole.Role.RolePermissions)
                 .AnyAsync(rolePermission => rolePermission.Permission.Name == permissionName);
         }
@@ -46,8 +52,14 @@ namespace HSCrm.DataModel.Services.Repository
             return await _context.UserRoles
                 .Where(userRole => userRole.UserId == userId
                     && userRole.User.TenantId == tenantId.Value
-                    && (userRole.Role.TenantId == tenantId.Value
-                        || (userRole.Role.TenantId == 1 && userRole.Role.Name == "Owner")))
+                    && (
+                        // A shared Owner role is privileged even for users in tenant 1.
+                        // Only the account explicitly provisioned as the tenant owner may use it.
+                        (userRole.Role.TenantId == tenantId.Value
+                            && (userRole.Role.Name != "Owner" || userRole.User.IsTenantOwner))
+                        || (userRole.Role.TenantId == 1
+                            && userRole.Role.Name == "Owner"
+                            && userRole.User.IsTenantOwner)))
                 .SelectMany(userRole => userRole.Role.RolePermissions)
                 .Select(rolePermission => rolePermission.Permission.Name)
                 .Distinct()
