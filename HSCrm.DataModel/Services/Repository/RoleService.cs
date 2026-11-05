@@ -38,15 +38,18 @@ namespace HSCrm.DataModel.Services.Repository
             var tenantId = _currentUser.TenantId;
             if (!tenantId.HasValue) throw new UnauthorizedAccessException("Current tenant is not available.");
 
-            var exists = await _context.Roles.AnyAsync(r => r.TenantId == tenantId.Value && r.Name == roleName);
+            var normalizedName = roleName.Trim().ToUpperInvariant();
+            // Identity's NormalizedName unique index is global, not tenant-scoped.
+            var exists = await _context.Roles.AnyAsync(r => r.NormalizedName == normalizedName);
             if (exists)
-                throw new InvalidOperationException("Role already exists.");
+                throw new InvalidOperationException("Role name is already used in the system.");
 
             var role = new ApplicationRole
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = roleName,
-                NormalizedName = roleName.ToUpperInvariant(),
+                Name = roleName.Trim(),
+                NormalizedName = normalizedName,
+                RoleFaName = roleName.Trim(),
                 TenantId = tenantId.Value
             };
 
@@ -71,8 +74,14 @@ namespace HSCrm.DataModel.Services.Repository
             if (string.IsNullOrWhiteSpace(roleName))
                 throw new ArgumentException("Role name is required.");
 
-            role.Name = roleName;
-            role.NormalizedName = roleName.ToUpperInvariant();
+            var normalizedName = roleName.Trim().ToUpperInvariant();
+            var duplicate = await _context.Roles.AnyAsync(r =>
+                r.Id != role.Id && r.NormalizedName == normalizedName);
+            if (duplicate)
+                throw new InvalidOperationException("Role name is already used in the system.");
+
+            role.Name = roleName.Trim();
+            role.NormalizedName = normalizedName;
 
             await _context.SaveChangesAsync();
             return true;
