@@ -116,5 +116,141 @@ namespace HSCrm.UnitTests
                 Times.Never);
             Assert.Empty(await context.UserRoles.ToListAsync());
         }
+
+        [Fact]
+        public async Task UpdateRoleAsync_RejectsProtectedSystemRole()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("protected-role-update-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService { TenantId = 1, UserId = "admin", IsAuthenticated = true };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Roles.Add(new ApplicationRole
+            {
+                Id = "system-admin",
+                Name = "Admin",
+                NormalizedName = "ADMIN",
+                RoleFaName = "مدیر سیستم",
+                TenantId = 1
+            });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.UpdateRoleAsync("system-admin", "RenamedAdmin"));
+
+            Assert.Equal("Admin", (await context.Roles.FindAsync("system-admin"))!.Name);
+        }
+
+        [Fact]
+        public async Task DeleteRoleAsync_RejectsProtectedSystemRole()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("protected-role-delete-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService { TenantId = 1, UserId = "admin", IsAuthenticated = true };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Roles.Add(new ApplicationRole
+            {
+                Id = "system-owner",
+                Name = "Owner",
+                NormalizedName = "OWNER",
+                RoleFaName = "مالک",
+                TenantId = 1
+            });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.DeleteRoleAsync("system-owner"));
+
+            Assert.NotNull(await context.Roles.FindAsync("system-owner"));
+        }
+
+        [Fact]
+        public async Task DeleteRoleAsync_RejectsRoleAssignedToUsers()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("assigned-role-delete-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService { TenantId = 7, UserId = "admin", IsAuthenticated = true };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Users.Add(new ApplicationUser
+            {
+                Id = "employee",
+                UserName = "employee",
+                NormalizedUserName = "EMPLOYEE",
+                UserFirstName = "Test",
+                UserLastName = "Employee",
+                TenantId = 7,
+                UserStatus = true
+            });
+            context.Roles.Add(new ApplicationRole
+            {
+                Id = "accountant",
+                Name = "Accountant",
+                NormalizedName = "ACCOUNTANT",
+                RoleFaName = "حسابدار",
+                TenantId = 7
+            });
+            context.UserRoles.Add(new UserRole { UserId = "employee", RoleId = "accountant" });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.DeleteRoleAsync("accountant"));
+
+            Assert.NotNull(await context.Roles.FindAsync("accountant"));
+            Assert.Single(await context.UserRoles.ToListAsync());
+        }
+
+        [Fact]
+        public async Task AssignPermissionsToRoleAsync_RejectsUnknownPermissionWithoutChangingAssignments()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("unknown-permission-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService { TenantId = 7, UserId = "admin", IsAuthenticated = true };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Roles.Add(new ApplicationRole
+            {
+                Id = "accountant",
+                Name = "Accountant",
+                NormalizedName = "ACCOUNTANT",
+                RoleFaName = "حسابدار",
+                TenantId = 7
+            });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.AssignPermissionsToRoleAsync("accountant", new List<string> { "Permission.That.Does.Not.Exist" }));
+
+            Assert.Empty(await context.RolePermissions.ToListAsync());
+        }
     }
 }
