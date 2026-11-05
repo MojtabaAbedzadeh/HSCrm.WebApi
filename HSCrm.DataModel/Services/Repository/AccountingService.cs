@@ -2104,11 +2104,13 @@ namespace HSCrm.DataModel.Services.Repository
                         CreatedAt = DateTime.UtcNow
                     });
                 }
-                else if (model.NewStatus == ChequeStatus.Bounced)
+                else if (model.NewStatus == ChequeStatus.Bounced || model.NewStatus == ChequeStatus.Returned)
                 {
-                    // برگشت خوردن چک دریافتنی (بدهکار شدن مجدد مشتری)
+                    // برگشت خوردن یا عودت چک دریافتنی: بدهی مشتری مجدداً برقرار می‌شود.
                     var creditAccount = previousStatus == ChequeStatus.InBankForCollection ? accNotesInCol : accNotesRec;
-                    voucherTitle = $"سند خودکار برگشت چک دریافتنی شماره {cheque.ChequeNumber} و بدهکار شدن مشتری";
+                    voucherTitle = model.NewStatus == ChequeStatus.Bounced
+                        ? $"سند خودکار برگشت چک دریافتنی شماره {cheque.ChequeNumber} و بدهکار شدن مشتری"
+                        : $"سند خودکار عودت چک دریافتنی شماره {cheque.ChequeNumber} و برگشت بدهی به مشتری";
 
                     items.Add(new JournalVoucherItem
                     {
