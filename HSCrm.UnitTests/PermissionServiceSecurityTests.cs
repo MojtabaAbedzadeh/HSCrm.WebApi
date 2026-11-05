@@ -25,6 +25,9 @@ public class PermissionServiceSecurityTests
             .Options;
 
         var context = new ApplicationDbContext(options, currentUser.Object, fiscalYear.Object);
+        // Materialize model seed data (including the shared Owner role) before arranging the test tenant.
+        await context.Database.EnsureCreatedAsync();
+
         if (tenantId != 1)
         {
             context.Tenants.Add(new Tenant
