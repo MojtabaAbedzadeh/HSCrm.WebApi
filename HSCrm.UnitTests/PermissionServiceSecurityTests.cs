@@ -25,14 +25,17 @@ public class PermissionServiceSecurityTests
             .Options;
 
         var context = new ApplicationDbContext(options, currentUser.Object, fiscalYear.Object);
-        context.Tenants.Add(new Tenant
+        if (tenantId != 1)
         {
-            Id = tenantId,
-            TenantCode = "TENANT-" + tenantId,
-            TenantTitle = "Test tenant",
-            IsActive = true,
-            IsDeleted = false
-        });
+            context.Tenants.Add(new Tenant
+            {
+                Id = tenantId,
+                TenantCode = "TENANT-" + tenantId,
+                TenantTitle = "Test tenant",
+                IsActive = true,
+                IsDeleted = false
+            });
+        }
 
         var user = new ApplicationUser
         {
