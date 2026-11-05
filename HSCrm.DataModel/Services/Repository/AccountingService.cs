@@ -2119,6 +2119,11 @@ namespace HSCrm.DataModel.Services.Repository
                     var targetSupplierId = model.EndorsedToSupplierId ?? cheque.EndorsedToSupplierId
                         ?? throw new InvalidOperationException("لطفاً تأمین‌کننده گیرنده چک (خرج چک) را مشخص نمایید.");
 
+                    var targetSupplierExists = await _context.Suppliers
+                        .AnyAsync(x => x.Id == targetSupplierId && x.TenantId == tenantId && !x.IsDeleted, ct);
+                    if (!targetSupplierExists)
+                        throw new InvalidOperationException("تأمین‌کننده گیرنده چک در شرکت جاری وجود ندارد.");
+
                     cheque.EndorsedToSupplierId = targetSupplierId;
                     voucherTitle = $"سند خودکار خرج چک دریافتنی شماره {cheque.ChequeNumber} به تأمین‌کننده";
 
