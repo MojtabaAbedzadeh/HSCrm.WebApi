@@ -24,8 +24,13 @@ namespace HSCrm.DataModel.Services.Repository
             var tenantId = _currentUser.TenantId;
             if (!tenantId.HasValue) return new List<ApplicationRole>();
 
+            // This list is used for tenant-level role management and assignment.
+            // Shared system roles (including Owner) are intentionally not assignable here.
             return await _context.Roles
-                .Where(r => r.TenantId == tenantId.Value || (r.TenantId == 1 && r.Name == "Owner"))
+                .Where(r => r.TenantId == tenantId.Value &&
+                    !(r.TenantId == 1 &&
+                      new[] { "Admin", "Owner", "Customer", "User" }
+                          .Contains(r.Name, StringComparer.OrdinalIgnoreCase)))
                 .OrderBy(r => r.Name)
                 .ToListAsync();
         }
