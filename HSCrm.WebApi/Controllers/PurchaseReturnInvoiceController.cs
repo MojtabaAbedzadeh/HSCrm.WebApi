@@ -481,10 +481,18 @@ namespace HSCrm.WebApi.Controllers
             // used by Confirm, preventing a stale Proforma read from racing with confirmation.
             using var transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized("شرکت یا سال مالی معتبر مشخص نیست.");
+
             var returnInvoice = await _context.purchaseReturnInvoiceUW
                 .Query()
                 .Include(x => x.Items)
-                .FirstOrDefaultAsync(x => x.Id == id, ct);
+                .FirstOrDefaultAsync(x => x.Id == id
+                    && x.TenantId == tenantId.Value
+                    && x.FiscalYearId == fiscalYearId.Value
+                    && !x.IsDeleted, ct);
 
             if (returnInvoice == null)
                 return NotFound("فاکتور برگشت از خرید یافت نشد.");
