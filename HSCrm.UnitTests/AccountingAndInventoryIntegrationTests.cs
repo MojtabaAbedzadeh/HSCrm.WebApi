@@ -760,7 +760,7 @@ namespace HSCrm.UnitTests
         [Fact(DisplayName = "15. ماشین‌حساب رأس‌گیری چک‌ها: میانگین موزون زمانی/ریالی، تاریخ دقیق رأس و ارزش فعلی (NPV)")]
         public async Task Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue()
         {
-            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
+            var (context, _, accounting, _, _, currentFiscalYear) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
 
             var baseDate = new DateTime(2025, 4, 1);
             var baseDateShamsi = "1404/01/12";
@@ -777,14 +777,33 @@ namespace HSCrm.UnitTests
                 ChequeNumber = "1002", Amount = 300_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(70),
                 BankName = "بانک ملت", CustomerId = 1
             };
+            context.Cheques.AddRange(c1, c2);
+            await context.SaveChangesAsync();
+
+            context.FiscalYears.Add(new FiscalYear
+            {
+                Id = 2,
+                TenantId = 1,
+                Title = "سال مالی 1405",
+                StartDate = new DateTime(2026, 3, 21),
+                EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = false,
+                IsClosed = false,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            // Seed the foreign-year cheque while the test principal is scoped to that year.
             var otherFiscalYearCheque = new Cheque
             {
                 TenantId = 1, FiscalYearId = 2, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
                 ChequeNumber = "1003", Amount = 900_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(90),
                 BankName = "بانک ملت", CustomerId = 1
             };
-            context.Cheques.AddRange(c1, c2, otherFiscalYearCheque);
+            currentFiscalYear.FiscalYearId = 2;
+            context.Cheques.Add(otherFiscalYearCheque);
             await context.SaveChangesAsync();
+            currentFiscalYear.FiscalYearId = 1;
 
             // چک ۱: ۱۰۰ میلیون به سررسید ۳۰ روز | چک ۲: ۳۰۰ میلیون به سررسید ۷۰ روز
             // میانگین موزون = (100M * 30 + 300M * 70) / 400M = 24,000,000,000 / 400,000,000 = 60 روز
