@@ -109,7 +109,7 @@ namespace HSCrm.WebApi.Controllers
                 ExpenseId = p.ExpenseId,
 
                 Title = p.PurchaseInvoiceId.HasValue
-                    ? $"پرداخت از بابت فاکتور شماره  {p.PurchaseInvoice.Number}"
+                    ? $"پرداخت از بابت فاکتور شماره  {p.PurchaseInvoice?.Number ?? p.PurchaseInvoiceId.Value.ToString()}"
                     : p.ExpenseId.HasValue
                     ? $"پرداخت از بابت {p.Expense?.ExpenseTitle}" +
                           $"{(p.Expense?.Project != null ? $" پروژه {p.Expense.Project.ProjectTitle}" : "")}"
@@ -343,7 +343,7 @@ namespace HSCrm.WebApi.Controllers
                     Message = "پرداخت با موفقیت ثبت و وضعیت فاکتور به‌روزرسانی شد."
                 };
             }
-            catch (Exception ex)
+            catch
             {
                 transaction.Rollback();
                 return new ApiResponse
@@ -518,7 +518,7 @@ namespace HSCrm.WebApi.Controllers
                 
                 };
             }
-            catch (Exception ex)
+            catch
             {
                 transaction?.Rollback();
                 return new ApiResponse
