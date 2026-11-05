@@ -2293,6 +2293,8 @@ namespace HSCrm.DataModel.Services.Repository
         public async Task<ChequeRasGiriResultDto> CalculateChequesRasGiriAsync(ChequeRasGiriRequestModel model, CancellationToken ct = default)
         {
             var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
 
             var baseDate = !string.IsNullOrWhiteSpace(model.BaseDateShamsi)
                 ? ConvertDate.ConvertShamsiToMiladi(model.BaseDateShamsi).Date
@@ -2300,7 +2302,9 @@ namespace HSCrm.DataModel.Services.Repository
 
             var query = _context.Set<Cheque>()
                 .AsNoTracking()
-                .Where(x => x.TenantId == tenantId && !x.IsDeleted);
+                .Where(x => x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId
+                    && !x.IsDeleted);
 
             if (model.ChequeIds != null && model.ChequeIds.Count > 0)
             {
