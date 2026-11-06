@@ -48,3 +48,5 @@ jobs:
           name: test-results
           path: '**/TestResults/*.trx'
           if-no-files-found: ignore
+
+# Release branch CI also runs on push; PR validation is enabled by the base-branch workflow.
