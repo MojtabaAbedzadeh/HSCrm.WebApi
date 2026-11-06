@@ -1947,5 +1947,45 @@ namespace HSCrm.UnitTests
             Assert.False(preview.CanClose);
         }
 
+        [Fact(DisplayName = "31. نقش شرکت نباید مجوزهای سراسری مدیریت شرکت‌ها را دریافت کند")]
+        public async Task TenantRole_CannotReceivePlatformTenantPermissions()
+        {
+            var (context, _, _, _, currentUser, _) = CreateTestRig(nameof(TenantRole_CannotReceivePlatformTenantPermissions));
+            currentUser.TenantId = 2;
+
+            var role = new ApplicationRole
+            {
+                Id = "tenant-2-manager",
+                Name = "TenantManager",
+                NormalizedName = "TENANTMANAGER",
+                RoleFaName = "مدیر شرکت",
+                TenantId = 2
+            };
+            var platformPermission = new Permission
+            {
+                Name = "tenants.edit",
+                Title = "ویرایش شرکت‌ها",
+                CategoryTitleEn = "Tenants",
+                CategoryTitleFa = "شرکت‌ها"
+            };
+
+            context.Roles.Add(role);
+            context.Permissions.Add(platformPermission);
+            await context.SaveChangesAsync();
+
+            var controller = new RoleController(null!, context, currentUser);
+            var result = await controller.UpdateRolePermissions(
+                new RolePermissionsModel
+                {
+                    RoleId = role.Id,
+                    PermissionIds = new List<int> { platformPermission.Id }
+                },
+                CancellationToken.None);
+
+            Assert.False(result.Status);
+            Assert.False(await context.RolePermissions.AnyAsync(x =>
+                x.RoleId == role.Id && x.PermissionId == platformPermission.Id));
+        }
+
     }
 }
