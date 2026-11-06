@@ -1913,5 +1913,39 @@ namespace HSCrm.UnitTests
             Assert.Equal(JournalVoucherStatus.Posted, unrelatedOpening.Status);
         }
 
+        [Fact(DisplayName = "30. پیش‌نمایش بستن سال مالی با وجود پیش‌نویس نباید اجازه بستن بدهد")]
+        public async Task FiscalYearClosingPreview_WithDraftVouchers_CannotCloseWithoutAutoPost()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(FiscalYearClosingPreview_WithDraftVouchers_CannotCloseWithoutAutoPost));
+
+            context.JournalVouchers.AddRange(
+                new JournalVoucher
+                {
+                    TenantId = 1, FiscalYearId = 1, VoucherNumber = 1,
+                    VoucherDate = new DateTime(2025, 4, 1),
+                    Description = "سند قطعی آزمایشی",
+                    Status = JournalVoucherStatus.Posted,
+                    ReferenceType = AccountingReferenceType.Manual,
+                    TotalDebit = 100m, TotalCredit = 100m,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new JournalVoucher
+                {
+                    TenantId = 1, FiscalYearId = 1, VoucherNumber = 2,
+                    VoucherDate = new DateTime(2025, 4, 2),
+                    Description = "سند پیش‌نویس آزمایشی",
+                    Status = JournalVoucherStatus.Draft,
+                    ReferenceType = AccountingReferenceType.Manual,
+                    TotalDebit = 100m, TotalCredit = 100m,
+                    CreatedAt = DateTime.UtcNow
+                });
+            await context.SaveChangesAsync();
+
+            var preview = await accounting.GetFiscalYearClosingPreviewAsync(1);
+
+            Assert.Equal(1, preview.UnpostedDraftVouchersCount);
+            Assert.False(preview.CanClose);
+        }
+
     }
 }
