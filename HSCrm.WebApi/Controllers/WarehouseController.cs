@@ -84,6 +84,17 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
             };
 
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "شناسه مستاجر (TenantId) در درخواست موجود نیست."
+                };
+            }
+
             try
             {
                 Warehouse warehouse = new Warehouse()
@@ -93,7 +104,7 @@ namespace HSCrm.WebApi.Controllers
                     Address = model.Address,
                     CreatedAt = DateTime.Now,
                     CreatedById = User.GetUserId(),
-                    TenantId = User.GetTenantId().Value
+                    TenantId = tenantId.Value
                 };
 
                 _context.warehouseUW.Create(warehouse);
@@ -143,7 +154,13 @@ namespace HSCrm.WebApi.Controllers
 
             var getWarehouse = _context.warehouseUW.GetById(model.WarehouseId);
 
-            if (getWarehouse != null)
+            if (getWarehouse == null) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
             {
                 getWarehouse.Title = model.Title;
                 getWarehouse.IsActive = model.IsActive;
