@@ -34,6 +34,15 @@ jobs:
       - name: Test
         run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --logger "trx;LogFileName=release-tests.trx"
 
+      - name: Install EF Core tools
+        run: dotnet tool install --global dotnet-ef --version 8.0.21
+
+      - name: Generate idempotent database migration script
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ runner.temp }}\\publish\\database" | Out-Null
+          dotnet ef migrations script --idempotent --project HSCrm.DataModel/HSCrm.DataModel.csproj --startup-project HSCrm.WebApi/HSCrm.WebApi.csproj --output "${{ runner.temp }}\\publish\\database\\HSCrm-Database-Idempotent.sql"
+
       - name: Publish Backend for IIS
         run: dotnet publish HSCrm.WebApi/HSCrm.WebApi.csproj --configuration Release --no-restore --output "${{ runner.temp }}\publish\backend"
 
@@ -53,6 +62,14 @@ jobs:
         with:
           name: hscrm-backend-${{ github.ref_name }}
           path: ${{ runner.temp }}\publish\backend\
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload database migration script
+        uses: actions/upload-artifact@v4
+        with:
+          name: hscrm-database-migrations-${{ github.ref_name }}
+          path: ${{ runner.temp }}\\publish\\database\\HSCrm-Database-Idempotent.sql
           if-no-files-found: error
           retention-days: 30
 
