@@ -1695,5 +1695,113 @@ namespace HSCrm.UnitTests
                 && x.ReferenceId == returnInvoice.Id).ToListAsync());
         }
 
+
+        [Fact(DisplayName = "22. عودت چک دریافتنی پس از واخواست نباید بدهی مشتری را دوباره ثبت کند")]
+        public async Task ReceivableCheque_BouncedThenReturned_DoesNotReopenReceivableTwice()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ReceivableCheque_BouncedThenReturned_DoesNotReopenReceivableTwice));
+            var cheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-REG-22", Amount = 25_000_000m, IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1), BankName = "بانک ملی", CustomerId = 1
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Bounced, ActionDateShamsi = "1404/03/15"
+            });
+
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Returned, ActionDateShamsi = "1404/03/20"
+            });
+
+            var statement = await accounting.GetPartyStatementAsync(AccountingPartyType.Customer, 1);
+            Assert.Equal(0m, statement.FinalBookBalance);
+        }
+
+        [Fact(DisplayName = "23. عودت چک پرداختنی پس از واخواست نباید بدهی تأمین‌کننده را دوباره افزایش دهد")]
+        public async Task PayableCheque_BouncedThenReturned_DoesNotReopenPayableTwice()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(PayableCheque_BouncedThenReturned_DoesNotReopenPayableTwice));
+            var bank = new BankAccount { TenantId = 1, Title = "بانک تجارت", BankName = "تجارت", IsDefault = true, IsActive = true };
+            context.BankAccounts.Add(bank);
+            await context.SaveChangesAsync();
+
+            var cheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Payable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "PCHQ-REG-23", Amount = 26_000_000m, IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1), BankName = "بانک تجارت", SupplierId = 1, BankAccountId = bank.Id
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Bounced, ActionDateShamsi = "1404/03/15"
+            });
+
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Returned, ActionDateShamsi = "1404/03/20"
+            });
+
+            var statement = await accounting.GetPartyStatementAsync(AccountingPartyType.Supplier, 1);
+            Assert.Equal(0m, statement.FinalBookBalance);
+        }
+
+        [Fact(DisplayName = "24. تغییر وضعیت چک در سال مالی بسته باید رد شود")]
+        public async Task ChequeStatusChange_ClosedFiscalYear_IsRejected()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ChequeStatusChange_ClosedFiscalYear_IsRejected));
+            var cheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-CLOSED-24", Amount = 27_000_000m, IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1), BankName = "بانک ملی", CustomerId = 1
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+            var fiscalYear = await context.FiscalYears.SingleAsync(x => x.Id == 1);
+            fiscalYear.IsClosed = true;
+            await context.SaveChangesAsync();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+                {
+                    ChequeId = cheque.Id, NewStatus = ChequeStatus.Bounced, ActionDateShamsi = "1404/03/15"
+                }));
+        }
+
+        [Fact(DisplayName = "25. صورت‌حساب مشتری نباید چک‌های سال مالی دیگر را در چک‌های در جریان بشمارد")]
+        public async Task CustomerStatement_ExcludesPendingChequesFromOtherFiscalYears()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(CustomerStatement_ExcludesPendingChequesFromOtherFiscalYears));
+            context.FiscalYears.Add(new FiscalYear
+            {
+                Id = 2, TenantId = 1, Title = "سال مالی 1405",
+                StartDate = new DateTime(2026, 3, 21), EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = false, IsClosed = false, CreatedAt = DateTime.UtcNow
+            });
+            context.Cheques.Add(new Cheque
+            {
+                TenantId = 1, FiscalYearId = 2, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-OTHER-FY-25", Amount = 28_000_000m,
+                IssueDate = new DateTime(2026, 4, 1), DueDate = new DateTime(2026, 5, 1),
+                BankName = "بانک ملی", CustomerId = 1
+            });
+            await context.SaveChangesAsync();
+
+            var statement = await accounting.GetPartyStatementAsync(AccountingPartyType.Customer, 1);
+
+            Assert.Equal(0, statement.PendingChequesCount);
+            Assert.Equal(0m, statement.PendingChequesAmount);
+        }
+
     }
 }
