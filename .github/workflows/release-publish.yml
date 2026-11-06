@@ -37,65 +37,11 @@ jobs:
         run: |
           $version = "${{ inputs.release_version }}"
           if ([string]::IsNullOrWhiteSpace($version)) { $version = "${{ github.ref_name }}" }
-          if ($version -notmatch '^v?\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?        run: dotnet restore HSCrm.WebApi.sln
-
-      - name: Build
-        run: dotnet build HSCrm.WebApi.sln --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --logger "trx;LogFileName=release-tests.trx"
-
-      - name: Install EF Core tools
-        run: dotnet tool install --global dotnet-ef --version 8.0.21
-
-      - name: Generate idempotent database migration script
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/publish/database" | Out-Null
-          dotnet ef migrations script --idempotent --project HSCrm.DataModel/HSCrm.DataModel.csproj --startup-project HSCrm.WebApi/HSCrm.WebApi.csproj --output "$env:RUNNER_TEMP/publish/database/HSCrm-Database-Idempotent.sql"
-
-      - name: Publish Backend for IIS
-        run: dotnet publish HSCrm.WebApi/HSCrm.WebApi.csproj --configuration Release --no-restore --output "${{ runner.temp }}\publish\backend"
-
-      - name: Include deployment metadata
-        shell: pwsh
-        run: |
-          @(
-            "component=backend"
-            "targetFramework=net8.0"
-            "version=${{ steps.release-version.outputs.version }}"
-            "commit=${{ github.sha }}"
-            "builtAtUtc=$([DateTime]::UtcNow.ToString('o'))"
-          ) | Set-Content -Path "${{ runner.temp }}\publish\backend\release-info.txt" -Encoding utf8
-
-      - name: Upload IIS package
-        uses: actions/upload-artifact@v4
-        with:
-          name: hscrm-backend-${{ steps.release-version.outputs.version }}
-          path: ${{ runner.temp }}\publish\backend\
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload database migration script
-        uses: actions/upload-artifact@v4
-        with:
-          name: hscrm-database-migrations-${{ steps.release-version.outputs.version }}
-          path: ${{ runner.temp }}/publish/database/HSCrm-Database-Idempotent.sql
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hscrm-backend-test-results-${{ github.run_id }}
-          path: '**/TestResults/*.trx'
-          if-no-files-found: ignore
-          retention-days: 14
-) {
+          if ($version -notmatch '^v?\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?$') {
             throw "Release version must follow semantic version format (for example 1.0.0)."
           }
           "version=$version" | Add-Content -Path $env:GITHUB_OUTPUT
+
       - name: Restore
         run: dotnet restore HSCrm.WebApi.sln
 
