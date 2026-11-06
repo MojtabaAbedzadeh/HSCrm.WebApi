@@ -1867,5 +1867,51 @@ namespace HSCrm.UnitTests
                 }));
         }
 
+        [Fact(DisplayName = "29. بازگشایی سال مالی نباید سند افتتاحیه نامرتبط در سال بعد را حذف کند")]
+        public async Task ReopenFiscalYear_LeavesUnrelatedOpeningVoucherInNextYear()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ReopenFiscalYear_LeavesUnrelatedOpeningVoucherInNextYear));
+
+            var nextYear = new FiscalYear
+            {
+                Id = 2, TenantId = 1, Title = "سال مالی 1405",
+                StartDate = new DateTime(2026, 3, 21), EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = false, IsClosed = false, CreatedAt = DateTime.UtcNow
+            };
+            context.FiscalYears.Add(nextYear);
+
+            var sourceYear = await context.FiscalYears.SingleAsync(x => x.Id == 1);
+            sourceYear.IsClosed = true;
+
+            var relatedOpening = new JournalVoucher
+            {
+                TenantId = 1, FiscalYearId = 2, VoucherNumber = 1,
+                VoucherDate = nextYear.StartDate,
+                Description = "سند افتتاحیه سال مالی 1405 (انتقالی از سال مالی 1404)",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.OpeningBalance,
+                TotalDebit = 100m, TotalCredit = 100m,
+                CreatedAt = DateTime.UtcNow
+            };
+            var unrelatedOpening = new JournalVoucher
+            {
+                TenantId = 1, FiscalYearId = 2, VoucherNumber = 2,
+                VoucherDate = nextYear.StartDate,
+                Description = "سند افتتاحیه سال مالی 1405 (انتقالی از سال مالی 1403)",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.OpeningBalance,
+                TotalDebit = 200m, TotalCredit = 200m,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.JournalVouchers.AddRange(relatedOpening, unrelatedOpening);
+            await context.SaveChangesAsync();
+
+            await accounting.ReopenFiscalYearAsync(1, 2);
+
+            Assert.True(relatedOpening.IsDeleted);
+            Assert.False(unrelatedOpening.IsDeleted);
+            Assert.Equal(JournalVoucherStatus.Posted, unrelatedOpening.Status);
+        }
+
     }
 }
