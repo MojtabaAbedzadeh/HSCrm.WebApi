@@ -138,10 +138,15 @@ builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 // ۹. مقداردهی اولیه و Seed کردن پایگاه داده
+// Production migrations are applied by the controlled release procedure by default.
+// Set Database__ApplyMigrationsOnStartup=true only for an explicitly approved maintenance window.
+var applyMigrationsOnStartup = configuration.GetValue<bool?>("Database:ApplyMigrationsOnStartup")
+    ?? app.Environment.IsDevelopment();
+
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
-    await DbInitializer.InitializeAsync(services);
+    await DbInitializer.InitializeAsync(services, applyMigrationsOnStartup);
 }
 
 // ۱۰. لوله‌های پردازش میان‌افزارها (Pipeline Middleware)
