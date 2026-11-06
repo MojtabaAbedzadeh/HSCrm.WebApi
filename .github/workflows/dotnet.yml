@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ master, security/hardening ]
   push:
-    branches: [ master, security/hardening ]
+    branches: [ master, security/hardening, release/1.0.0-security ]
 
 permissions:
   contents: read
@@ -56,3 +56,5 @@ jobs:
           name: test-results
           path: '**/TestResults/*.trx'
           if-no-files-found: ignore
+
+# Release branch CI also runs on push; PR validation is enabled by the base-branch workflow.

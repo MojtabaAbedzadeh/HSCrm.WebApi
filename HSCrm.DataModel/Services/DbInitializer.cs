@@ -8,14 +8,15 @@ namespace HSCrm.DataModel.Services
 {
     public static class DbInitializer
     {
-        public static async Task InitializeAsync(IServiceProvider serviceProvider)
+        public static async Task InitializeAsync(IServiceProvider serviceProvider, bool applyMigrations = true)
         {
             using var scope = serviceProvider.CreateScope();
 
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
 
-            await context.Database.MigrateAsync();
+            if (applyMigrations)
+                await context.Database.MigrateAsync();
 
             // 1) Seed permissions
             await PermissionSeeder.SeedAsync(context);

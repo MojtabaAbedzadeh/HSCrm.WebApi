@@ -1,5 +1,6 @@
 using Common.Permissions;
 using Framework.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SkiaSharp;
 
@@ -62,7 +63,7 @@ namespace HSCrm.WebApi.PublicApi
 
             // Store new uploads outside wwwroot. They are served only by the
             // constrained image endpoint below, never by the generic static-file handler.
-            var uploadsRoot = Path.Combine(_hosting.ContentRootPath, "App_Data", "UserImages");
+            var uploadsRoot = ResolveUserImagesRoot();
             Directory.CreateDirectory(uploadsRoot);
 
             var savedUrls = new List<string>();
@@ -80,6 +81,59 @@ namespace HSCrm.WebApi.PublicApi
                 return Ok(new { statusCode = 200, message = savedUrls[0] });
             return Ok(new { statusCode = 200, message = "آپلود موفق", urls = savedUrls });
         }
+        [HttpGet("/upload/userimage/{fileName}")]
+        [AllowAnonymous]
+        public IActionResult GetUserImage(string fileName)
+        {
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+            if (Path.GetFileName(fileName) != fileName
+                || !Guid.TryParseExact(Path.GetFileNameWithoutExtension(fileName), "N", out _)
+                || extension is not (".png" or ".jpg" or ".jpeg"))
+                return NotFound();
+
+            var uploadsRoot = ResolveUserImagesRoot();
+            var physicalPath = Path.GetFullPath(Path.Combine(uploadsRoot, fileName));
+            var relativePath = Path.GetRelativePath(uploadsRoot, physicalPath);
+            if (relativePath == ".."
+                || relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || Path.IsPathRooted(relativePath)
+                || !System.IO.File.Exists(physicalPath))
+                return NotFound();
+
+            return PhysicalFile(physicalPath, extension == ".png" ? "image/png" : "image/jpeg");
+        }
+
+        private string ResolveUserImagesRoot()
+        {
+            var configuredPath = _configuration["Storage:UserImagesPath"];
+            if (string.IsNullOrWhiteSpace(configuredPath))
+            {
+                if (!_hosting.IsDevelopment())
+                    throw new InvalidOperationException(
+                        "Production requires Storage:UserImagesPath to point to a persistent directory outside the release folder.");
+
+                configuredPath = Path.Combine(_hosting.ContentRootPath, "App_Data", "UserImages");
+            }
+
+            if (!Path.IsPathRooted(configuredPath))
+                throw new InvalidOperationException("Storage:UserImagesPath must be an absolute path.");
+
+            var fullPath = Path.GetFullPath(configuredPath);
+            if (!_hosting.IsDevelopment())
+            {
+                var contentRoot = Path.GetFullPath(_hosting.ContentRootPath);
+                var relativePath = Path.GetRelativePath(contentRoot, fullPath);
+                if (relativePath == "."
+                    || relativePath == ".."
+                    || (!Path.IsPathRooted(relativePath)
+                        && !relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+                    throw new InvalidOperationException(
+                        "Storage:UserImagesPath must be outside the deployed application directory.");
+            }
+
+            return fullPath;
+        }
+
         private static bool TryDecodeAndReencodeImage(
             byte[] data,
             string extension,

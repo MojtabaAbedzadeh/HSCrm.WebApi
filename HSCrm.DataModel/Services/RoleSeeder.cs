@@ -1,4 +1,5 @@
-﻿using HSCrm.DataModel.Context;
+﻿using HSCrm.Common.Permissions;
+using HSCrm.DataModel.Context;
 using HSCrm.Entities.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -61,6 +62,11 @@ namespace HSCrm.DataModel.Services
             {
                 foreach (var permission in permissions)
                 {
+                    // Platform permissions belong only to the central Owner role.
+                    if (PermissionScope.IsPlatformPermission(permission.CategoryTitleEn)
+                        && !(role.TenantId == 1 && string.Equals(role.Name, "Owner", StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
                     var exists = existingRolePermissions.Any(rp => rp.RoleId == role.Id && rp.PermissionId == permission.Id);
                     if (!exists)
                     {

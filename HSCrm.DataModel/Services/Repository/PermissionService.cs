@@ -1,4 +1,5 @@
-﻿using HSCrm.DataModel.Context;
+﻿using HSCrm.Common.Permissions;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,9 @@ namespace HSCrm.DataModel.Services.Repository
             if (!tenantId.HasValue)
                 return false;
 
+            var canAccessPlatformPermissions = tenantId.Value == 1
+                && await _context.Users.AnyAsync(user => user.Id == userId && user.IsTenantOwner);
+
             return await _context.UserRoles
                 .Where(userRole => userRole.UserId == userId
                     && userRole.User.UserStatus
@@ -39,7 +43,9 @@ namespace HSCrm.DataModel.Services.Repository
                             && userRole.Role.Name == "Owner"
                             && userRole.User.IsTenantOwner)))
                 .SelectMany(userRole => userRole.Role.RolePermissions)
-                .AnyAsync(rolePermission => rolePermission.Permission.Name == permissionName);
+                .AnyAsync(rolePermission => rolePermission.Permission.Name == permissionName
+                    && (rolePermission.Permission.CategoryTitleEn != PermissionScope.PlatformCategory
+                        || canAccessPlatformPermissions));
         }
 
         public async Task<List<string>> GetUserPermissionsAsync(string userId)
@@ -52,6 +58,9 @@ namespace HSCrm.DataModel.Services.Repository
             if (!tenantId.HasValue)
                 return new List<string>();
 
+            var canAccessPlatformPermissions = tenantId.Value == 1
+                && await _context.Users.AnyAsync(user => user.Id == userId && user.IsTenantOwner);
+
             return await _context.UserRoles
                 .Where(userRole => userRole.UserId == userId
                     && userRole.User.UserStatus
@@ -67,6 +76,8 @@ namespace HSCrm.DataModel.Services.Repository
                             && userRole.Role.Name == "Owner"
                             && userRole.User.IsTenantOwner)))
                 .SelectMany(userRole => userRole.Role.RolePermissions)
+                .Where(rolePermission => rolePermission.Permission.CategoryTitleEn != PermissionScope.PlatformCategory
+                    || canAccessPlatformPermissions)
                 .Select(rolePermission => rolePermission.Permission.Name)
                 .Distinct()
                 .ToListAsync();
@@ -82,7 +93,9 @@ namespace HSCrm.DataModel.Services.Repository
                 throw new Exception("Role not found for this tenant.");
 
             // تمام permissionهای موجود (permission چند-tenant نیست)
-            var permissions = await _context.Permissions.ToListAsync();
+            var permissions = await _context.Permissions
+                .Where(permission => permission.CategoryTitleEn != PermissionScope.PlatformCategory)
+                .ToListAsync();
 
             if (!permissions.Any())
                 return;

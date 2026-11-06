@@ -75,6 +75,7 @@ namespace HSCrm.DataModel.Context
                     TenantCode = "Central",
                     TenantTitle = "سیستم مرکزی",
                     Currency = "IRR",
+                    IsActive = true,
                     CreatedAt = new DateTime(2024, 1, 1), 
                     IsDeleted = false
                 }

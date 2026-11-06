@@ -36,6 +36,7 @@ namespace HSCrm.UnitTests
 
                 var environment = new Mock<IWebHostEnvironment>();
                 environment.SetupGet(x => x.ContentRootPath).Returns(contentRoot);
+                environment.SetupGet(x => x.EnvironmentName).Returns("Development");
                 var controller = new FileUploadController(environment.Object, new ConfigurationBuilder().Build());
 
                 var result = await controller.UserImageUpload(new[] { formFile }, CancellationToken.None);
@@ -84,6 +85,7 @@ namespace HSCrm.UnitTests
 
                 var environment = new Mock<IWebHostEnvironment>();
                 environment.SetupGet(x => x.ContentRootPath).Returns(contentRoot);
+                environment.SetupGet(x => x.EnvironmentName).Returns("Development");
                 var controller = new FileUploadController(environment.Object, new ConfigurationBuilder().Build());
 
                 var result = await controller.UserImageUpload(new[] { formFile }, CancellationToken.None);
@@ -130,6 +132,7 @@ namespace HSCrm.UnitTests
 
                 var environment = new Mock<IWebHostEnvironment>();
                 environment.SetupGet(x => x.ContentRootPath).Returns(contentRoot);
+                environment.SetupGet(x => x.EnvironmentName).Returns("Development");
                 var controller = new FileUploadController(environment.Object, new ConfigurationBuilder().Build());
 
                 var result = await controller.UserImageUpload(new[] { formFile }, CancellationToken.None);
