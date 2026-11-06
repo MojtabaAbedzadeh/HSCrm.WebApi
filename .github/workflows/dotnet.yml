@@ -41,6 +41,14 @@ jobs:
         run: dotnet build HSCrm.WebApi.sln --configuration Release --no-restore
       - name: Test
         run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --logger "trx;LogFileName=tests.trx"
+      - name: Validate idempotent EF migration script generation
+        shell: bash
+        run: |
+          dotnet tool install --global dotnet-ef --version 8.0.21
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet ef migrations script --idempotent --project HSCrm.DataModel/HSCrm.DataModel.csproj --startup-project HSCrm.WebApi/HSCrm.WebApi.csproj --output "$RUNNER_TEMP/HSCrm-Database-Idempotent.sql"
+          test -s "$RUNNER_TEMP/HSCrm-Database-Idempotent.sql"
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
