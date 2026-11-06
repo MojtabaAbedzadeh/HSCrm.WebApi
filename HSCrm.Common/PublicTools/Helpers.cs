@@ -88,14 +88,17 @@ namespace HSCrm.Common.PublicTools
 
         public static string DisplayNameAttribute(this Enum value, DisplayProperty property = DisplayProperty.Name)
         {
-            var attribute = value.GetType().GetField(value.ToString())
-                .GetCustomAttributes<DisplayAttribute>(false).FirstOrDefault();
+            var field = value.GetType().GetField(value.ToString());
+            var attribute = field?.GetCustomAttribute<DisplayAttribute>();
 
             if (attribute == null)
                 return value.ToString();
 
-            var propValue = attribute.GetType().GetProperty(property.ToString()).GetValue(attribute, null);
-            return propValue.ToString();
+            var propValue = property == DisplayProperty.Description
+                ? attribute.GetDescription()
+                : attribute.GetName();
+
+            return string.IsNullOrWhiteSpace(propValue) ? value.ToString() : propValue;
         }
 
         public enum DisplayProperty
