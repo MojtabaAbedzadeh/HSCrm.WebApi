@@ -1010,12 +1010,12 @@ namespace HSCrm.DataModel.Context
                             auditedEntity.CreatedAt = DateTime.UtcNow;
 
                         if (string.IsNullOrWhiteSpace(auditedEntity.CreatedById))
-                            auditedEntity.CreatedById = _currentUserService.UserId;
+                            auditedEntity.CreatedById = _currentUserService?.UserId;
                     }
                     else if (entry.State == EntityState.Modified)
                     {
                         auditedEntity.ModifiedAt = DateTime.UtcNow;
-                        auditedEntity.ModifiedById = _currentUserService.UserId;
+                        auditedEntity.ModifiedById = _currentUserService?.UserId;
                     }
                 }
             }
@@ -1130,7 +1130,7 @@ namespace HSCrm.DataModel.Context
                     var propName = property.Name;
                     var val = (string)property.GetValue(item.Entity, null);
 
-                    if (val.HasValue())
+                    if (!string.IsNullOrWhiteSpace(val))
                     {
                         var newVal = val.Fa2En().FixPersianChars();
                         if (newVal == val)
