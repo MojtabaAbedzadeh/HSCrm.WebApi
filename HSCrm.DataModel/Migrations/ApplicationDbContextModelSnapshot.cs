@@ -2529,7 +2529,7 @@ namespace HSCrm.DataModel.Migrations
                             Id = 1,
                             CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             Currency = "IRR",
-                            IsActive = false,
+                            IsActive = true,
                             IsDeleted = false,
                             RowVersion = new byte[0],
                             TenantCode = "Central",
