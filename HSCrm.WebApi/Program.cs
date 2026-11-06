@@ -1,5 +1,6 @@
 ﻿using Framework.Authorization;
 using FluentValidation;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
@@ -165,6 +166,24 @@ app.UseCors("_myAllowSpecificationOrigins");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Public health endpoints for IIS load balancers and post-deployment smoke checks.
+app.MapGet("/health/live", () => Results.Ok(new { status = "Healthy" }))
+    .AllowAnonymous();
+
+app.MapGet("/health/ready", async (ApplicationDbContext db, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return await db.Database.CanConnectAsync(cancellationToken)
+            ? Results.Ok(new { status = "Ready" })
+            : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+    catch
+    {
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+}).AllowAnonymous();
 
 app.MapControllers();
 
