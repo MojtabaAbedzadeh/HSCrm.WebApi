@@ -2,7 +2,7 @@ name: .NET 8 build and tests
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ master, security/hardening ]
   push:
     branches: [ master, security/hardening ]
 
