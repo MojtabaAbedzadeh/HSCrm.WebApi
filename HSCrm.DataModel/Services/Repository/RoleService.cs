@@ -140,8 +140,10 @@ namespace HSCrm.DataModel.Services.Repository
             permissionNames ??= new List<string>();
 
             var tenantId = _currentUser.TenantId;
-            var roleExists = tenantId.HasValue && await _context.Roles.AnyAsync(r => r.Id == roleId && r.TenantId == tenantId.Value);
-            if (!roleExists)
+            var role = tenantId.HasValue
+                ? await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId.Value)
+                : null;
+            if (role == null)
                 throw new InvalidOperationException("Role not found.");
 
             var requestedNames = permissionNames
@@ -149,13 +151,18 @@ namespace HSCrm.DataModel.Services.Repository
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
 
-            var permissionIds = await _context.Permissions
+            var requestedPermissions = await _context.Permissions
                 .Where(p => requestedNames.Contains(p.Name))
-                .Select(p => p.Id)
+                .Select(p => new { p.Id, p.Name, p.CategoryTitleEn })
                 .ToListAsync();
 
-            if (permissionIds.Count != requestedNames.Count)
+            if (requestedPermissions.Count != requestedNames.Count)
                 throw new InvalidOperationException("One or more requested permissions do not exist.");
+
+            if (requestedPermissions.Any(p => !PermissionScope.IsAssignableToTenant(p.CategoryTitleEn, role.TenantId)))
+                throw new InvalidOperationException("Platform permissions cannot be assigned to a tenant role.");
+
+            var permissionIds = requestedPermissions.Select(p => p.Id).ToList();
 
             var existing = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId)
