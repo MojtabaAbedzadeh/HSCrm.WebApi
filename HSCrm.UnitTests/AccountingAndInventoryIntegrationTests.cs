@@ -1508,5 +1508,142 @@ namespace HSCrm.UnitTests
                 await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
             }
         }
+
+        [Fact(DisplayName = "16. وصول مجدد چک دریافتنی برگشتی: تسویه حساب مشتری (1103)")]
+        public async Task ReceivableCheque_BouncedToCleared_CreditsCustomerReceivable()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ReceivableCheque_BouncedToCleared_CreditsCustomerReceivable));
+            var bank = new BankAccount { TenantId = 1, Title = "بانک ملت", BankName = "ملت", IsDefault = true, IsActive = true };
+            context.BankAccounts.Add(bank);
+            await context.SaveChangesAsync();
+
+            var cheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-REG-16", Amount = 40_000_000m, IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1), BankName = "بانک ملت", CustomerId = 1
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Bounced, ActionDateShamsi = "1404/03/15"
+            });
+
+            var voucher = await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Cleared, TargetBankAccountId = bank.Id,
+                ActionDateShamsi = "1404/03/20"
+            });
+            var items = await context.JournalVoucherItems.Include(x => x.Account)
+                .Where(x => x.JournalVoucherId == voucher.Id).OrderBy(x => x.RowNumber).ToListAsync();
+
+            Assert.Equal(new[] { "1101", "1103" }, items.Select(x => x.Account.Code).ToArray());
+            Assert.Equal(40_000_000m, items[0].Debit);
+            Assert.Equal(40_000_000m, items[1].Credit);
+        }
+
+        [Fact(DisplayName = "17. واگذاری مجدد چک دریافتنی برگشتی: انتقال از بدهی مشتری به اسناد در جریان وصول")]
+        public async Task ReceivableCheque_BouncedToBankCollection_CreditsCustomerReceivable()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ReceivableCheque_BouncedToBankCollection_CreditsCustomerReceivable));
+            var bank = new BankAccount { TenantId = 1, Title = "بانک ملت", BankName = "ملت", IsDefault = true, IsActive = true };
+            context.BankAccounts.Add(bank);
+            await context.SaveChangesAsync();
+
+            var cheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-REG-17", Amount = 41_000_000m, IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1), BankName = "بانک ملت", CustomerId = 1
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Bounced, ActionDateShamsi = "1404/03/15"
+            });
+
+            var voucher = await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.InBankForCollection, TargetBankAccountId = bank.Id,
+                ActionDateShamsi = "1404/03/20"
+            });
+            var items = await context.JournalVoucherItems.Include(x => x.Account)
+                .Where(x => x.JournalVoucherId == voucher.Id).OrderBy(x => x.RowNumber).ToListAsync();
+
+            Assert.Equal(new[] { "1107", "1103" }, items.Select(x => x.Account.Code).ToArray());
+            Assert.Equal(41_000_000m, items[0].Debit);
+            Assert.Equal(41_000_000m, items[1].Credit);
+        }
+
+        [Fact(DisplayName = "18. خرج مجدد چک دریافتنی برگشتی: تسویه بدهی تأمین‌کننده و بستن طلب مشتری")]
+        public async Task ReceivableCheque_BouncedToEndorsed_CreditsCustomerReceivable()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ReceivableCheque_BouncedToEndorsed_CreditsCustomerReceivable));
+            var cheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-REG-18", Amount = 42_000_000m, IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1), BankName = "بانک ملی", CustomerId = 1
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Bounced, ActionDateShamsi = "1404/03/15"
+            });
+
+            var voucher = await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.EndorsedToSupplier, EndorsedToSupplierId = 1,
+                ActionDateShamsi = "1404/03/20"
+            });
+            var items = await context.JournalVoucherItems.Include(x => x.Account)
+                .Where(x => x.JournalVoucherId == voucher.Id).OrderBy(x => x.RowNumber).ToListAsync();
+
+            Assert.Equal(new[] { "2101", "1103" }, items.Select(x => x.Account.Code).ToArray());
+            Assert.Equal(42_000_000m, items[0].Debit);
+            Assert.Equal(42_000_000m, items[1].Credit);
+        }
+
+        [Fact(DisplayName = "19. پاس شدن مجدد چک پرداختنی برگشتی: تسویه بدهی تأمین‌کننده (2101)")]
+        public async Task PayableCheque_BouncedToCleared_DebitsSupplierPayable()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(PayableCheque_BouncedToCleared_DebitsSupplierPayable));
+            var bank = new BankAccount { TenantId = 1, Title = "بانک تجارت", BankName = "تجارت", IsDefault = true, IsActive = true };
+            context.BankAccounts.Add(bank);
+            await context.SaveChangesAsync();
+
+            var cheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Payable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "PCHQ-REG-19", Amount = 43_000_000m, IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1), BankName = "بانک تجارت", SupplierId = 1, BankAccountId = bank.Id
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+            await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Bounced, ActionDateShamsi = "1404/03/15"
+            });
+
+            var voucher = await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id, NewStatus = ChequeStatus.Cleared, TargetBankAccountId = bank.Id,
+                ActionDateShamsi = "1404/03/20"
+            });
+            var items = await context.JournalVoucherItems.Include(x => x.Account)
+                .Where(x => x.JournalVoucherId == voucher.Id).OrderBy(x => x.RowNumber).ToListAsync();
+
+            Assert.Equal(new[] { "2101", "1101" }, items.Select(x => x.Account.Code).ToArray());
+            Assert.Equal(43_000_000m, items[0].Debit);
+            Assert.Equal(43_000_000m, items[1].Credit);
+        }
+
     }
 }
