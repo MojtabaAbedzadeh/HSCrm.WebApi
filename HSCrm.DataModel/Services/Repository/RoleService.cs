@@ -153,7 +153,7 @@ namespace HSCrm.DataModel.Services.Repository
 
             var permissionIds = await _context.Permissions
                 .Where(p => requestedNames.Contains(p.Name)
-                    && !PermissionScope.IsPlatformPermission(p.CategoryTitleEn))
+                    && p.CategoryTitleEn != PermissionScope.PlatformCategory)
                 .Select(p => p.Id)
                 .ToListAsync();
 
