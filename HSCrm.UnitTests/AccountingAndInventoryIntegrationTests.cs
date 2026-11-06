@@ -1645,5 +1645,75 @@ namespace HSCrm.UnitTests
             Assert.Equal(43_000_000m, items[1].Credit);
         }
 
+
+        [Fact(DisplayName = "20. ابطال فروش FIFO باید ترتیب لایه‌های اصلی خرید را برای فروش بعدی حفظ کند")]
+        public async Task RollbackFifoSalesInvoice_RestoresOriginalLayerPriority_ForNextSale()
+        {
+            var (context, _, _, inventory, _, _) = CreateTestRig(nameof(RollbackFifoSalesInvoice_RestoresOriginalLayerPriority_ForNextSale));
+
+            var firstPurchase = new PurchaseInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1, PurchaserUserId = "u1",
+                Number = "PI-FIFO-ROLLBACK-1", IssueDate = new DateTime(2025, 4, 1), Status = InvoiceStatus.Final,
+                Subtotal = 10_000_000m, Total = 10_000_000m,
+                Items = new List<PurchaseInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10, UnitPricePurchase = 1_000_000m, LineTotal = 10_000_000m }
+                }
+            };
+            var secondPurchase = new PurchaseInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1, PurchaserUserId = "u1",
+                Number = "PI-FIFO-ROLLBACK-2", IssueDate = new DateTime(2025, 4, 2), Status = InvoiceStatus.Final,
+                Subtotal = 20_000_000m, Total = 20_000_000m,
+                Items = new List<PurchaseInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10, UnitPricePurchase = 2_000_000m, LineTotal = 20_000_000m }
+                }
+            };
+            context.PurchaseInvoices.AddRange(firstPurchase, secondPurchase);
+            await context.SaveChangesAsync();
+            await inventory.ApplyInventoryForPurchaseInvoice(firstPurchase);
+            await inventory.ApplyInventoryForPurchaseInvoice(secondPurchase);
+            await context.SaveChangesAsync();
+
+            var cancelledSale = new SalesInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProjectId = 1, SellerUserId = "u1",
+                Number = "SI-FIFO-ROLLBACK-CANCELLED", IssueDate = new DateTime(2025, 4, 3),
+                Status = InvoiceStatus.Final, Subtotal = 25_000_000m, Total = 25_000_000m,
+                Items = new List<SalesInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10, UnitPriceSell = 2_500_000m, LineTotal = 25_000_000m }
+                }
+            };
+            context.SalesInvoices.Add(cancelledSale);
+            await context.SaveChangesAsync();
+            inventory.ApplyInventoryForSalesInvoice(cancelledSale, InventoryCostingMethod.FIFO);
+            await context.SaveChangesAsync();
+            Assert.Equal(10_000_000m, cancelledSale.Items.Single().TotalCost);
+
+            // Simulate cancellation of the finalized sale, then issue another FIFO sale.
+            inventory.RollbackInventory(cancelledSale);
+            await context.SaveChangesAsync();
+
+            var nextSale = new SalesInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProjectId = 1, SellerUserId = "u1",
+                Number = "SI-FIFO-ROLLBACK-NEXT", IssueDate = new DateTime(2025, 4, 4),
+                Status = InvoiceStatus.Final, Subtotal = 25_000_000m, Total = 25_000_000m,
+                Items = new List<SalesInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10, UnitPriceSell = 2_500_000m, LineTotal = 25_000_000m }
+                }
+            };
+            context.SalesInvoices.Add(nextSale);
+            await context.SaveChangesAsync();
+            inventory.ApplyInventoryForSalesInvoice(nextSale, InventoryCostingMethod.FIFO);
+
+            // Reversing a sale should restore the original oldest layer, not append a newer layer.
+            Assert.Equal(10_000_000m, nextSale.Items.Single().TotalCost);
+        }
+
     }
 }
