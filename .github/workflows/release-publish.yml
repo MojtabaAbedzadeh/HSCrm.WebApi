@@ -91,7 +91,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hscrm-database-migrations-${{ steps.release-version.outputs.version }}
-          path: ${{ runner.temp }}/publish/database/HSCrm-Database-Idempotent.sql
+          path: "${{ runner.temp }}/publish/database/HSCrm-Database-Idempotent.sql"
           if-no-files-found: error
           retention-days: 30
 
