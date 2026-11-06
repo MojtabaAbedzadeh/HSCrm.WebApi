@@ -28,15 +28,6 @@ public class PermissionServiceSecurityTests
         // Materialize model seed data (including the shared Owner role) before arranging the test tenant.
         await context.Database.EnsureCreatedAsync();
 
-        // The model's central tenant seed is intentionally inactive by default.
-        // Activate it in this authorization fixture to exercise the central-owner path.
-        if (tenantId == 1)
-        {
-            var centralTenant = await context.Tenants.IgnoreQueryFilters()
-                .SingleAsync(tenant => tenant.Id == 1);
-            centralTenant.IsActive = true;
-        }
-
         if (tenantId != 1)
         {
             context.Tenants.Add(new Tenant
