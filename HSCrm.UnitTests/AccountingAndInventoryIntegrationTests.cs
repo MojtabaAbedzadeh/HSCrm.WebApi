@@ -1803,5 +1803,69 @@ namespace HSCrm.UnitTests
             Assert.Equal(0m, statement.PendingChequesAmount);
         }
 
+        [Fact(DisplayName = "26. سند دستی نباید آرتیکل با مبلغ منفی بپذیرد")]
+        public async Task ManualVoucher_NegativeLineAmount_IsRejected()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ManualVoucher_NegativeLineAmount_IsRejected));
+            await accounting.EnsureDefaultChartOfAccountsAsync(1);
+            var bank = await context.AccountingAccounts.FirstAsync(x => x.Code == "1101");
+            var equity = await context.AccountingAccounts.FirstAsync(x => x.Code == "3101");
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                accounting.CreateManualVoucherAsync(new JournalVoucherCreateModel
+                {
+                    VoucherDateShamsi = "1404/01/15",
+                    Description = "آزمون مبلغ منفی در آرتیکل",
+                    Items = new List<JournalVoucherItemCreateModel>
+                    {
+                        new() { AccountId = bank.Id, Debit = 150m, Credit = 0m, Description = "بدهکار مثبت" },
+                        new() { AccountId = bank.Id, Debit = -50m, Credit = 0m, Description = "بدهکار منفی" },
+                        new() { AccountId = equity.Id, Debit = 0m, Credit = 100m, Description = "بستانکار" }
+                    }
+                }));
+        }
+
+        [Fact(DisplayName = "27. هر آرتیکل سند دستی باید فقط یک سمت بدهکار یا بستانکار داشته باشد")]
+        public async Task ManualVoucher_LineWithBothDebitAndCredit_IsRejected()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ManualVoucher_LineWithBothDebitAndCredit_IsRejected));
+            await accounting.EnsureDefaultChartOfAccountsAsync(1);
+            var bank = await context.AccountingAccounts.FirstAsync(x => x.Code == "1101");
+            var equity = await context.AccountingAccounts.FirstAsync(x => x.Code == "3101");
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                accounting.CreateManualVoucherAsync(new JournalVoucherCreateModel
+                {
+                    VoucherDateShamsi = "1404/01/15",
+                    Description = "آزمون دوطرفه بودن آرتیکل",
+                    Items = new List<JournalVoucherItemCreateModel>
+                    {
+                        new() { AccountId = bank.Id, Debit = 100m, Credit = 50m, Description = "آرتیکل دوطرفه" },
+                        new() { AccountId = equity.Id, Debit = 0m, Credit = 50m, Description = "بستانکار" }
+                    }
+                }));
+        }
+
+        [Fact(DisplayName = "28. تاریخ سند دستی باید داخل بازه سال مالی انتخاب‌شده باشد")]
+        public async Task ManualVoucher_DateOutsideFiscalYear_IsRejected()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ManualVoucher_DateOutsideFiscalYear_IsRejected));
+            await accounting.EnsureDefaultChartOfAccountsAsync(1);
+            var bank = await context.AccountingAccounts.FirstAsync(x => x.Code == "1101");
+            var equity = await context.AccountingAccounts.FirstAsync(x => x.Code == "3101");
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                accounting.CreateManualVoucherAsync(new JournalVoucherCreateModel
+                {
+                    VoucherDateShamsi = "1405/01/01",
+                    Description = "آزمون تاریخ خارج از سال مالی",
+                    Items = new List<JournalVoucherItemCreateModel>
+                    {
+                        new() { AccountId = bank.Id, Debit = 100m, Credit = 0m, Description = "بدهکار" },
+                        new() { AccountId = equity.Id, Debit = 0m, Credit = 100m, Description = "بستانکار" }
+                    }
+                }));
+        }
+
     }
 }
