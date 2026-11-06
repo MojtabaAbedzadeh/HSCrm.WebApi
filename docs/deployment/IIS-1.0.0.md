@@ -41,7 +41,7 @@ Set:
 
 The Dashboard refuses to start in Production if its Data Protection key directory is missing or inside the versioned application directory. Grant the Dashboard App Pool identity Modify access only to this key directory. Keep the same application name (`HSCrm.Dashboard`) and key directory across upgrades so existing authentication cookies remain decryptable.
 
-Protect the shared key directory with restrictive NTFS ACLs and include it in the server backup policy. Key encryption at rest (for example, Windows DPAPI or a certificate-based protector) should be configured as a separate hardening step before production if the server's disk/backup threat model requires it.
+Protect the shared key directory with restrictive NTFS ACLs and include it in the server backup policy. The Dashboard release branch applies machine-level Windows DPAPI protection to persisted keys when running on Windows. If the Dashboard is hosted on another operating system, configure an equivalent certificate-based key protector before Production.
 
 ## IIS prerequisites
 
