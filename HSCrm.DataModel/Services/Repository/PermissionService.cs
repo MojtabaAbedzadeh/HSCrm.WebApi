@@ -44,7 +44,7 @@ namespace HSCrm.DataModel.Services.Repository
                             && userRole.User.IsTenantOwner)))
                 .SelectMany(userRole => userRole.Role.RolePermissions)
                 .AnyAsync(rolePermission => rolePermission.Permission.Name == permissionName
-                    && (!PermissionScope.IsPlatformPermission(rolePermission.Permission.CategoryTitleEn)
+                    && (rolePermission.Permission.CategoryTitleEn != PermissionScope.PlatformCategory
                         || canAccessPlatformPermissions));
         }
 
@@ -76,7 +76,7 @@ namespace HSCrm.DataModel.Services.Repository
                             && userRole.Role.Name == "Owner"
                             && userRole.User.IsTenantOwner)))
                 .SelectMany(userRole => userRole.Role.RolePermissions)
-                .Where(rolePermission => !PermissionScope.IsPlatformPermission(rolePermission.Permission.CategoryTitleEn)
+                .Where(rolePermission => rolePermission.Permission.CategoryTitleEn != PermissionScope.PlatformCategory
                     || canAccessPlatformPermissions)
                 .Select(rolePermission => rolePermission.Permission.Name)
                 .Distinct()
@@ -94,7 +94,7 @@ namespace HSCrm.DataModel.Services.Repository
 
             // تمام permissionهای موجود (permission چند-tenant نیست)
             var permissions = await _context.Permissions
-                .Where(permission => !PermissionScope.IsPlatformPermission(permission.CategoryTitleEn))
+                .Where(permission => permission.CategoryTitleEn != PermissionScope.PlatformCategory)
                 .ToListAsync();
 
             if (!permissions.Any())
