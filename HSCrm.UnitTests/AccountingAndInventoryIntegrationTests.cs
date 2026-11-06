@@ -1715,5 +1715,55 @@ namespace HSCrm.UnitTests
             Assert.Equal(10_000_000m, nextSale.Items.Single().TotalCost);
         }
 
+
+        [Fact(DisplayName = "21. برگشت خرید با لایه FIFO ناکافی باید رد شود و موجودی را تغییر ندهد")]
+        public async Task PurchaseReturn_RejectsWhenOpenFifoLayersAreInsufficient()
+        {
+            var (context, _, _, inventoryService, _, _) =
+                CreateTestRig(nameof(PurchaseReturn_RejectsWhenOpenFifoLayersAreInsufficient));
+
+            var inventory = new Inventory
+            {
+                TenantId = 1, WarehouseId = 1, ProductId = 1,
+                Quantity = 5m, AverageUnitCost = 100m, CreatedAt = DateTime.UtcNow
+            };
+            var fifoLayer = new InventoryTransaction
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProductId = 1,
+                QuantityChange = 2m, UnitCost = 100m, TotalCost = 200m,
+                RemainingFifoQuantity = 2m, CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+                TransactionType = InventoryTransactionType.Purchase,
+                ReferenceType = InventoryReferenceType.PurchaseInvoice, ReferenceId = 7001,
+                Description = "لایه آزمایشی خرید"
+            };
+            var returnInvoice = new PurchaseReturnInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1,
+                PurchaseInvoiceId = 7001, PurchaserUserId = "user-admin",
+                Number = "PR-FIFO-INSUFFICIENT", IssueDate = new DateTime(2025, 4, 10),
+                Status = InvoiceStatus.Final, Subtotal = 400m, Total = 400m,
+                Items = new List<PurchaseReturnInvoiceItem>
+                {
+                    new()
+                    {
+                        TenantId = 1, ProductId = 1, Quantity = 4m,
+                        UnitPriceReturn = 100m, LineTotal = 400m
+                    }
+                }
+            };
+            context.Inventories.Add(inventory);
+            context.InventoryTransactions.Add(fifoLayer);
+            await context.SaveChangesAsync();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                inventoryService.ApplyInventoryForPurchaseReturnAsync(returnInvoice));
+
+            Assert.Equal(5m, inventory.Quantity);
+            Assert.Equal(2m, fifoLayer.RemainingFifoQuantity);
+            Assert.Empty(await context.InventoryTransactions.Where(x =>
+                x.ReferenceType == InventoryReferenceType.PurchaseReturnInvoice
+                && x.ReferenceId == returnInvoice.Id).ToListAsync());
+        }
+
     }
 }
