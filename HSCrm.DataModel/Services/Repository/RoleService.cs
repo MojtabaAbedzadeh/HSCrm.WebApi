@@ -129,7 +129,7 @@ namespace HSCrm.DataModel.Services.Repository
                 join role in _context.Roles on rp.RoleId equals role.Id
                 join p in _context.Permissions on rp.PermissionId equals p.Id
                 where rp.RoleId == roleId && role.TenantId == tenantId.Value
-                    && !PermissionScope.IsPlatformPermission(p.CategoryTitleEn)
+                    && p.CategoryTitleEn != PermissionScope.PlatformCategory
                 select p.Name
             ).Distinct().ToListAsync();
         }
