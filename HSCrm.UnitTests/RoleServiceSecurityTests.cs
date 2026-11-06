@@ -1,3 +1,4 @@
+using HSCrm.Common.Permissions;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
@@ -375,6 +376,56 @@ namespace HSCrm.UnitTests
                 () => service.UpdateRoleAsync("tenant-seven-role", "accountant"));
 
             Assert.Equal("Sales", (await context.Roles.FindAsync("tenant-seven-role"))!.Name);
+        }
+
+        [Fact]
+        public async Task AssignPermissionsToRoleAsync_RejectsPlatformPermissionWithoutChangingExistingMappings()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("platform-permission-assignment-" + Guid.NewGuid().ToString("N"))
+                .Options;
+            var currentUser = new MutableCurrentUserService { TenantId = 7, UserId = "admin", IsAuthenticated = true };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = 1 };
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            var role = new ApplicationRole
+            {
+                Id = "tenant-admin",
+                Name = "Admin",
+                NormalizedName = "ADMIN-TENANT",
+                RoleFaName = "مدیر شرکت",
+                TenantId = 7
+            };
+            var existingPermission = new Permission
+            {
+                Name = "customers.view",
+                Title = "مشاهده مشتریان",
+                CategoryTitleEn = "Customers",
+                CategoryTitleFa = "مشتریان"
+            };
+            var platformPermission = new Permission
+            {
+                Name = "tenants.view",
+                Title = "مشاهده شرکت‌ها",
+                CategoryTitleEn = PermissionScope.PlatformCategory,
+                CategoryTitleFa = "شرکت‌ها"
+            };
+            context.Roles.Add(role);
+            context.Permissions.AddRange(existingPermission, platformPermission);
+            context.RolePermissions.Add(new RolePermission { RoleId = role.Id, Permission = existingPermission });
+            await context.SaveChangesAsync();
+
+            var userManager = new Mock<UserManager<ApplicationUser>>(
+                Mock.Of<IUserStore<ApplicationUser>>(),
+                null!, null!, null!, null!, null!, null!, null!, null!);
+            var service = new RoleService(context, userManager.Object, currentUser);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.AssignPermissionsToRoleAsync(role.Id, new List<string> { "tenants.view" }));
+
+            var mappings = await context.RolePermissions.ToListAsync();
+            Assert.Single(mappings);
+            Assert.Equal(existingPermission.Id, mappings[0].PermissionId);
         }
     }
 }

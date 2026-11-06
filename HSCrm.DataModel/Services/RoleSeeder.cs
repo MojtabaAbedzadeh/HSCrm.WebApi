@@ -62,9 +62,9 @@ namespace HSCrm.DataModel.Services
             {
                 foreach (var permission in permissions)
                 {
-                    // Admin is tenant-scoped; platform permissions stay with the central owner.
-                    if (string.Equals(role.Name, "Admin", StringComparison.OrdinalIgnoreCase)
-                        && PermissionScope.IsPlatformPermission(permission.CategoryTitleEn))
+                    // Platform permissions belong only to the central Owner role.
+                    if (PermissionScope.IsPlatformPermission(permission.CategoryTitleEn)
+                        && !(role.TenantId == 1 && string.Equals(role.Name, "Owner", StringComparison.OrdinalIgnoreCase)))
                         continue;
 
                     var exists = existingRolePermissions.Any(rp => rp.RoleId == role.Id && rp.PermissionId == permission.Id);
