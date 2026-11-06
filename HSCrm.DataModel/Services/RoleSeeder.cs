@@ -1,4 +1,5 @@
-﻿using HSCrm.DataModel.Context;
+﻿using HSCrm.Common.Permissions;
+using HSCrm.DataModel.Context;
 using HSCrm.Entities.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -61,6 +62,11 @@ namespace HSCrm.DataModel.Services
             {
                 foreach (var permission in permissions)
                 {
+                    // Admin is tenant-scoped; platform permissions stay with the central owner.
+                    if (string.Equals(role.Name, "Admin", StringComparison.OrdinalIgnoreCase)
+                        && PermissionScope.IsPlatformPermission(permission.CategoryTitleEn))
+                        continue;
+
                     var exists = existingRolePermissions.Any(rp => rp.RoleId == role.Id && rp.PermissionId == permission.Id);
                     if (!exists)
                     {

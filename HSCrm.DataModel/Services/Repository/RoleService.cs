@@ -1,4 +1,5 @@
-﻿using HSCrm.DataModel.Context;
+﻿using HSCrm.Common.Permissions;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using Microsoft.AspNetCore.Identity;
@@ -128,6 +129,7 @@ namespace HSCrm.DataModel.Services.Repository
                 join role in _context.Roles on rp.RoleId equals role.Id
                 join p in _context.Permissions on rp.PermissionId equals p.Id
                 where rp.RoleId == roleId && role.TenantId == tenantId.Value
+                    && !PermissionScope.IsPlatformPermission(p.CategoryTitleEn)
                 select p.Name
             ).Distinct().ToListAsync();
         }
@@ -150,12 +152,13 @@ namespace HSCrm.DataModel.Services.Repository
                 .ToList();
 
             var permissionIds = await _context.Permissions
-                .Where(p => requestedNames.Contains(p.Name))
+                .Where(p => requestedNames.Contains(p.Name)
+                    && !PermissionScope.IsPlatformPermission(p.CategoryTitleEn))
                 .Select(p => p.Id)
                 .ToListAsync();
 
             if (permissionIds.Count != requestedNames.Count)
-                throw new InvalidOperationException("One or more requested permissions do not exist.");
+                throw new InvalidOperationException("One or more requested permissions do not exist or are not assignable to tenant roles.");
 
             var existing = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId)

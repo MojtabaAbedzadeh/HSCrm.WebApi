@@ -81,13 +81,18 @@ public class PermissionServiceSecurityTests
             CategoryTitleEn = "Tests",
             CategoryTitleFa = "آزمایش"
         };
-        context.Permissions.Add(permission);
-        context.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = ownerRole.Id });
-        context.RolePermissions.Add(new RolePermission
+        var platformPermission = new Permission
         {
-            RoleId = ownerRole.Id,
-            Permission = permission
-        });
+            Name = "tenants.view",
+            Title = "View tenants",
+            CategoryTitleEn = "Tenants",
+            CategoryTitleFa = "شرکت‌ها"
+        };
+        context.Permissions.AddRange(permission, platformPermission);
+        context.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = ownerRole.Id });
+        context.RolePermissions.AddRange(
+            new RolePermission { RoleId = ownerRole.Id, Permission = permission },
+            new RolePermission { RoleId = ownerRole.Id, Permission = platformPermission });
 
         await context.SaveChangesAsync();
         return (context, new PermissionService(context), user.Id);
@@ -114,6 +119,30 @@ public class PermissionServiceSecurityTests
         {
             Assert.True(await service.HasPermissionAsync(userId, "owner.privileged.test"));
             Assert.Contains("owner.privileged.test", await service.GetUserPermissionsAsync(userId));
+            Assert.False(await service.HasPermissionAsync(userId, "tenants.view"));
+            Assert.DoesNotContain("tenants.view", await service.GetUserPermissionsAsync(userId));
+        }
+    }
+
+    [Fact]
+    public async Task CentralTenantOwner_CanUsePlatformTenantPermissions()
+    {
+        var (context, service, userId) = await CreateContextAsync(tenantId: 1, isTenantOwner: true);
+        await using (context)
+        {
+            Assert.True(await service.HasPermissionAsync(userId, "tenants.view"));
+            Assert.Contains("tenants.view", await service.GetUserPermissionsAsync(userId));
+        }
+    }
+
+    [Fact]
+    public async Task NonCentralTenantOwner_CannotUsePlatformTenantPermissions()
+    {
+        var (context, service, userId) = await CreateContextAsync(tenantId: 2, isTenantOwner: true);
+        await using (context)
+        {
+            Assert.False(await service.HasPermissionAsync(userId, "tenants.view"));
+            Assert.DoesNotContain("tenants.view", await service.GetUserPermissionsAsync(userId));
         }
     }
 }
