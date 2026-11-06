@@ -1,0 +1,66 @@
+name: .NET 8 release package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-package-backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore HSCrm.WebApi.sln
+
+      - name: Build
+        run: dotnet build HSCrm.WebApi.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --logger "trx;LogFileName=release-tests.trx"
+
+      - name: Publish Backend for IIS
+        run: dotnet publish HSCrm.WebApi/HSCrm.WebApi.csproj --configuration Release --no-restore --output "${{ runner.temp }}\publish\backend"
+
+      - name: Include deployment metadata
+        shell: pwsh
+        run: |
+          @(
+            "component=backend"
+            "targetFramework=net8.0"
+            "version=${{ github.ref_name }}"
+            "commit=${{ github.sha }}"
+            "builtAtUtc=$([DateTime]::UtcNow.ToString('o'))"
+          ) | Set-Content -Path "${{ runner.temp }}\publish\backend\release-info.txt" -Encoding utf8
+
+      - name: Upload IIS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: hscrm-backend-${{ github.ref_name }}
+          path: ${{ runner.temp }}\publish\backend\
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hscrm-backend-test-results-${{ github.run_id }}
+          path: '**/TestResults/*.trx'
+          if-no-files-found: ignore
+          retention-days: 14
