@@ -2,6 +2,7 @@
 using HSCrm.DataModel.Services.Interface;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 
 namespace HSCrm.DataModel.Services.Repository
 {
@@ -10,11 +11,16 @@ namespace HSCrm.DataModel.Services.Repository
         private readonly IDbContextTransaction? _transaction;
 
         public EntityTransaction(DbContext context)
+            : this(context, IsolationLevel.ReadCommitted)
+        {
+        }
+
+        public EntityTransaction(DbContext context, IsolationLevel isolationLevel)
         {
             if (context.Database.CurrentTransaction == null &&
                 context.Database.ProviderName != "Microsoft.EntityFrameworkCore.InMemory")
             {
-                _transaction = context.Database.BeginTransaction();
+                _transaction = context.Database.BeginTransaction(isolationLevel);
             }
         }
 

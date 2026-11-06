@@ -9,6 +9,8 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using static HSCrm.Common.PublicTools.Enums;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -23,17 +25,20 @@ namespace HSCrm.WebApi.Controllers
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly IAccountingService _accountingService;
+        private readonly ILogger<PaymentController> _logger;
 
         public PaymentController(
             IUnitOfWork context,
             ICurrentUserService currentUserService,
             ICurrentFiscalYearService currentFiscalYearService,
-            IAccountingService accountingService)
+            IAccountingService accountingService,
+            ILogger<PaymentController> logger)
         {
             _context = context;
             _currentUserService = currentUserService;
             _currentFiscalYearService = currentFiscalYearService;
             _accountingService = accountingService;
+            _logger = logger;
         }
 
         //[HttpGet("GetPayments")]
@@ -70,8 +75,9 @@ namespace HSCrm.WebApi.Controllers
         public async Task<ApiResponse<IEnumerable<PaymentDto>>> Get(CancellationToken cancellationToken)
         {
             var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
 
-            if (tenantId is null)
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
             {
                 return new ApiResponse<IEnumerable<PaymentDto>>
                 {
@@ -82,7 +88,7 @@ namespace HSCrm.WebApi.Controllers
             }
 
             var payments = await _context.paymentUW.GetAsync(
-                predicate: p => p.TenantId == tenantId.Value,
+                predicate: p => p.TenantId == tenantId.Value && p.FiscalYearId == fiscalYearId.Value && !p.IsDeleted,
                 asNoTracking: true,
                 ct: cancellationToken,
 
@@ -107,7 +113,7 @@ namespace HSCrm.WebApi.Controllers
                 ExpenseId = p.ExpenseId,
 
                 Title = p.PurchaseInvoiceId.HasValue
-                    ? $"پرداخت از بابت فاکتور شماره  {p.PurchaseInvoice.Number}"
+                    ? $"پرداخت از بابت فاکتور شماره  {p.PurchaseInvoice?.Number ?? p.PurchaseInvoiceId.Value.ToString()}"
                     : p.ExpenseId.HasValue
                     ? $"پرداخت از بابت {p.Expense?.ExpenseTitle}" +
                           $"{(p.Expense?.Project != null ? $" پروژه {p.Expense.Project.ProjectTitle}" : "")}"
@@ -152,7 +158,7 @@ namespace HSCrm.WebApi.Controllers
             if (referenceType is "all" or "purchaseInvoice")
             {
                 var purchaseInvoices = _context.purchaseInvoiceUW
-                    .Get(x => x.FiscalYearId == fiscalYearId && (x.Number.Contains(term) || x.Supplier.SupplierFullName.Contains(term)),
+                    .Get(x => x.TenantId == _currentUserService.TenantId && x.FiscalYearId == fiscalYearId && !x.IsDeleted && (x.Number.Contains(term) || x.Supplier.SupplierFullName.Contains(term)),
                     true,
                     x => x.Supplier)
                         .Take(15)
@@ -174,7 +180,7 @@ namespace HSCrm.WebApi.Controllers
                 var expenses = _context.expenseUW
                     .Get(
                         x =>
-                            x.FiscalYearId == fiscalYearId &&
+                            x.TenantId == _currentUserService.TenantId && x.FiscalYearId == fiscalYearId && !x.IsDeleted &&
                             x.ExpenseTitle.Contains(term),
                         true,
                         x => x.Project)
@@ -258,16 +264,51 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
             var userId = User.GetUserId();
 
-            // شروع تراکنش برای اطمینان از ثبت پرداخت و آپدیت فاکتور با هم
-            using var transaction = _context.BeginTransaction();
+            // Balance validation and payment insertion must share one serializable
+            // transaction; otherwise concurrent requests can both pass the remaining
+            // balance check and overpay the same invoice or expense.
+            using var transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
+            if (!tenantId.HasValue || !fiscalYearId.HasValue || model.Amount <= 0
+                || !await _context.fiscalYearUW.Get(x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).AnyAsync())
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
+
+            if (model.BankAccountId.HasValue
+                && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted && x.IsActive).Any())
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "حساب بانکی متعلق به شرکت جاری نیست." };
+
+            if (model.PurchaseInvoiceId.HasValue)
+            {
+                var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == model.PurchaseInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
+                if (invoice == null || invoice.Status != InvoiceStatus.Final)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "فاکتور خرید معتبر نیست یا متعلق به شرکت/سال مالی جاری نیست." };
+                var paid = _context.paymentUW.Get(x => x.PurchaseInvoiceId == invoice.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Sum(x => x.Amount);
+                if (model.Amount > invoice.Total - paid)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "مبلغ پرداخت از مانده فاکتور بیشتر است." };
+            }
+            else
+            {
+                var expense = _context.expenseUW.Get(x => x.Id == model.ExpenseId!.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
+                if (expense == null)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "هزینه متعلق به شرکت/سال مالی جاری نیست." };
+                var paid = _context.paymentUW.Get(x => x.ExpenseId == expense.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).Sum(x => x.Amount);
+                if (model.Amount > expense.Amount - paid)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "مبلغ پرداخت از مانده هزینه بیشتر است." };
+            }
+
+            // The transaction was opened before balance validation so that the
+            // validation and all resulting writes are atomic.
             try
             {
                 // 2. ثبت رکورد پرداخت جدید
                 var entity = new Payment
                 {
-                    FiscalYearId = model.FiscalYearId,
+                    TenantId = tenantId.Value,
+                    FiscalYearId = fiscalYearId.Value,
                     PurchaseInvoiceId = model.PurchaseInvoiceId,
                     ExpenseId = model.ExpenseId,
                     PaymentDate = model.PaymentDate,
@@ -309,11 +350,12 @@ namespace HSCrm.WebApi.Controllers
             catch (Exception ex)
             {
                 transaction.Rollback();
+                _logger.LogError(ex, "Failed to create payment for tenant {TenantId} and fiscal year {FiscalYearId}.", tenantId, fiscalYearId);
                 return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
-                    Message = "خطا در ثبت پرداخت: " + ex.Message
+                    Message = "خطا در ثبت پرداخت. جزئیات در گزارش سرور ثبت شده است."
                 };
             }
         }
@@ -321,11 +363,14 @@ namespace HSCrm.WebApi.Controllers
         // متد کمکی برای محاسبه مجدد و آپدیت فاکتور خرید
         private void UpdatePurchaseInvoiceStatus(int invoiceId)
         {
-            var invoice = _context.purchaseInvoiceUW.GetById(invoiceId);
+            var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;
+            var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == invoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
             if (invoice == null) return;
 
             // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این فاکتور
-            var totalPaid = _context.paymentUW.Get(p => p.PurchaseInvoiceId == invoiceId && !p.IsDeleted)
+            var totalPaid = _context.paymentUW.Get(p => p.PurchaseInvoiceId == invoiceId && p.TenantId == tenantId.Value && p.FiscalYearId == fiscalYearId.Value && !p.IsDeleted)
                                              .Sum(p => p.Amount);
 
             invoice.PaidAmount = totalPaid;
@@ -344,11 +389,14 @@ namespace HSCrm.WebApi.Controllers
         // متد کمکی برای محاسبه مجدد و آپدیت هزینه
         private void UpdateExpenseStatus(int expenseId)
         {
-            var expense = _context.expenseUW.GetById(expenseId);
+            var tenantId = _currentUserService.TenantId;
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue) return;
+            var expense = _context.expenseUW.Get(x => x.Id == expenseId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
             if (expense == null) return;
 
             // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این هزینه
-            var totalPaid = _context.paymentUW.Get(p => p.ExpenseId == expenseId && !p.IsDeleted)
+            var totalPaid = _context.paymentUW.Get(p => p.ExpenseId == expenseId && p.TenantId == tenantId.Value && p.FiscalYearId == fiscalYearId.Value && !p.IsDeleted)
                                              .Sum(p => p.Amount);
 
             expense.PaidAmount = totalPaid;
@@ -365,8 +413,10 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("RegisterPurchasePayment")]
+        [Permission(Permissions.Payments.Create)]
         public async Task<ApiResponse> RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
         {
+            IEntityTransaction? transaction = null;
             try
             {
                 if (model == null) return new ApiResponse
@@ -390,7 +440,19 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
-                var invoice = _context.purchaseInvoiceUW.GetById(model.PurchaseInvoiceId);
+                var tenantId = _currentUserService.TenantId;
+                var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+                if (!tenantId.HasValue || !fiscalYearId.HasValue || model.Amount <= 0)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، سال مالی یا مبلغ پرداخت معتبر نیست." };
+
+                // Lock the invoice balance before reading it to prevent concurrent overpayment.
+                transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
+                if (model.BankAccountId.HasValue
+                    && !_context.bankAccountUW.Get(x => x.Id == model.BankAccountId.Value && x.TenantId == tenantId.Value && !x.IsDeleted && x.IsActive).Any())
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "حساب بانکی متعلق به شرکت جاری نیست." };
+
+                var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == model.PurchaseInvoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).SingleOrDefault();
                 if (invoice == null) return new ApiResponse
                 {
                     Status = false,
@@ -406,7 +468,7 @@ namespace HSCrm.WebApi.Controllers
                 };
 
                 var alreadyPaid = _context.paymentUW
-                    .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+                    .Get(x => x.PurchaseInvoiceId == invoice.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted)
                     .Sum(x => x.Amount);
 
                 var remaining = invoice.Total - alreadyPaid;
@@ -419,6 +481,8 @@ namespace HSCrm.WebApi.Controllers
 
                 var payment = new Payment
                 {
+                    TenantId = tenantId.Value,
+                    FiscalYearId = fiscalYearId.Value,
                     PurchaseInvoiceId = invoice.Id,
                     Amount = model.Amount,
                     BankAccountId = model.BankAccountId,
@@ -435,7 +499,7 @@ namespace HSCrm.WebApi.Controllers
                 await _accountingService.CreateVoucherForPaymentAsync(payment);
 
                 var totalPaid = _context.paymentUW
-                    .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+                    .Get(x => x.PurchaseInvoiceId == invoice.Id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted)
                     .Sum(x => x.Amount);
 
                 invoice.PaidAmount = totalPaid;
@@ -448,6 +512,8 @@ namespace HSCrm.WebApi.Controllers
                 _context.purchaseInvoiceUW.Update(invoice);
                 await _context.SaveAsync();
 
+                transaction.Commit();
+
                 return new ApiResponse
                 {
                     Status = true,
@@ -459,12 +525,18 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
+                transaction?.Rollback();
+                _logger.LogError(ex, "Failed to register purchase payment.");
                 return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
                     Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name)
                 };
+            }
+            finally
+            {
+                transaction?.Dispose();
             }
         }
     }

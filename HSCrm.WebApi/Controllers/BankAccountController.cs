@@ -1,6 +1,7 @@
 using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.Common.PublicTools;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
@@ -19,11 +20,13 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAccountingService _accountingService;
+        private readonly ApplicationDbContext _dbContext;
 
-        public BankAccountController(IUnitOfWork unitOfWork, IAccountingService accountingService)
+        public BankAccountController(IUnitOfWork unitOfWork, IAccountingService accountingService, ApplicationDbContext dbContext)
         {
             _unitOfWork = unitOfWork;
             _accountingService = accountingService;
+            _dbContext = dbContext;
         }
 
         /// <summary>
@@ -33,8 +36,19 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.BankAccounts.View)]
         public async Task<ActionResult<ApiResponse<List<BankAccount>>>> GetAll(CancellationToken ct)
         {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+            {
+                return Unauthorized(new ApiResponse<List<BankAccount>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "دسترسی نامعتبر"
+                });
+            }
+
             var list = await _unitOfWork.bankAccountUW
-                .Get(x => !x.IsDeleted, asNoTracking: true)
+                .Get(x => x.TenantId == tenantId.Value && !x.IsDeleted, asNoTracking: true)
                 .OrderByDescending(x => x.IsDefault)
                 .ThenBy(x => x.Id)
                 .ToListAsync(ct);
@@ -79,6 +93,26 @@ namespace HSCrm.WebApi.Controllers
             [FromQuery] DateTime? toDate,
             CancellationToken ct)
         {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return Unauthorized(new ApiResponse<List<LedgerTransactionDto>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "دسترسی نامعتبر"
+                });
+
+            var accountExists = await _unitOfWork.bankAccountUW
+                .Get(x => x.Id == bankAccountId && x.TenantId == tenantId.Value && !x.IsDeleted, asNoTracking: true)
+                .AnyAsync(ct);
+            if (!accountExists)
+                return NotFound(new ApiResponse<List<LedgerTransactionDto>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "حساب بانکی یافت نشد."
+                });
+
             var data = await _accountingService.GetLedgerAsync(
                 bankAccountId: bankAccountId,
                 fromDate: fromDate,
@@ -230,6 +264,23 @@ namespace HSCrm.WebApi.Controllers
             var bankAccount = await _unitOfWork.bankAccountUW.GetByIdAsync(id, ct);
             if (bankAccount == null || bankAccount.TenantId != tenantId.Value || bankAccount.IsDeleted)
                 return NotFound(new ApiResponse { Status = false, Message = "حساب بانکی یافت نشد." });
+
+            // Ignore the active fiscal-year filter so historical usage in prior years also blocks deletion.
+            // Tenant and soft-delete predicates are reapplied explicitly.
+            var hasLedgerEntries = await _dbContext.JournalVoucherItems
+                .IgnoreQueryFilters()
+                .AnyAsync(x => x.TenantId == tenantId.Value && x.BankAccountId == id && !x.IsDeleted, ct);
+            var hasCheques = await _dbContext.Cheques
+                .IgnoreQueryFilters()
+                .AnyAsync(x => x.TenantId == tenantId.Value && x.BankAccountId == id && !x.IsDeleted, ct);
+
+            if (hasLedgerEntries || hasCheques)
+                return Conflict(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "این حساب دارای گردش مالی یا چک مرتبط است؛ به‌جای حذف، وضعیت آن را غیرفعال کنید."
+                });
 
             bankAccount.IsDeleted = true;
             bankAccount.DeletedAt = DateTime.UtcNow;

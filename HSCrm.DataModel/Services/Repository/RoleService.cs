@@ -10,18 +10,27 @@ namespace HSCrm.DataModel.Services.Repository
     {
         private readonly ApplicationDbContext _context;
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly RoleManager<ApplicationRole> _roleManager;
+        private readonly ICurrentUserService _currentUser;
 
-        public RoleService(ApplicationDbContext context, UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager)
+        public RoleService(ApplicationDbContext context, UserManager<ApplicationUser> userManager, ICurrentUserService currentUser)
         {
             _context = context;
             _userManager = userManager;
-            _roleManager = roleManager;
+            _currentUser = currentUser;
         }
 
         public async Task<List<ApplicationRole>> GetRolesAsync()
         {
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue) return new List<ApplicationRole>();
+
+            // This list is used for tenant-level role management and assignment.
+            // Shared system roles (including Owner) are intentionally not assignable here.
             return await _context.Roles
+                .Where(r => r.TenantId == tenantId.Value &&
+                    !(r.TenantId == 1 &&
+                      new[] { "Admin", "Owner", "Customer", "User" }
+                          .Contains(r.Name)))
                 .OrderBy(r => r.Name)
                 .ToListAsync();
         }
@@ -31,15 +40,22 @@ namespace HSCrm.DataModel.Services.Repository
             if (string.IsNullOrWhiteSpace(roleName))
                 throw new ArgumentException("Role name is required.");
 
-            var exists = await _context.Roles.AnyAsync(r => r.Name == roleName);
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue) throw new UnauthorizedAccessException("Current tenant is not available.");
+
+            var normalizedName = roleName.Trim().ToUpperInvariant();
+            // Identity's NormalizedName unique index is global, not tenant-scoped.
+            var exists = await _context.Roles.AnyAsync(r => r.NormalizedName == normalizedName);
             if (exists)
-                throw new InvalidOperationException("Role already exists.");
+                throw new InvalidOperationException("Role name is already used in the system.");
 
             var role = new ApplicationRole
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = roleName,
-                NormalizedName = roleName.ToUpperInvariant()
+                Name = roleName.Trim(),
+                NormalizedName = normalizedName,
+                RoleFaName = roleName.Trim(),
+                TenantId = tenantId.Value
             };
 
             _context.Roles.Add(role);
@@ -50,15 +66,27 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<bool> UpdateRoleAsync(string roleId, string roleName)
         {
-            var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            var role = tenantId.HasValue
+                ? await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId.Value)
+                : null;
             if (role == null)
                 return false;
+
+            if (IsProtectedSystemRole(role))
+                throw new InvalidOperationException("Protected system roles cannot be modified.");
 
             if (string.IsNullOrWhiteSpace(roleName))
                 throw new ArgumentException("Role name is required.");
 
-            role.Name = roleName;
-            role.NormalizedName = roleName.ToUpperInvariant();
+            var normalizedName = roleName.Trim().ToUpperInvariant();
+            var duplicate = await _context.Roles.AnyAsync(r =>
+                r.Id != role.Id && r.NormalizedName == normalizedName);
+            if (duplicate)
+                throw new InvalidOperationException("Role name is already used in the system.");
+
+            role.Name = roleName.Trim();
+            role.NormalizedName = normalizedName;
 
             await _context.SaveChangesAsync();
             return true;
@@ -66,9 +94,18 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<bool> DeleteRoleAsync(string roleId)
         {
-            var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            var role = tenantId.HasValue
+                ? await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId.Value)
+                : null;
             if (role == null)
                 return false;
+
+            if (IsProtectedSystemRole(role))
+                throw new InvalidOperationException("Protected system roles cannot be deleted.");
+
+            if (await _context.UserRoles.AnyAsync(ur => ur.RoleId == roleId))
+                throw new InvalidOperationException("A role assigned to users cannot be deleted.");
 
             var rolePermissions = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId)
@@ -83,10 +120,14 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<string>> GetRolePermissionsAsync(string roleId)
         {
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue) return new List<string>();
+
             return await (
                 from rp in _context.RolePermissions
+                join role in _context.Roles on rp.RoleId equals role.Id
                 join p in _context.Permissions on rp.PermissionId equals p.Id
-                where rp.RoleId == roleId
+                where rp.RoleId == roleId && role.TenantId == tenantId.Value
                 select p.Name
             ).Distinct().ToListAsync();
         }
@@ -98,14 +139,23 @@ namespace HSCrm.DataModel.Services.Repository
 
             permissionNames ??= new List<string>();
 
-            var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            var roleExists = tenantId.HasValue && await _context.Roles.AnyAsync(r => r.Id == roleId && r.TenantId == tenantId.Value);
             if (!roleExists)
                 throw new InvalidOperationException("Role not found.");
 
+            var requestedNames = permissionNames
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
             var permissionIds = await _context.Permissions
-                .Where(p => permissionNames.Contains(p.Name))
+                .Where(p => requestedNames.Contains(p.Name))
                 .Select(p => p.Id)
                 .ToListAsync();
+
+            if (permissionIds.Count != requestedNames.Count)
+                throw new InvalidOperationException("One or more requested permissions do not exist.");
 
             var existing = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId)
@@ -123,6 +173,11 @@ namespace HSCrm.DataModel.Services.Repository
             await _context.SaveChangesAsync();
         }
 
+        private static bool IsProtectedSystemRole(ApplicationRole role) =>
+            role.TenantId == 1 &&
+            new[] { "Admin", "Owner", "Customer", "User" }
+                .Contains(role.Name, StringComparer.OrdinalIgnoreCase);
+
         public async Task AssignRoleToUserAsync(string userId, string roleId)
         {
             if (string.IsNullOrWhiteSpace(userId))
@@ -131,35 +186,63 @@ namespace HSCrm.DataModel.Services.Repository
             if (string.IsNullOrWhiteSpace(roleId))
                 throw new ArgumentException("RoleId is required.");
 
-            var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
-            var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId);
+            var tenantId = _currentUser.TenantId;
+            if (!tenantId.HasValue)
+                throw new UnauthorizedAccessException("Current tenant is not available.");
 
-            if (!userExists)
-                throw new InvalidOperationException("User not found.");
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value);
+            // Shared system roles carry global privileges and are never assignable through this tenant endpoint.
+            var role = await _context.Roles.FirstOrDefaultAsync(r =>
+                r.Id == roleId && r.TenantId == tenantId.Value
+                && !(r.TenantId == 1 && new[] { "Admin", "Owner", "Customer", "User" }.Contains(r.Name)));
 
-            if (!roleExists)
-                throw new InvalidOperationException("Role not found.");
+            if (user == null)
+                throw new InvalidOperationException("User not found in the current tenant.");
+            if (user.IsTenantOwner)
+                throw new InvalidOperationException("The tenant owner account cannot be reassigned to another role.");
+            if (role == null)
+                throw new InvalidOperationException("Role not found or is a protected system role.");
 
-            var exists = await _context.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId);
+            // Identity's EF store and this service share the scoped ApplicationDbContext.
+            // Keep removal of old roles and insertion of the new role in one SQL transaction:
+            // UserManager persists its changes before returning from RemoveFromRolesAsync.
+            // EF InMemory does not support transactions, so retain its normal unit-test path.
+            await using var transaction = _context.Database.IsRelational()
+                ? await _context.Database.BeginTransactionAsync()
+                : null;
 
-            if (exists)
-                return;
-
-            var user = await _userManager.FindByIdAsync(userId);
-            var currentUserRoles = await _userManager.GetRolesAsync(user);
-
-            if (currentUserRoles.Any())
+            try
             {
-                await _userManager.RemoveFromRolesAsync(user, currentUserRoles);
+                // Do not early-return when the requested role already exists: a legacy
+                // Owner assignment must also be removed.
+                var currentUserRoles = await _userManager.GetRolesAsync(user);
+                if (currentUserRoles.Any())
+                {
+                    var removeResult = await _userManager.RemoveFromRolesAsync(user, currentUserRoles);
+                    if (!removeResult.Succeeded)
+                        throw new InvalidOperationException(
+                            "Could not remove the user's previous roles: " +
+                            string.Join(" | ", removeResult.Errors.Select(x => x.Description)));
+                }
+
+                _context.UserRoles.Add(new UserRole
+                {
+                    UserId = userId,
+                    RoleId = roleId
+                });
+
+                await _context.SaveChangesAsync();
+
+                if (transaction != null)
+                    await transaction.CommitAsync();
             }
-
-            _context.UserRoles.Add(new UserRole
+            catch
             {
-                UserId = userId,
-                RoleId = roleId
-            });
+                if (transaction != null)
+                    await transaction.RollbackAsync();
 
-            await _context.SaveChangesAsync();
+                throw;
+            }
         }
     }
 }

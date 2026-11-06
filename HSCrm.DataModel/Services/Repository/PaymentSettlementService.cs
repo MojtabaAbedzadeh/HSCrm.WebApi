@@ -9,18 +9,38 @@ namespace HSCrm.DataModel.Services.Repository
     public class PaymentSettlementService : IPaymentSettlementService
     {
         private readonly ApplicationDbContext _db;
+        private readonly ICurrentUserService _currentUser;
+        private readonly ICurrentFiscalYearService _currentFiscalYear;
 
-        public PaymentSettlementService(ApplicationDbContext db)
+        public PaymentSettlementService(
+            ApplicationDbContext db,
+            ICurrentUserService currentUser,
+            ICurrentFiscalYearService currentFiscalYear)
         {
             _db = db;
+            _currentUser = currentUser;
+            _currentFiscalYear = currentFiscalYear;
+        }
+
+        private (int TenantId, int FiscalYearId) GetScope()
+        {
+            var tenantId = _currentUser.TenantId
+                ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
+            return (tenantId, fiscalYearId);
         }
 
         public SettlementSummaryDto BuildSalesInvoiceSummary(int salesInvoiceId, decimal totalAmount)
         {
-            // نکته: در معماری جدید، دریافتی‌های فاکتور فروش در موجودیت Receipt ذخیره می‌شوند
+            var scope = GetScope();
+            // دریافتی‌های فاکتور فقط از شرکت و سال مالی جاری خوانده می‌شوند.
             var receipts = _db.Receipts
                 .AsNoTracking()
-                .Where(x => x.SalesInvoiceId == salesInvoiceId)
+                .Where(x => x.TenantId == scope.TenantId
+                    && x.FiscalYearId == scope.FiscalYearId
+                    && !x.IsDeleted
+                    && x.SalesInvoiceId == salesInvoiceId)
                 .OrderByDescending(x => x.ReceiptDate) // فرض بر این است که خاصیت ReceiptDate داری
                 .Select(x => new PaymentItemDto // همچنان از همان DTO استفاده می‌کنی یا اگر خواستی PaymentItemDto را به ReceiptItemDto تغییر نام بده
                 {
@@ -39,9 +59,13 @@ namespace HSCrm.DataModel.Services.Repository
 
         public SettlementSummaryDto BuildPurchaseInvoiceSummary(int purchaseInvoiceId, decimal totalAmount)
         {
+            var scope = GetScope();
             var payments = _db.Payments
                 .AsNoTracking()
-                .Where(x => x.PurchaseInvoiceId == purchaseInvoiceId)
+                .Where(x => x.TenantId == scope.TenantId
+                    && x.FiscalYearId == scope.FiscalYearId
+                    && !x.IsDeleted
+                    && x.PurchaseInvoiceId == purchaseInvoiceId)
                 .OrderByDescending(x => x.PaymentDate)
                 .Select(x => new PaymentItemDto
                 {
@@ -58,9 +82,13 @@ namespace HSCrm.DataModel.Services.Repository
 
         public SettlementSummaryDto BuildExpenseSummary(int expenseId, decimal totalAmount)
         {
+            var scope = GetScope();
             var payments = _db.Payments
                 .AsNoTracking()
-                .Where(x => x.ExpenseId == expenseId)
+                .Where(x => x.TenantId == scope.TenantId
+                    && x.FiscalYearId == scope.FiscalYearId
+                    && !x.IsDeleted
+                    && x.ExpenseId == expenseId)
                 .OrderByDescending(x => x.PaymentDate)
                 .Select(x => new PaymentItemDto
                 {

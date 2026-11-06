@@ -43,12 +43,18 @@ namespace HSCrm.DataModel.Services
             {
                 await FiscalYearSeeder.SeedCurrentFiscalYearAsync(context, tenant.Id);
 
-                if (string.IsNullOrWhiteSpace(tenant.CreatedById))
-                    tenant.CreatedById = adminUserId;
+                using (context.BeginTenantFiscalYearMaintenanceScope(tenant.Id))
+                {
+                    if (string.IsNullOrWhiteSpace(tenant.CreatedById))
+                        tenant.CreatedById = adminUserId;
 
-                var fiscalYear = await context.FiscalYears.FirstOrDefaultAsync();
-                if (fiscalYear != null && string.IsNullOrWhiteSpace(fiscalYear.CreatedById))
-                    fiscalYear.CreatedById = adminUserId;
+                    var fiscalYear = await context.FiscalYears.IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(f => f.TenantId == tenant.Id && !f.IsDeleted);
+                    if (fiscalYear != null && string.IsNullOrWhiteSpace(fiscalYear.CreatedById))
+                        fiscalYear.CreatedById = adminUserId;
+
+                    await context.SaveChangesAsync();
+                }
             }
 
             await context.SaveChangesAsync();
@@ -76,15 +82,63 @@ namespace HSCrm.DataModel.Services
 
         private static async Task EnsureRoleExistsAsync(RoleManager<ApplicationRole> roleManager, string roleName)
         {
-            if (!await roleManager.RoleExistsAsync(roleName))
+            var roleFaName = roleName switch
             {
-                await roleManager.CreateAsync(new ApplicationRole
+                "Admin" => "ادمین",
+                "Owner" => "مدیر",
+                "User" => "کاربر",
+                "Customer" => "مشتری",
+                _ => roleName
+            };
+
+            var role = await roleManager.FindByNameAsync(roleName);
+            if (role == null)
+            {
+                role = new ApplicationRole
                 {
-                    Id = Guid.NewGuid().ToString(),   // ✅ مهم
+                    Id = Guid.NewGuid().ToString(),
                     Name = roleName,
                     NormalizedName = roleName.ToUpperInvariant(),
+                    RoleFaName = roleFaName,
+                    TenantId = 1,
                     ConcurrencyStamp = Guid.NewGuid().ToString()
-                });
+                };
+
+                var createResult = await roleManager.CreateAsync(role);
+                if (!createResult.Succeeded)
+                {
+                    var errors = string.Join(" | ", createResult.Errors.Select(error => error.Code));
+                    throw new InvalidOperationException(
+                        $"Could not seed required system role '{roleName}'. Identity errors: {errors}");
+                }
+
+                return;
+            }
+
+            // Repair legacy/partially seeded system roles without replacing their IDs
+            // or breaking existing user-role assignments.
+            var needsUpdate = false;
+            if (role.TenantId != 1)
+            {
+                role.TenantId = 1;
+                needsUpdate = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(role.RoleFaName))
+            {
+                role.RoleFaName = roleFaName;
+                needsUpdate = true;
+            }
+
+            if (needsUpdate)
+            {
+                var updateResult = await roleManager.UpdateAsync(role);
+                if (!updateResult.Succeeded)
+                {
+                    var errors = string.Join(" | ", updateResult.Errors.Select(error => error.Code));
+                    throw new InvalidOperationException(
+                        $"Could not repair required system role '{roleName}'. Identity errors: {errors}");
+                }
             }
         }
     }

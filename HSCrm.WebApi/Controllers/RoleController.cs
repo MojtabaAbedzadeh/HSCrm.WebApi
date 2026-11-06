@@ -35,8 +35,13 @@ namespace HSCrm.WebApi.Controllers
 
             var roles = await _dbContext.Roles
                 .AsNoTracking()
-                // فقط نقش‌های تننت جاری به همراه نقش Owner از سیستم
-                .Where(x => x.TenantId == currentTenantId || (x.TenantId == 1 && x.Name == "Owner"))
+                // Only tenant-defined roles are offered for assignment.
+                // Shared system roles (Admin, Owner, Customer, User) are protected
+                // and must not appear in this assignable list.
+                .Where(x => currentTenantId.HasValue &&
+                    x.TenantId == currentTenantId.Value &&
+                    !(x.TenantId == 1 && new[] { "Admin", "Owner", "Customer", "User" }
+                        .Contains(x.Name)))
                 .Select(x => new RoleListModel
                 {
                     Id = x.Id,
@@ -57,20 +62,21 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetUserRole")]
         [Permission(Permissions.Roles.View)]
-        public async Task<ApiResponse<UserRole>> GetUserRole(string userId)
+        public async Task<ApiResponse<UserRole?>> GetUserRole(string userId, CancellationToken ct)
         {
             var currentTenantId = _userService.TenantId;
 
-            var role = _dbContext.UserRoles
+            var role = await _dbContext.UserRoles
                 .AsNoTracking()
-                .Where(x => x.UserId == userId)
+                .Where(x => x.UserId == userId && x.User.TenantId == currentTenantId && (x.Role.TenantId == currentTenantId || (x.Role.TenantId == 1 && x.Role.Name == "Owner")))
                 .Select(x => new UserRole
                 {
                     RoleId = x.RoleId,
                     UserId = x.UserId,
-                }).FirstOrDefault();
+                })
+                .FirstOrDefaultAsync(ct);
 
-            return new ApiResponse<UserRole>
+            return new ApiResponse<UserRole?>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
@@ -85,7 +91,7 @@ namespace HSCrm.WebApi.Controllers
         {
             var role = await _dbContext.Roles
                 .AsNoTracking()
-                .Where(x => x.Id == roleId)
+                .Where(x => x.Id == roleId && x.TenantId == _userService.TenantId)
                 .Select(x => new RoleListModel
                 {
                     Id = x.Id,
@@ -127,16 +133,30 @@ namespace HSCrm.WebApi.Controllers
             };
 
             var currentTenantId = _userService.TenantId;
-
-            var existsInTenant = await _dbContext.Roles.AnyAsync(r => r.TenantId == currentTenantId && r.Name == model.Name);
-
-            if (existsInTenant)
+            if (!currentTenantId.HasValue || currentTenantId.Value <= 0)
             {
                 return new ApiResponse<RoleListModel>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "این نقش قبلاً در این مجموعه ثبت شده است.",
+                    Message = "شرکت جاری معتبر نیست.",
+                    Data = null
+                };
+            }
+
+            var normalizedName = model.Name.Trim().ToUpperInvariant();
+            // ASP.NET Identity has a global unique index on NormalizedName.
+            // Check globally before CreateAsync so a cross-tenant collision is reported cleanly.
+            var nameExists = await _dbContext.Roles
+                .AnyAsync(r => r.NormalizedName == normalizedName);
+
+            if (nameExists)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "این نام نقش قبلاً در سامانه استفاده شده است.",
                     Data = null
                 };
             }
@@ -144,10 +164,10 @@ namespace HSCrm.WebApi.Controllers
             var role = new ApplicationRole
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = model.Name,
-                NormalizedName = model.Name.ToUpperInvariant(),
+                Name = model.Name.Trim(),
+                NormalizedName = normalizedName,
                 RoleFaName = model.FaName,
-                TenantId = User.GetTenantId().Value
+                TenantId = currentTenantId.Value
             };
 
             var result = await _roleManager.CreateAsync(role);
@@ -155,7 +175,9 @@ namespace HSCrm.WebApi.Controllers
             if (!result.Succeeded) return new ApiResponse<RoleListModel>
             {
                 Status = false,
-                StatusCode = ApiResultStatusCode.ServerError,
+                StatusCode = result.Errors.Any(e => e.Code == "DuplicateRoleName")
+                    ? ApiResultStatusCode.Conflict
+                    : ApiResultStatusCode.BadRequest,
                 Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
                 Data = null
             };
@@ -169,7 +191,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = role.Id,
                     Name = role.Name!,
-                    TenantId = User.GetTenantId().Value
+                    TenantId = currentTenantId.Value
                 }
             };
         }
@@ -178,7 +200,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.Edit)]
         public async Task<ApiResponse<RoleListModel>> UpdateRole([FromBody] RoleEditModel model)
         {
-            var role = await _roleManager.FindByIdAsync(model.Id);
+            var role = await _dbContext.Roles.FirstOrDefaultAsync(r => r.Id == model.Id && r.TenantId == _userService.TenantId);
 
             if (role == null)
             {
@@ -191,9 +213,44 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
-            role.Name = model.Name;
-            role.NormalizedName = model.Name.ToUpperInvariant();
-            role.TenantId = User.GetTenantId().Value;
+            if (IsProtectedSystemRole(role))
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "ویرایش نقش‌های سیستمی مجاز نیست.",
+                    Data = null
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "نام نقش الزامی است.",
+                    Data = null
+                };
+            }
+
+            var normalizedName = model.Name.Trim().ToUpperInvariant();
+            var nameExists = await _dbContext.Roles
+                .AnyAsync(r => r.Id != role.Id && r.NormalizedName == normalizedName);
+            if (nameExists)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "این نام نقش قبلاً در سامانه استفاده شده است.",
+                    Data = null
+                };
+            }
+
+            role.Name = model.Name.Trim();
+            role.NormalizedName = normalizedName;
 
             var result = await _roleManager.UpdateAsync(role);
 
@@ -202,7 +259,9 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse<RoleListModel>
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.ServerError,
+                    StatusCode = result.Errors.Any(e => e.Code == "DuplicateRoleName")
+                        ? ApiResultStatusCode.Conflict
+                        : ApiResultStatusCode.BadRequest,
                     Message = string.Join(" | ", result.Errors.Select(x => x.Description)),
                     Data = null
                 };
@@ -217,7 +276,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = role.Id,
                     Name = role.Name!,
-                    TenantId = User.GetTenantId().Value
+                    TenantId = role.TenantId
                 }
             };
         }
@@ -226,7 +285,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.Delete)]
         public async Task<ApiResponse<RoleListModel>> DeleteRole(string roleId)
         {
-            var role = await _roleManager.FindByIdAsync(roleId);
+            var role = await _dbContext.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == _userService.TenantId);
 
             if (role == null)
             {
@@ -235,6 +294,29 @@ namespace HSCrm.WebApi.Controllers
                     Status = false,
                     StatusCode = ApiResultStatusCode.NotFound,
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
+                    Data = null
+                };
+            }
+
+            if (IsProtectedSystemRole(role))
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "حذف نقش‌های سیستمی مجاز نیست.",
+                    Data = null
+                };
+            }
+
+            var isAssigned = await _dbContext.UserRoles.AnyAsync(x => x.RoleId == roleId);
+            if (isAssigned)
+            {
+                return new ApiResponse<RoleListModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "این نقش به کاربران اختصاص داده شده است؛ ابتدا نقش کاربران را تغییر دهید.",
                     Data = null
                 };
             }
@@ -298,7 +380,7 @@ namespace HSCrm.WebApi.Controllers
         {
             var permissionIds = await _dbContext.RolePermissions
                 .AsNoTracking()
-                .Where(x => x.RoleId == roleId)
+                .Where(x => x.RoleId == roleId && x.Role.TenantId == _userService.TenantId)
                 .Select(x => x.PermissionId)
                 .ToListAsync(ct);
 
@@ -315,9 +397,10 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Roles.ManagePermissions)]
         public async Task<ApiResponse<bool>> UpdateRolePermissions([FromBody] RolePermissionsModel model, CancellationToken ct)
         {
-            var exists = await _dbContext.Roles.AnyAsync(x => x.Id == model.RoleId, ct);
+            var targetRole = await _dbContext.Roles
+                .FirstOrDefaultAsync(x => x.Id == model.RoleId && x.TenantId == _userService.TenantId, ct);
 
-            if (!exists)
+            if (targetRole == null)
             {
                 return new ApiResponse<bool>
                 {
@@ -328,14 +411,38 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            if (IsProtectedSystemRole(targetRole))
+            {
+                return new ApiResponse<bool>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Conflict,
+                    Message = "تغییر مجوزهای نقش‌های سیستمی مجاز نیست.",
+                    Data = false
+                };
+            }
+
+            var requestedPermissionIds = (model.PermissionIds ?? new List<int>()).Distinct().ToList();
+            var validPermissionCount = await _dbContext.Permissions
+                .CountAsync(x => requestedPermissionIds.Contains(x.Id), ct);
+            if (validPermissionCount != requestedPermissionIds.Count)
+            {
+                return new ApiResponse<bool>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "یک یا چند مجوز ارسالی معتبر نیستند.",
+                    Data = false
+                };
+            }
+
             var oldPermissions = await _dbContext.RolePermissions
-                .Where(x => x.RoleId == model.RoleId)
+                .Where(x => x.RoleId == model.RoleId && x.Role.TenantId == _userService.TenantId)
                 .ToListAsync(ct);
 
             _dbContext.RolePermissions.RemoveRange(oldPermissions);
 
-            var newPermissions = model.PermissionIds
-                .Distinct()
+            var newPermissions = requestedPermissionIds
                 .Select(permissionId => new RolePermission
                 {
                     RoleId = model.RoleId,
@@ -354,5 +461,10 @@ namespace HSCrm.WebApi.Controllers
                 Data = true
             };
         }
+
+        private static bool IsProtectedSystemRole(ApplicationRole role) =>
+            role.TenantId == 1 &&
+            new[] { "Admin", "Owner", "Customer", "User" }
+                .Contains(role.Name, StringComparer.OrdinalIgnoreCase);
     }
 }

@@ -34,6 +34,8 @@ namespace HSCrm.DataModel.Services.Repository
         public const string ACC_PURCHASE_COST = "5101";      // خرید کالا / بهای تمام‌شده
         public const string ACC_PURCHASE_DISCOUNT = "5102";  // تخفیفات خرید
         public const string ACC_PROJECT_EXPENSE = "5201";    // هزینه‌های اجرایی و عملیاتی پروژه
+        public const string ACC_INVENTORY_SHRINKAGE = "5202"; // هزینه کسری و ضایعات انبار
+        public const string ACC_INVENTORY_SURPLUS = "4201";   // درآمد/سود اضافات انبار
 
         public AccountingService(
             ApplicationDbContext context,
@@ -49,11 +51,8 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task EnsureDefaultChartOfAccountsAsync(int tenantId, CancellationToken ct = default)
         {
-            var exists = await _context.AccountingAccounts
-                .IgnoreQueryFilters()
-                .AnyAsync(x => x.TenantId == tenantId && !x.IsDeleted, ct);
-
-            if (exists) return;
+            if (tenantId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(tenantId));
 
             var defaultAccounts = new List<AccountingAccount>
             {
@@ -72,10 +71,37 @@ namespace HSCrm.DataModel.Services.Repository
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_SALES_RETURN, Title = "برگشت از فروش کالا و خدمات", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PURCHASE_COST, Title = "خرید کالا و بهای تمام‌شده", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
                 new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PURCHASE_DISCOUNT, Title = "تخفیفات خرید", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.CreditOnly, IsSystemAccount = true },
-                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PROJECT_EXPENSE, Title = "هزینه‌های اجرایی، پرسنلی و عمومی پروژه", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true }
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_PROJECT_EXPENSE, Title = "هزینه‌های اجرایی، پرسنلی و عمومی پروژه", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_INVENTORY_SHRINKAGE, Title = "هزینه کسری و ضایعات انبار", Level = AccountLevel.Subsidiary, Category = AccountCategory.Expense, Nature = AccountNature.DebitOnly, IsSystemAccount = true },
+                new() {CreatedAt = DateTime.UtcNow, TenantId = tenantId, Code = ACC_INVENTORY_SURPLUS, Title = "درآمد/سود اضافات انبار", Level = AccountLevel.Subsidiary, Category = AccountCategory.Revenue, Nature = AccountNature.CreditOnly, IsSystemAccount = true }
             };
 
-            await _context.AccountingAccounts.AddRangeAsync(defaultAccounts, ct);
+            // Incrementally add missing system accounts for existing tenants too.
+            var existingAccounts = await _context.AccountingAccounts
+                .IgnoreQueryFilters()
+                .Where(x => x.TenantId == tenantId)
+                .ToDictionaryAsync(x => x.Code, ct);
+
+            var missingAccounts = new List<AccountingAccount>();
+            foreach (var expected in defaultAccounts)
+            {
+                if (!existingAccounts.TryGetValue(expected.Code, out var existing))
+                {
+                    missingAccounts.Add(expected);
+                    continue;
+                }
+
+                if (existing.IsDeleted || !existing.IsSystemAccount
+                    || existing.Level != expected.Level
+                    || existing.Category != expected.Category
+                    || existing.Nature != expected.Nature)
+                    throw new InvalidOperationException($"حساب سیستمی {expected.Code} در کدینگ شرکت حذف شده یا مشخصات ناسازگار دارد.");
+            }
+
+            if (missingAccounts.Count == 0)
+                return;
+
+            await _context.AccountingAccounts.AddRangeAsync(missingAccounts, ct);
             await _context.SaveChangesAsync(ct);
         }
 
@@ -179,6 +205,34 @@ namespace HSCrm.DataModel.Services.Repository
             if (totalDebit <= 0 || totalDebit != totalCredit)
                 throw new InvalidOperationException("سند حسابداری تراز نیست. جمع بدهکار باید با جمع بستانکار برابر و بزرگتر از صفر باشد.");
 
+            var accountIds = model.Items.Select(x => x.AccountId).Distinct().ToList();
+            if (accountIds.Any(id => id <= 0)
+                || await _context.AccountingAccounts.CountAsync(x => accountIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted && x.IsActive, ct) != accountIds.Count)
+                throw new UnauthorizedAccessException("یک یا چند حساب متعلق به شرکت جاری نیست یا فعال نیست.");
+
+            var customerIds = model.Items.Where(x => x.CustomerId.HasValue).Select(x => x.CustomerId!.Value).Distinct().ToList();
+            if (customerIds.Count > 0 && await _context.Customers.CountAsync(x => customerIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != customerIds.Count)
+                throw new UnauthorizedAccessException("مشتری انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var supplierIds = model.Items.Where(x => x.SupplierId.HasValue).Select(x => x.SupplierId!.Value).Distinct().ToList();
+            if (supplierIds.Count > 0 && await _context.Suppliers.CountAsync(x => supplierIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != supplierIds.Count)
+                throw new UnauthorizedAccessException("تأمین‌کننده انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var projectIds = model.Items.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId!.Value).Distinct().ToList();
+            if (projectIds.Count > 0 && await _context.Projects.CountAsync(x => projectIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != projectIds.Count)
+                throw new UnauthorizedAccessException("پروژه انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var warehouseIds = model.Items.Where(x => x.WarehouseId.HasValue).Select(x => x.WarehouseId!.Value).Distinct().ToList();
+            if (warehouseIds.Count > 0 && await _context.Warehouses.CountAsync(x => warehouseIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != warehouseIds.Count)
+                throw new UnauthorizedAccessException("انبار انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            var bankAccountIds = model.Items.Where(x => x.BankAccountId.HasValue).Select(x => x.BankAccountId!.Value).Distinct().ToList();
+            if (bankAccountIds.Count > 0 && await _context.BankAccounts.CountAsync(x => bankAccountIds.Contains(x.Id) && x.TenantId == tenantId && !x.IsDeleted, ct) != bankAccountIds.Count)
+                throw new UnauthorizedAccessException("حساب بانکی انتخاب‌شده متعلق به شرکت جاری نیست.");
+
+            if (!await _context.FiscalYears.AnyAsync(x => x.Id == fiscalYearId && x.TenantId == tenantId && !x.IsClosed && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("سال مالی فعال متعلق به شرکت جاری نیست.");
+
             var voucherDate = ConvertDate.ConvertShamsiToMiladi(model.VoucherDateShamsi);
             var nextNumber = await GetNextVoucherNumberAsync(tenantId, fiscalYearId, ct);
 
@@ -216,11 +270,205 @@ namespace HSCrm.DataModel.Services.Repository
             return voucher;
         }
 
+        private async Task<JournalVoucher?> GetExistingPostedAutoVoucherAsync(
+            int tenantId,
+            int fiscalYearId,
+            AccountingReferenceType referenceType,
+            int referenceId,
+            CancellationToken ct)
+        {
+            var existing = await _context.JournalVouchers
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId
+                    && x.ReferenceType == referenceType
+                    && x.ReferenceId == referenceId
+                    && !x.IsDeleted
+                    && x.Status != JournalVoucherStatus.Cancelled, ct);
+
+            if (existing == null)
+                return null;
+
+            if (existing.Status != JournalVoucherStatus.Posted)
+                throw new InvalidOperationException("برای این مرجع سند حسابداری فعال اما قطعی‌نشده وجود دارد.");
+
+            return existing;
+        }
+
+        public async Task<JournalVoucher> CreateVoucherForInventoryAdjustmentAsync(
+            InventoryTransaction adjustment,
+            CancellationToken ct = default)
+        {
+            if (adjustment == null)
+                throw new ArgumentNullException(nameof(adjustment));
+
+            var tenantId = _currentUser.TenantId
+                ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
+
+            if (adjustment.TenantId != tenantId || adjustment.FiscalYearId != fiscalYearId)
+                throw new UnauthorizedAccessException("تعدیل انبار متعلق به شرکت یا سال مالی جاری نیست.");
+
+            await EnsureFiscalYearIsOpenAsync(tenantId, fiscalYearId, ct);
+
+            if (adjustment.Id <= 0 || adjustment.ReferenceType != InventoryReferenceType.Adjustment
+                || adjustment.TransactionType != InventoryTransactionType.Adjustment
+                || adjustment.QuantityChange == 0 || adjustment.TotalCost <= 0
+                || adjustment.WarehouseId <= 0 || adjustment.ProductId <= 0)
+                throw new InvalidOperationException("اطلاعات تعدیل انبار برای صدور سند حسابداری معتبر نیست.");
+
+            // JournalVoucher.ReferenceId is Int32; use the server-generated transaction identity.
+            if (adjustment.Id > int.MaxValue)
+                throw new InvalidOperationException("شناسه تعدیل از محدوده قابل ثبت در مرجع سند حسابداری خارج شده است.");
+            var referenceId = checked((int)adjustment.Id);
+
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                tenantId, fiscalYearId, AccountingReferenceType.InventoryAdjustment, referenceId, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            var persistedAdjustment = await _context.InventoryTransactions
+                .IgnoreQueryFilters()
+                .AnyAsync(x => x.Id == adjustment.Id && x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId && x.ProductId == adjustment.ProductId
+                    && x.WarehouseId == adjustment.WarehouseId
+                    && x.ReferenceType == InventoryReferenceType.Adjustment
+                    && x.ReferenceId == adjustment.Id
+                    && x.TransactionType == InventoryTransactionType.Adjustment
+                    && !x.IsDeleted, ct);
+            if (!persistedAdjustment
+                || !await _context.Products.AnyAsync(x => x.Id == adjustment.ProductId
+                    && x.TenantId == tenantId && !x.IsDeleted, ct)
+                || !await _context.Warehouses.AnyAsync(x => x.Id == adjustment.WarehouseId
+                    && x.TenantId == tenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("مرجع تعدیل، کالا یا انبار متعلق به شرکت جاری نیست.");
+
+            var amount = Math.Round(adjustment.TotalCost, 2);
+            if (amount <= 0)
+                throw new InvalidOperationException("ارزش ریالی تعدیل باید بیشتر از صفر باشد.");
+
+            var inventoryAccount = await GetSystemAccountAsync(tenantId, ACC_INVENTORY, ct);
+            var offsetAccount = await GetSystemAccountAsync(
+                tenantId,
+                adjustment.QuantityChange < 0 ? ACC_INVENTORY_SHRINKAGE : ACC_INVENTORY_SURPLUS,
+                ct);
+
+            var isShortage = adjustment.QuantityChange < 0;
+            var items = new List<JournalVoucherItem>
+            {
+                new()
+                {
+                    TenantId = tenantId,
+                    RowNumber = 1,
+                    AccountId = isShortage ? offsetAccount.Id : inventoryAccount.Id,
+                    Description = isShortage ? "هزینه کسری و ضایعات انبار" : "افزایش موجودی انبار بابت انبارگردانی",
+                    Debit = amount,
+                    Credit = 0m,
+                    WarehouseId = adjustment.WarehouseId,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new()
+                {
+                    TenantId = tenantId,
+                    RowNumber = 2,
+                    AccountId = isShortage ? inventoryAccount.Id : offsetAccount.Id,
+                    Description = isShortage ? "کاهش موجودی کالا بابت انبارگردانی" : "سود اضافات انبار",
+                    Debit = 0m,
+                    Credit = amount,
+                    WarehouseId = adjustment.WarehouseId,
+                    CreatedAt = DateTime.UtcNow
+                }
+            };
+
+            var nextNumber = await GetNextVoucherNumberAsync(tenantId, fiscalYearId, ct);
+            var description = string.IsNullOrWhiteSpace(adjustment.Description)
+                ? "انبارگردانی"
+                : adjustment.Description.Trim();
+            if (description.Length > 400)
+                description = description[..400];
+
+            var voucher = new JournalVoucher
+            {
+                TenantId = tenantId,
+                FiscalYearId = fiscalYearId,
+                CreatedAt = DateTime.UtcNow,
+                VoucherNumber = nextNumber,
+                VoucherDate = adjustment.CreatedAt,
+                Description = $"سند تعدیل موجودی انبار - {description}",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.InventoryAdjustment,
+                ReferenceId = referenceId,
+                TotalDebit = amount,
+                TotalCredit = amount,
+                Items = items
+            };
+
+            await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
+            await _unitOfWork.SaveAsync();
+            return voucher;
+        }
+
+        private async Task ValidateSalesInvoiceForPostingAsync(SalesInvoice invoice, CancellationToken ct)
+        {
+            if (invoice.Status != InvoiceStatus.Final || invoice.Total <= 0
+                || invoice.Items == null || invoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور فروش باید نهایی و دارای مبلغ و اقلام معتبر باشد.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == invoice.WarehouseId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct)
+                || !await _context.Projects.AnyAsync(x => x.Id == invoice.ProjectId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار یا پروژه فاکتور فروش متعلق به شرکت جاری نیست.");
+
+            var projectCustomerId = await _context.Projects
+                .Where(x => x.Id == invoice.ProjectId && x.TenantId == invoice.TenantId && !x.IsDeleted)
+                .Select(x => x.CustomerId)
+                .FirstOrDefaultAsync(ct);
+            if (projectCustomerId.HasValue && !await _context.Customers.AnyAsync(x =>
+                x.Id == projectCustomerId.Value && x.TenantId == invoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("مشتری پروژه فاکتور فروش معتبر نیست.");
+
+            var productIds = invoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == invoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || invoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور فروش معتبر نیست.");
+        }
+
+        private async Task ValidatePurchaseInvoiceForPostingAsync(PurchaseInvoice invoice, CancellationToken ct)
+        {
+            if (invoice.Status != InvoiceStatus.Final || invoice.Total <= 0
+                || invoice.Items == null || invoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور خرید باید نهایی و دارای مبلغ و اقلام معتبر باشد.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == invoice.WarehouseId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct)
+                || !await _context.Suppliers.AnyAsync(x => x.Id == invoice.SupplierId
+                && x.TenantId == invoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار یا تأمین‌کننده فاکتور خرید متعلق به شرکت جاری نیست.");
+
+            var productIds = invoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == invoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || invoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور خرید معتبر نیست.");
+        }
+
         public async Task<JournalVoucher> CreateVoucherForSalesInvoiceAsync(
             SalesInvoice invoice,
             InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage,
             CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(invoice.TenantId, invoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                invoice.TenantId, invoice.FiscalYearId, AccountingReferenceType.SalesInvoice, invoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await ValidateSalesInvoiceForPostingAsync(invoice, ct);
+
             var accReceivable = await GetSystemAccountAsync(invoice.TenantId, ACC_RECEIVABLE, ct);
             var accSales = await GetSystemAccountAsync(invoice.TenantId, ACC_SALES_REVENUE, ct);
             var accDiscount = await GetSystemAccountAsync(invoice.TenantId, ACC_SALES_DISCOUNT, ct);
@@ -230,7 +478,7 @@ namespace HSCrm.DataModel.Services.Repository
 
             var project = await _context.Set<Project>()
                 .AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Id == invoice.ProjectId, ct);
+                .FirstOrDefaultAsync(p => p.Id == invoice.ProjectId && p.TenantId == invoice.TenantId && !p.IsDeleted, ct);
 
             int? customerId = project?.CustomerId;
 
@@ -378,6 +626,14 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForPurchaseInvoiceAsync(PurchaseInvoice invoice, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(invoice.TenantId, invoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                invoice.TenantId, invoice.FiscalYearId, AccountingReferenceType.PurchaseInvoice, invoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await ValidatePurchaseInvoiceForPostingAsync(invoice, ct);
+
             // در سیستم ثبت دائمی موجودی انبار (Perpetual Inventory)، خرید کالا ابتدا به حساب دارایی انبار (1105) بدهکار می‌شود
             var accInventory = await GetSystemAccountAsync(invoice.TenantId, ACC_INVENTORY, ct);
             var accVatRec = await GetSystemAccountAsync(invoice.TenantId, ACC_VAT_RECEIVABLE, ct);
@@ -467,6 +723,22 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForReceiptAsync(Receipt receipt, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(receipt.TenantId, receipt.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                receipt.TenantId, receipt.FiscalYearId, AccountingReferenceType.Receipt, receipt.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await EnsureFiscalYearIsOpenAsync(receipt.TenantId, receipt.FiscalYearId, ct);
+            if (receipt.Amount <= 0
+                || (receipt.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == receipt.BankAccountId.Value && x.TenantId == receipt.TenantId && !x.IsDeleted, ct))
+                || (receipt.CustomerId.HasValue && !await _context.Customers.AnyAsync(x => x.Id == receipt.CustomerId.Value && x.TenantId == receipt.TenantId && !x.IsDeleted, ct)))
+                throw new UnauthorizedAccessException("حساب بانکی، مشتری یا مبلغ دریافت معتبر نیست.");
+
+            if (receipt.SalesInvoiceId.HasValue
+                && !await _context.SalesInvoices.AnyAsync(x => x.Id == receipt.SalesInvoiceId.Value && x.TenantId == receipt.TenantId && x.FiscalYearId == receipt.FiscalYearId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور فروش مرجع متعلق به شرکت/سال مالی دریافت نیست.");
+
             var accCashBank = await GetSystemAccountAsync(receipt.TenantId, ACC_CASH_BANK, ct);
             var accReceivable = await GetSystemAccountAsync(receipt.TenantId, ACC_RECEIVABLE, ct);
             var bankAcc = await ResolveBankAccountAsync(receipt.TenantId, receipt.BankAccountId, ct);
@@ -522,6 +794,24 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForPaymentAsync(Payment payment, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(payment.TenantId, payment.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                payment.TenantId, payment.FiscalYearId, AccountingReferenceType.Payment, payment.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await EnsureFiscalYearIsOpenAsync(payment.TenantId, payment.FiscalYearId, ct);
+            if (payment.Amount <= 0
+                || (payment.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == payment.BankAccountId.Value && x.TenantId == payment.TenantId && !x.IsDeleted, ct)))
+                throw new UnauthorizedAccessException("حساب بانکی یا مبلغ پرداخت معتبر نیست.");
+
+            if (payment.PurchaseInvoiceId.HasValue
+                && !await _context.PurchaseInvoices.AnyAsync(x => x.Id == payment.PurchaseInvoiceId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور خرید مرجع متعلق به شرکت/سال مالی پرداخت نیست.");
+            if (payment.ExpenseId.HasValue
+                && !await _context.Expenses.AnyAsync(x => x.Id == payment.ExpenseId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("هزینه مرجع متعلق به شرکت/سال مالی پرداخت نیست.");
+
             var accPayable = await GetSystemAccountAsync(payment.TenantId, ACC_PAYABLE, ct);
             var accCashBank = await GetSystemAccountAsync(payment.TenantId, ACC_CASH_BANK, ct);
 
@@ -532,14 +822,14 @@ namespace HSCrm.DataModel.Services.Repository
             {
                 var pInv = await _context.Set<PurchaseInvoice>()
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == payment.PurchaseInvoiceId.Value, ct);
+                    .FirstOrDefaultAsync(x => x.Id == payment.PurchaseInvoiceId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct);
                 supplierId = pInv?.SupplierId;
             }
             else if (payment.ExpenseId.HasValue)
             {
                 var exp = await _context.Set<Expense>()
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == payment.ExpenseId.Value, ct);
+                    .FirstOrDefaultAsync(x => x.Id == payment.ExpenseId.Value && x.TenantId == payment.TenantId && x.FiscalYearId == payment.FiscalYearId && !x.IsDeleted, ct);
                 projectId = exp?.ProjectId;
             }
 
@@ -599,6 +889,18 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<JournalVoucher> CreateVoucherForExpenseAsync(Expense expense, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(expense.TenantId, expense.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                expense.TenantId, expense.FiscalYearId, AccountingReferenceType.Expense, expense.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await EnsureFiscalYearIsOpenAsync(expense.TenantId, expense.FiscalYearId, ct);
+            if (expense.Amount <= 0
+                || (expense.ProjectId > 0 && !await _context.Projects.AnyAsync(x => x.Id == expense.ProjectId && x.TenantId == expense.TenantId && !x.IsDeleted, ct))
+                || (expense.BankAccountId.HasValue && !await _context.BankAccounts.AnyAsync(x => x.Id == expense.BankAccountId.Value && x.TenantId == expense.TenantId && !x.IsDeleted, ct)))
+                throw new UnauthorizedAccessException("پروژه، حساب بانکی یا مبلغ هزینه معتبر نیست.");
+
             var accExpense = await GetSystemAccountAsync(expense.TenantId, ACC_PROJECT_EXPENSE, ct);
             var accPayable = await GetSystemAccountAsync(expense.TenantId, ACC_PAYABLE, ct);
 
@@ -649,8 +951,9 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task CancelVoucherByReferenceAsync(AccountingReferenceType referenceType, int referenceId, string? reason = null, CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var voucher = await _context.JournalVouchers
-                .FirstOrDefaultAsync(x => x.ReferenceType == referenceType && x.ReferenceId == referenceId && x.Status != JournalVoucherStatus.Cancelled, ct);
+                .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ReferenceType == referenceType && x.ReferenceId == referenceId && x.Status != JournalVoucherStatus.Cancelled && !x.IsDeleted, ct);
 
             if (voucher == null) return;
 
@@ -666,13 +969,15 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<TrialBalanceRowDto>> GetTrialBalanceAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
-                         && !x.JournalVoucher.IsDeleted
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted && !x.IsDeleted
                          && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
             if (fromDate.HasValue)
@@ -709,14 +1014,16 @@ namespace HSCrm.DataModel.Services.Repository
             DateTime? toDate = null,
             CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var fiscalYearId = _currentFiscalYear.FiscalYearId;
             var query = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.BankAccount)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
-                         && !x.JournalVoucher.IsDeleted
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && !x.JournalVoucher.IsDeleted && !x.IsDeleted
                          && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
             if (accountId.HasValue) query = query.Where(x => x.AccountId == accountId.Value);
@@ -817,9 +1124,10 @@ namespace HSCrm.DataModel.Services.Repository
 
         public async Task<List<BankAccountBalanceSummaryDto>> GetBankAccountsBalanceSummaryAsync(DateTime? fromDate = null, DateTime? toDate = null, CancellationToken ct = default)
         {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             var bankAccounts = await _context.Set<BankAccount>()
                 .AsNoTracking()
-                .Where(x => !x.IsDeleted)
+                .Where(x => x.TenantId == tenantId && !x.IsDeleted)
                 .OrderByDescending(x => x.IsDefault)
                 .ThenBy(x => x.Id)
                 .ToListAsync(ct);
@@ -828,7 +1136,8 @@ namespace HSCrm.DataModel.Services.Repository
             var itemsQuery = _context.JournalVoucherItems
                 .AsNoTracking()
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.BankAccountId != null
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.BankAccountId != null
                          && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
@@ -878,7 +1187,8 @@ namespace HSCrm.DataModel.Services.Repository
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                .Where(x => x.TenantId == tenantId && x.JournalVoucher.TenantId == tenantId
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
                          && !x.JournalVoucher.IsDeleted
                          && !x.IsDeleted
@@ -932,7 +1242,10 @@ namespace HSCrm.DataModel.Services.Repository
                 .AsNoTracking()
                 .FirstOrDefaultAsync(f => f.Id == fiscalYearId && f.TenantId == tenantId && !f.IsDeleted, ct);
 
-            if (fy != null && fy.IsClosed)
+            if (fy == null)
+                throw new UnauthorizedAccessException("سال مالی متعلق به شرکت جاری یافت نشد.");
+
+            if (fy.IsClosed)
                 throw new InvalidOperationException($"سال مالی {fy.Title} بسته شده است و امکان ثبت یا ویرایش سند در سال مالی بسته وجود ندارد. در صورت نیاز ابتدا سال مالی را بازگشایی نمایید.");
         }
 
@@ -1421,7 +1734,8 @@ namespace HSCrm.DataModel.Services.Repository
                     };
 
                     await _context.JournalVouchers.AddRangeAsync(new[] { closingVoucher, openingVoucher }, ct);
-                    await _context.SaveChangesAsync(ct);
+                    using (_context.BeginFiscalYearTransitionWriteScope())
+                        await _context.SaveChangesAsync(ct);
 
                     closingVoucherId = closingVoucher.Id;
                     openingVoucherId = openingVoucher.Id;
@@ -1535,7 +1849,8 @@ namespace HSCrm.DataModel.Services.Repository
 
                 // ۳. بازگشایی سال مالی
                 fiscalYear.IsClosed = false;
-                await _context.SaveChangesAsync(ct);
+                using (_context.BeginFiscalYearTransitionWriteScope())
+                    await _context.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
                 return new ReopenFiscalYearResultDto
@@ -1668,11 +1983,35 @@ namespace HSCrm.DataModel.Services.Repository
             var fiscalYearId = _currentFiscalYear.FiscalYearId ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
 
             var cheque = await _context.Set<Cheque>()
-                .FirstOrDefaultAsync(x => x.Id == model.ChequeId && x.TenantId == tenantId && !x.IsDeleted, ct)
+                .FirstOrDefaultAsync(x => x.Id == model.ChequeId
+                    && x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId
+                    && !x.IsDeleted, ct)
                 ?? throw new InvalidOperationException("چک مورد نظر یافت نشد.");
 
             if (cheque.Status == model.NewStatus)
                 throw new InvalidOperationException("وضعیت جدید چک با وضعیت فعلی آن یکسان است.");
+
+            // Prevent transitions from terminal states and transitions that do not
+            // make sense for the cheque's direction. The caller uses a Serializable
+            // transaction so concurrent status changes cannot post duplicate vouchers.
+            var allowedNextStatuses = cheque.Type == ChequeType.Receivable
+                ? cheque.Status switch
+                {
+                    ChequeStatus.InSafe => new[] { ChequeStatus.InBankForCollection, ChequeStatus.Cleared, ChequeStatus.Bounced, ChequeStatus.EndorsedToSupplier, ChequeStatus.Returned },
+                    ChequeStatus.InBankForCollection => new[] { ChequeStatus.Cleared, ChequeStatus.Bounced, ChequeStatus.Returned },
+                    ChequeStatus.Bounced => new[] { ChequeStatus.InBankForCollection, ChequeStatus.Cleared, ChequeStatus.EndorsedToSupplier, ChequeStatus.Returned },
+                    _ => Array.Empty<ChequeStatus>()
+                }
+                : cheque.Status switch
+                {
+                    ChequeStatus.InSafe => new[] { ChequeStatus.Cleared, ChequeStatus.Bounced, ChequeStatus.Returned },
+                    ChequeStatus.Bounced => new[] { ChequeStatus.Cleared, ChequeStatus.Returned },
+                    _ => Array.Empty<ChequeStatus>()
+                };
+
+            if (!allowedNextStatuses.Contains(model.NewStatus))
+                throw new InvalidOperationException("تغییر وضعیت درخواستی با وضعیت فعلی یا نوع چک سازگار نیست.");
 
             var previousStatus = cheque.Status;
             var actionDate = !string.IsNullOrWhiteSpace(model.ActionDateShamsi)
@@ -1765,11 +2104,13 @@ namespace HSCrm.DataModel.Services.Repository
                         CreatedAt = DateTime.UtcNow
                     });
                 }
-                else if (model.NewStatus == ChequeStatus.Bounced)
+                else if (model.NewStatus == ChequeStatus.Bounced || model.NewStatus == ChequeStatus.Returned)
                 {
-                    // برگشت خوردن چک دریافتنی (بدهکار شدن مجدد مشتری)
+                    // برگشت خوردن یا عودت چک دریافتنی: بدهی مشتری مجدداً برقرار می‌شود.
                     var creditAccount = previousStatus == ChequeStatus.InBankForCollection ? accNotesInCol : accNotesRec;
-                    voucherTitle = $"سند خودکار برگشت چک دریافتنی شماره {cheque.ChequeNumber} و بدهکار شدن مشتری";
+                    voucherTitle = model.NewStatus == ChequeStatus.Bounced
+                        ? $"سند خودکار برگشت چک دریافتنی شماره {cheque.ChequeNumber} و بدهکار شدن مشتری"
+                        : $"سند خودکار عودت چک دریافتنی شماره {cheque.ChequeNumber} و برگشت بدهی به مشتری";
 
                     items.Add(new JournalVoucherItem
                     {
@@ -1803,6 +2144,11 @@ namespace HSCrm.DataModel.Services.Repository
                     // خرج کردن چک دریافتنی به تأمین‌کننده
                     var targetSupplierId = model.EndorsedToSupplierId ?? cheque.EndorsedToSupplierId
                         ?? throw new InvalidOperationException("لطفاً تأمین‌کننده گیرنده چک (خرج چک) را مشخص نمایید.");
+
+                    var targetSupplierExists = await _context.Suppliers
+                        .AnyAsync(x => x.Id == targetSupplierId && x.TenantId == tenantId && !x.IsDeleted, ct);
+                    if (!targetSupplierExists)
+                        throw new InvalidOperationException("تأمین‌کننده گیرنده چک در شرکت جاری وجود ندارد.");
 
                     cheque.EndorsedToSupplierId = targetSupplierId;
                     voucherTitle = $"سند خودکار خرج چک دریافتنی شماره {cheque.ChequeNumber} به تأمین‌کننده";
@@ -1949,6 +2295,8 @@ namespace HSCrm.DataModel.Services.Repository
         public async Task<ChequeRasGiriResultDto> CalculateChequesRasGiriAsync(ChequeRasGiriRequestModel model, CancellationToken ct = default)
         {
             var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId
+                ?? throw new InvalidOperationException("سال مالی فعال یافت نشد.");
 
             var baseDate = !string.IsNullOrWhiteSpace(model.BaseDateShamsi)
                 ? ConvertDate.ConvertShamsiToMiladi(model.BaseDateShamsi).Date
@@ -1956,7 +2304,9 @@ namespace HSCrm.DataModel.Services.Repository
 
             var query = _context.Set<Cheque>()
                 .AsNoTracking()
-                .Where(x => x.TenantId == tenantId && !x.IsDeleted);
+                .Where(x => x.TenantId == tenantId
+                    && x.FiscalYearId == fiscalYearId
+                    && !x.IsDeleted);
 
             if (model.ChequeIds != null && model.ChequeIds.Count > 0)
             {
@@ -2038,8 +2388,79 @@ namespace HSCrm.DataModel.Services.Repository
         /// بخش اول: بدهکار برگشت از فروش (4103) و مالیات فروش (2102) / بستانکار حساب دریافتنی مشتری (1103) و تخفیفات فروش (4102)
         /// بخش دوم (معکوس کردن COGS): بدهکار موجودی کالا و انبار (1105) / بستانکار بهای تمام‌شده کالای فروش‌رفته (5101)
         /// </summary>
+        private async Task ValidateSalesReturnForPostingAsync(SalesReturnInvoice returnInvoice, CancellationToken ct)
+        {
+            if (returnInvoice.Total <= 0 || returnInvoice.Items == null || returnInvoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور برگشت از فروش فاقد مبلغ یا اقلام معتبر است.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == returnInvoice.WarehouseId
+                && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار فاکتور برگشت از فروش متعلق به شرکت جاری نیست.");
+
+            var project = await _context.Projects.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.Id == returnInvoice.ProjectId && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct);
+            if (project == null)
+                throw new UnauthorizedAccessException("پروژه فاکتور برگشت از فروش متعلق به شرکت جاری نیست.");
+
+            if (project.CustomerId.HasValue && !await _context.Customers.AnyAsync(x =>
+                x.Id == project.CustomerId.Value && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("مشتری پروژه فاکتور برگشت از فروش معتبر نیست.");
+
+            if (returnInvoice.SalesInvoiceId.HasValue && !await _context.SalesInvoices.AnyAsync(x =>
+                x.Id == returnInvoice.SalesInvoiceId.Value
+                && x.TenantId == returnInvoice.TenantId
+                && x.FiscalYearId == returnInvoice.FiscalYearId
+                && x.ProjectId == returnInvoice.ProjectId
+                && x.Status == InvoiceStatus.Final
+                && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور فروش مرجع برگشت متعلق به شرکت/سال مالی جاری یا پروژه انتخابی نیست.");
+
+            var productIds = returnInvoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == returnInvoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || returnInvoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0 || x.TotalCost < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور برگشت از فروش معتبر نیست.");
+        }
+
+        private async Task ValidatePurchaseReturnForPostingAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct)
+        {
+            if (returnInvoice.Total <= 0 || returnInvoice.Items == null || returnInvoice.Items.Count == 0)
+                throw new InvalidOperationException("فاکتور برگشت از خرید فاقد مبلغ یا اقلام معتبر است.");
+
+            if (!await _context.Warehouses.AnyAsync(x => x.Id == returnInvoice.WarehouseId
+                && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("انبار فاکتور برگشت از خرید متعلق به شرکت جاری نیست.");
+
+            if (!await _context.Suppliers.AnyAsync(x => x.Id == returnInvoice.SupplierId
+                && x.TenantId == returnInvoice.TenantId && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("تأمین‌کننده فاکتور برگشت از خرید متعلق به شرکت جاری نیست.");
+
+            if (returnInvoice.PurchaseInvoiceId.HasValue && !await _context.PurchaseInvoices.AnyAsync(x =>
+                x.Id == returnInvoice.PurchaseInvoiceId.Value
+                && x.TenantId == returnInvoice.TenantId
+                && x.FiscalYearId == returnInvoice.FiscalYearId
+                && x.SupplierId == returnInvoice.SupplierId
+                && x.Status == InvoiceStatus.Final
+                && !x.IsDeleted, ct))
+                throw new UnauthorizedAccessException("فاکتور خرید مرجع برگشت متعلق به شرکت/سال مالی جاری یا تأمین‌کننده انتخابی نیست.");
+
+            var productIds = returnInvoice.Items.Select(x => x.ProductId).Distinct().ToArray();
+            if (productIds.Any(id => id <= 0) || await _context.Products.CountAsync(x =>
+                x.TenantId == returnInvoice.TenantId && !x.IsDeleted && productIds.Contains(x.Id), ct) != productIds.Length
+                || returnInvoice.Items.Any(x => x.Quantity <= 0 || x.LineTotal < 0))
+                throw new UnauthorizedAccessException("یک یا چند کالای فاکتور برگشت از خرید معتبر نیست.");
+        }
+
         public async Task<JournalVoucher> CreateVoucherForSalesReturnAsync(SalesReturnInvoice returnInvoice, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(returnInvoice.TenantId, returnInvoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                returnInvoice.TenantId, returnInvoice.FiscalYearId, AccountingReferenceType.SalesReturnInvoice, returnInvoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await ValidateSalesReturnForPostingAsync(returnInvoice, ct);
+
             var accReceivable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_RECEIVABLE, ct);
             var accSalesReturn = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_SALES_RETURN, ct);
             var accSalesDiscount = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_SALES_DISCOUNT, ct);
@@ -2051,7 +2472,8 @@ namespace HSCrm.DataModel.Services.Repository
             if (!customerId.HasValue && returnInvoice.ProjectId > 0)
             {
                 customerId = await _context.Projects
-                    .Where(p => p.Id == returnInvoice.ProjectId)
+                    .Where(p => p.Id == returnInvoice.ProjectId
+                        && p.TenantId == returnInvoice.TenantId && !p.IsDeleted)
                     .Select(p => (int?)p.CustomerId)
                     .FirstOrDefaultAsync(ct);
             }
@@ -2201,6 +2623,14 @@ namespace HSCrm.DataModel.Services.Repository
         /// </summary>
         public async Task<JournalVoucher> CreateVoucherForPurchaseReturnAsync(PurchaseReturnInvoice returnInvoice, CancellationToken ct = default)
         {
+            await EnsureFiscalYearIsOpenAsync(returnInvoice.TenantId, returnInvoice.FiscalYearId, ct);
+            var existingVoucher = await GetExistingPostedAutoVoucherAsync(
+                returnInvoice.TenantId, returnInvoice.FiscalYearId, AccountingReferenceType.PurchaseReturnInvoice, returnInvoice.Id, ct);
+            if (existingVoucher != null)
+                return existingVoucher;
+
+            await ValidatePurchaseReturnForPostingAsync(returnInvoice, ct);
+
             var accInventory = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_INVENTORY, ct);
             var accVatRec = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_VAT_RECEIVABLE, ct);
             var accPayable = await GetSystemAccountAsync(returnInvoice.TenantId, ACC_PAYABLE, ct);

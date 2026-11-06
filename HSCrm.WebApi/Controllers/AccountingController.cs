@@ -66,6 +66,24 @@ namespace HSCrm.WebApi.Controllers
             if (!tenantId.HasValue)
                 return Unauthorized(new ApiResponse { Status = false, Message = "دسترسی نامعتبر" });
 
+            if (model.ParentId.HasValue)
+            {
+                var parentExists = await _unitOfWork.accountingAccountUW
+                    .Get(x => x.Id == model.ParentId.Value
+                        && x.TenantId == tenantId.Value
+                        && !x.IsDeleted
+                        && x.IsActive, asNoTracking: true)
+                    .AnyAsync(ct);
+
+                if (!parentExists)
+                    return BadRequest(new ApiResponse
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.BadRequest,
+                        Message = "حساب والد معتبر نیست یا به شرکت دیگری تعلق دارد."
+                    });
+            }
+
             var account = new AccountingAccount
             {
                 TenantId = tenantId.Value,
@@ -97,8 +115,22 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.JournalVouchers.View)]
         public async Task<ActionResult<ApiResponse<IEnumerable<JournalVoucher>>>> GetVouchers(CancellationToken ct)
         {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "شرکت یا سال مالی معتبر برای کاربر مشخص نیست."
+                });
+
             var vouchers = await _unitOfWork.journalVoucherUW
-                .Get(x => !x.IsDeleted, asNoTracking: true, x => x.Items)
+                .Get(x => x.TenantId == tenantId.Value
+                    && x.FiscalYearId == fiscalYearId.Value
+                    && !x.IsDeleted,
+                    asNoTracking: true, x => x.Items)
                 .OrderByDescending(x => x.VoucherDate)
                 .ThenByDescending(x => x.VoucherNumber)
                 .ToListAsync(ct);

@@ -8,6 +8,7 @@ using HSCrm.Framework.StandardApiResult;
 using HSCrm.Services.Tools.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,7 +18,8 @@ builder.Services.AddHttpContextAccessor();
 // ۲. لود تنظیمات AppSettings
 var configuration = builder.Configuration
     .SetBasePath(Directory.GetCurrentDirectory())
-    .AddJsonFile(FileNamesExtensions.AppSettingName)
+    .AddJsonFile(FileNamesExtensions.AppSettingName, optional: false, reloadOnChange: true)
+    .AddEnvironmentVariables()
     .Build();
 
 // ۳. کنترلرها و ثبت FluentValidation
@@ -54,9 +56,50 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     };
 });
 
+// Require authentication by default; public endpoints must opt out explicitly.
+builder.Services.AddAuthorization(options =>
+{
+    var authenticatedTenantFiscalYearPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .RequireClaim("TenantId")
+        .RequireClaim("FiscalYearId")
+        .Build();
+
+    // Apply the same tenant/fiscal-year requirements to both bare [Authorize]
+    // attributes and endpoints that rely on the fallback policy.
+    options.DefaultPolicy = authenticatedTenantFiscalYearPolicy;
+    options.FallbackPolicy = authenticatedTenantFiscalYearPolicy;
+});
+
 // ۴. سرویس‌های اصلی پروژه (DbContext و Identity)
 builder.Services.AddDbContextService(configuration);
 builder.Services.AddIdentityService(configuration);
+
+// Protect public authentication endpoints against brute-force and automated tenant creation.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("Auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 8,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("TenantRegistration", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromHours(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
 
 // ۵. تزریق وابستگی‌ها (Dependency Injection)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -73,17 +116,18 @@ builder.Services.AddScoped<IAccountingService, AccountingService>();
 
 
 // ۶. مپ کردن پروفایل‌های AutoMapper
-builder.Services.AddAutoMapper(typeof(Program));
+// AutoMapper 15 requires an explicit configuration callback. The optional
+// license key is discovered from AUTOMAPPER_LICENSE_KEY at runtime.
+builder.Services.AddAutoMapper(_ => { }, typeof(Program));
 
-// ۷. تنظیمات CORS بر اساس پیکربندی موجود در پروژه شما
+// ۷. CORS: only explicitly configured origins are allowed.
+var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("_myAllowSpecificationOrigins", policy =>
     {
-        policy.AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials()
-              .SetIsOriginAllowed(host => true);
+        if (allowedOrigins.Length > 0)
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
     });
 });
 
@@ -109,9 +153,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-app.UseCors("_myAllowSpecificationOrigins");
 
 app.UseRouting();
+app.UseRateLimiter();
+app.UseCors("_myAllowSpecificationOrigins");
 
 app.UseAuthentication();
 app.UseAuthorization();

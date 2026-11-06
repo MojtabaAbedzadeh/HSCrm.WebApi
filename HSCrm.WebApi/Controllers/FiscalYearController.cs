@@ -7,6 +7,8 @@ using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using SinaPharm.Common;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
@@ -47,10 +49,12 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("FiscalYearDropdownList")]
-        [AllowAnonymous] // چون قبل از لاگین نهایی فراخوانی می‌شود
+        [AllowAnonymous]
+        [EnableRateLimiting("Auth")] // چون قبل از لاگین نهایی فراخوانی می‌شود
         public ApiResponse FiscalYearDropdownList(int tenantId)
         {
-            var fiscalYearList = _context.fiscalYearUW.Get(f => f.TenantId == tenantId)
+            var fiscalYearList = _context.fiscalYearUW.Get(f => tenantId > 0 && f.TenantId == tenantId && !f.IsDeleted && !f.IsClosed && f.Tenant.IsActive && !f.Tenant.IsDeleted)
+                .IgnoreQueryFilters()
                 .OrderByDescending(f => f.Id)
                 .Select(f => new DropdownDto
                 {

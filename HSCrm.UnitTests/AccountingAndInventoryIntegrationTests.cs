@@ -2,11 +2,18 @@ using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
+using HSCrm.DataModel.Seeders;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Entities.Models.Dto;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
+using HSCrm.WebApi.Controllers;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Claims;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.UnitTests
@@ -121,9 +128,26 @@ namespace HSCrm.UnitTests
 
             var uow = new UnitOfWork(context);
             var accounting = new AccountingService(context, uow, currentUser, currentFy);
-            var inventory = new InventoryService(context, uow, currentFy, currentUser);
+            var inventory = new InventoryService(context, uow, currentFy, currentUser, accounting);
 
             return (context, uow, accounting, inventory, currentUser, currentFy);
+        }
+
+
+        [Fact]
+        public async Task SaveChanges_RejectsDirectDeleteOfAnotherTenantsRecord()
+        {
+            var (context, _, _, _, currentUser, _) = CreateTestRig(nameof(SaveChanges_RejectsDirectDeleteOfAnotherTenantsRecord));
+            var foreignCustomer = new Customer
+            {
+                Id = 999,
+                TenantId = 2,
+                Name = "Foreign customer",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            context.Customers.Remove(foreignCustomer);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
         }
 
         [Fact(DisplayName = "01. ایجاد خودکار و بدون تکرار ۲۰ سرفصل استاندارد حسابداری (EnsureDefaultChartOfAccounts)")]
@@ -131,17 +155,33 @@ namespace HSCrm.UnitTests
         {
             var (context, _, accounting, _, _, _) = CreateTestRig(nameof(Test01_EnsureDefaultChartOfAccounts_SeedsAll20StandardAccounts_Idempotently));
 
+            // Simulate a tenant that already has part of the system chart; new defaults must still be added.
+            context.AccountingAccounts.Add(new AccountingAccount
+            {
+                TenantId = 1,
+                Code = "1101",
+                Title = "موجودی نقد و بانک (خزانه)",
+                Level = AccountLevel.Subsidiary,
+                Category = AccountCategory.Asset,
+                Nature = AccountNature.DebitOnly,
+                IsSystemAccount = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
             await accounting.EnsureDefaultChartOfAccountsAsync(1);
             await accounting.EnsureDefaultChartOfAccountsAsync(1); // فراخوانی مجدد برای تست Idempotency
 
             var accounts = await context.AccountingAccounts.Where(a => a.TenantId == 1 && !a.IsDeleted).ToListAsync();
-            Assert.Equal(16, accounts.Count);
+            Assert.Equal(18, accounts.Count);
             Assert.Contains(accounts, a => a.Code == "1101" && a.Category == AccountCategory.Asset);
             Assert.Contains(accounts, a => a.Code == "1105" && a.Title.Contains("موجودی کالا"));
             Assert.Contains(accounts, a => a.Code == "2101" && a.Category == AccountCategory.Liability);
             Assert.Contains(accounts, a => a.Code == "3101" && a.Category == AccountCategory.Equity);            
             Assert.Contains(accounts, a => a.Code == "4103" && a.Title.Contains("برگشت از فروش"));
             Assert.Contains(accounts, a => a.Code == "5101" && a.Category == AccountCategory.Expense);
+            Assert.Contains(accounts, a => a.Code == "5202" && a.Category == AccountCategory.Expense && a.IsSystemAccount);
+            Assert.Contains(accounts, a => a.Code == "4201" && a.Category == AccountCategory.Revenue && a.IsSystemAccount);
         }
 
         [Fact(DisplayName = "02. کنترل تراز بودن سند روزنامه دستی (رد سند ناتراز و ثبت موفق سند تراز)")]
@@ -275,6 +315,12 @@ namespace HSCrm.UnitTests
             var voucher2 = await accounting.CreateVoucherForPurchaseInvoiceAsync(pi2);
             await context.SaveChangesAsync();
 
+            var duplicateVoucher = await accounting.CreateVoucherForPurchaseInvoiceAsync(pi2);
+            Assert.Equal(voucher2.Id, duplicateVoucher.Id);
+            Assert.Equal(1, await context.JournalVouchers.CountAsync(x =>
+                x.TenantId == 1 && x.ReferenceType == AccountingReferenceType.PurchaseInvoice
+                && x.ReferenceId == pi2.Id && x.Status == JournalVoucherStatus.Posted && !x.IsDeleted));
+
             var inv = await context.Inventories.FirstAsync(x => x.ProductId == 1 && x.WarehouseId == 1);
             Assert.Equal(20m, inv.Quantity);
             Assert.Equal(1_500_000m, inv.AverageUnitCost); // (10M + 20M) / 20 = 1.5M
@@ -330,6 +376,14 @@ namespace HSCrm.UnitTests
             var saleItem = sale.Items.First();
             Assert.Equal(1_500_000m, saleItem.UnitCost);
             Assert.Equal(12_000_000m, saleItem.TotalCost); // 8 * 1,500,000 = 12,000,000
+
+            var fifoLayersAfterSale = await context.InventoryTransactions
+                .Where(x => x.TransactionType == InventoryTransactionType.Purchase
+                    && x.ProductId == 1 && x.WarehouseId == 1)
+                .OrderBy(x => x.Id)
+                .ToListAsync();
+            Assert.Equal(2m, fifoLayersAfterSale[0].RemainingFifoQuantity);
+            Assert.Equal(10m, fifoLayersAfterSale[1].RemainingFifoQuantity);
 
             // سند فروش شامل ۲۱,۸۰۰,۰۰۰ درآمد/مالیات + ۱۲,۰۰۰,۰۰۰ بهای تمام‌شده = ۳۳,۸۰۰,۰۰۰ ریال تراز
             Assert.Equal(33_800_000m, salesVoucher.TotalDebit);
@@ -472,10 +526,16 @@ namespace HSCrm.UnitTests
             {
                 TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1, PurchaseInvoiceId = pi.Id, PurchaserUserId = "u1",
                 Number = "PR-1", IssueDate = new DateTime(2025, 4, 6), Status = InvoiceStatus.Final,
-                Subtotal = 3_000_000m, Total = 3_000_000m, Description = "برگشت ۳ عدد معیوب به تأمین‌کننده",
+                Subtotal = 3_600_000m, Discount = 300_000m, Total = 3_300_000m,
+                Description = "برگشت ۳ عدد با قیمت فاکتور برگشت متفاوت از بهای لایه FIFO",
                 Items = new List<PurchaseReturnInvoiceItem>
                 {
-                    new() { TenantId = 1, ProductId = 1, Quantity = 3, UnitPriceReturn = 1_000_000m, LineTotal = 3_000_000m }
+                    new()
+                    {
+                        TenantId = 1, ProductId = 1, Quantity = 3,
+                        UnitPriceReturn = 1_200_000m, Discount = 300_000m,
+                        LineTotal = 3_300_000m
+                    }
                 }
             };
             context.PurchaseReturnInvoices.Add(purchaseReturn);
@@ -487,8 +547,28 @@ namespace HSCrm.UnitTests
 
             var inv = await context.Inventories.FirstAsync(x => x.ProductId == 1);
             Assert.Equal(7m, inv.Quantity); // 10 - 3 = 7
-            Assert.Equal(3_000_000m, prVoucher.TotalDebit);
-            Assert.Equal(3_000_000m, prVoucher.TotalCredit);
+
+            // بهای برگشت باید از فاکتور برگشت (۱.۲M فی، ۳۰۰K تخفیف) گرفته شود،
+            // نه از بهای ۱M لایه FIFO فاکتور خرید.
+            Assert.Equal(957_142.86m, inv.AverageUnitCost); // (10M - 3.3M) / 7
+            var returnTransaction = await context.InventoryTransactions.SingleAsync(x =>
+                x.ReferenceType == InventoryReferenceType.PurchaseReturnInvoice
+                && x.ReferenceId == purchaseReturn.Id);
+            Assert.Equal(1_100_000m, returnTransaction.UnitCost);
+            Assert.Equal(3_300_000m, returnTransaction.TotalCost);
+            var sourceFifoLayer = await context.InventoryTransactions.SingleAsync(x =>
+                x.ReferenceType == InventoryReferenceType.PurchaseInvoice && x.ReferenceId == pi.Id);
+            Assert.Equal(7m, sourceFifoLayer.RemainingFifoQuantity);
+
+            // سند حسابداری برگشت با تخفیف جداگانه متوازن می‌ماند.
+            Assert.Equal(3_600_000m, prVoucher.TotalDebit);
+            Assert.Equal(3_600_000m, prVoucher.TotalCredit);
+
+            // ابطال برگشت باید همان بهای فاکتور برگشت را به ارزش موجودی بازگرداند.
+            inventory.RollbackInventoryForPurchaseReturn(purchaseReturn);
+            await context.SaveChangesAsync();
+            Assert.Equal(10m, inv.Quantity);
+            Assert.Equal(1_000_000m, inv.AverageUnitCost);
         }
 
         [Fact(DisplayName = "09. اسناد دریافت و پرداخت خزانه‌داری و کنترل مانده تفصیلی بانک")]
@@ -620,6 +700,46 @@ namespace HSCrm.UnitTests
             Assert.Equal(50_000_000m, statement.BouncedChequesAmount);
         }
 
+        [Fact(DisplayName = "عودت چک دریافتنی سند متوازن صادر می‌کند و وضعیت چک را تغییر می‌دهد")]
+        public async Task ReceivableCheque_Returned_RestoresCustomerReceivableDebt()
+        {
+            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(ReceivableCheque_Returned_RestoresCustomerReceivableDebt));
+
+            var cheque = new Cheque
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                Type = ChequeType.Receivable,
+                Status = ChequeStatus.InSafe,
+                ChequeNumber = "CHQ-RETURN-01",
+                Amount = 25_000_000m,
+                IssueDate = new DateTime(2025, 5, 1),
+                DueDate = new DateTime(2025, 6, 1),
+                BankName = "بانک ملی",
+                CustomerId = 1
+            };
+            context.Cheques.Add(cheque);
+            await context.SaveChangesAsync();
+
+            await accounting.CreateVoucherForChequeRegistrationAsync(cheque);
+
+            var voucher = await accounting.ChangeChequeStatusAndCreateVoucherAsync(new ChequeStatusChangeModel
+            {
+                ChequeId = cheque.Id,
+                NewStatus = ChequeStatus.Returned,
+                ActionDateShamsi = "1404/03/16",
+                Description = "عودت چک به مشتری"
+            });
+
+            Assert.Equal(ChequeStatus.Returned, cheque.Status);
+            Assert.Equal(25_000_000m, voucher.TotalDebit);
+            Assert.Equal(25_000_000m, voucher.TotalCredit);
+            Assert.Equal(AccountingReferenceType.ChequeOperation, voucher.ReferenceType);
+            Assert.Equal(cheque.Id, voucher.ReferenceId);
+            Assert.Contains(voucher.Items, item => item.Debit == 25_000_000m && item.Credit == 0m);
+            Assert.Contains(voucher.Items, item => item.Debit == 0m && item.Credit == 25_000_000m);
+        }
+
         [Fact(DisplayName = "13. خرج (پشت‌نویسی) چک دریافتنی مشتری به تأمین‌کننده (EndorsedToSupplier)")]
         public async Task Test13_ReceivableCheque_EndorsedToSupplier_TransfersReceivableNoteToSupplierPayable()
         {
@@ -680,7 +800,7 @@ namespace HSCrm.UnitTests
         [Fact(DisplayName = "15. ماشین‌حساب رأس‌گیری چک‌ها: میانگین موزون زمانی/ریالی، تاریخ دقیق رأس و ارزش فعلی (NPV)")]
         public async Task Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue()
         {
-            var (context, _, accounting, _, _, _) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
+            var (context, _, accounting, _, _, currentFiscalYear) = CreateTestRig(nameof(Test15_ChequeRasGiriCalculator_ComputesWeightedAverageDaysDueDateAndNetPresentValue));
 
             var baseDate = new DateTime(2025, 4, 1);
             var baseDateShamsi = "1404/01/12";
@@ -700,13 +820,38 @@ namespace HSCrm.UnitTests
             context.Cheques.AddRange(c1, c2);
             await context.SaveChangesAsync();
 
+            context.FiscalYears.Add(new FiscalYear
+            {
+                Id = 2,
+                TenantId = 1,
+                Title = "سال مالی 1405",
+                StartDate = new DateTime(2026, 3, 21),
+                EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = false,
+                IsClosed = false,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            // Seed the foreign-year cheque while the test principal is scoped to that year.
+            var otherFiscalYearCheque = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 2, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "1003", Amount = 900_000_000m, IssueDate = baseDate, DueDate = baseDate.AddDays(90),
+                BankName = "بانک ملت", CustomerId = 1
+            };
+            currentFiscalYear.FiscalYearId = 2;
+            context.Cheques.Add(otherFiscalYearCheque);
+            await context.SaveChangesAsync();
+            currentFiscalYear.FiscalYearId = 1;
+
             // چک ۱: ۱۰۰ میلیون به سررسید ۳۰ روز | چک ۲: ۳۰۰ میلیون به سررسید ۷۰ روز
             // میانگین موزون = (100M * 30 + 300M * 70) / 400M = 24,000,000,000 / 400,000,000 = 60 روز
             var result = await accounting.CalculateChequesRasGiriAsync(new ChequeRasGiriRequestModel
             {
                 BaseDateShamsi = baseDateShamsi,
                 MonthlyDiscountRatePercent = 3m, // ۳ درصد ماهانه
-                ChequeIds = new List<int> { c1.Id, c2.Id }
+                ChequeIds = new List<int> { c1.Id, c2.Id, otherFiscalYearCheque.Id }
             });
 
             Assert.Equal(2, result.ChequeCount);
@@ -893,6 +1038,453 @@ namespace HSCrm.UnitTests
             var reopenResult = await accounting.ReopenFiscalYearAsync(1, closeResult.NewFiscalYearId);
             Assert.Equal(2, reopenResult.RemovedClosingVouchersCount);
             Assert.Equal(1, reopenResult.RemovedOpeningVouchersCount);
+        }
+        [Fact(DisplayName = "Stocktake uses actual counted quantity and updates FIFO layers")]
+        public async Task ApplyAdjustment_UsesActualCountAndReconcilesFifoLayers()
+        {
+            var (context, _, accounting, inventoryService, _, _) = CreateTestRig(nameof(ApplyAdjustment_UsesActualCountAndReconcilesFifoLayers));
+
+            var inventory = new Inventory
+            {
+                TenantId = 1,
+                WarehouseId = 1,
+                ProductId = 1,
+                Quantity = 10m,
+                AverageUnitCost = 100m,
+                CreatedAt = DateTime.UtcNow
+            };
+            var fifoLayer = new InventoryTransaction
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProductId = 1,
+                QuantityChange = 10m,
+                UnitCost = 80m,
+                TotalCost = 800m,
+                RemainingFifoQuantity = 10m,
+                TransactionType = InventoryTransactionType.Purchase,
+                ReferenceType = InventoryReferenceType.PurchaseInvoice,
+                ReferenceId = 77,
+                Description = "Initial FIFO layer",
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Inventories.Add(inventory);
+            context.InventoryTransactions.Add(fifoLayer);
+            await context.SaveChangesAsync();
+
+            await inventoryService.ApplyAdjustmentAsync(new AdjustmentDto
+            {
+                ProductId = 1,
+                WarehouseId = 1,
+                ActualQuantity = 7m,
+                Description = "Physical count decrease"
+            });
+
+            Assert.Equal(7m, inventory.Quantity);
+            Assert.Equal(7m, fifoLayer.RemainingFifoQuantity);
+            var decrease = await context.InventoryTransactions.SingleAsync(x =>
+                x.TransactionType == InventoryTransactionType.Adjustment && x.QuantityChange < 0);
+            Assert.Equal(-3m, decrease.QuantityChange);
+            Assert.Equal(240m, decrease.TotalCost);
+            Assert.Equal(decrease.Id, decrease.ReferenceId);
+            var decreaseVoucher = await context.JournalVouchers
+                .Include(x => x.Items).ThenInclude(x => x.Account)
+                .SingleAsync(x => x.ReferenceType == AccountingReferenceType.InventoryAdjustment
+                    && x.ReferenceId == (int)decrease.Id && x.Status == JournalVoucherStatus.Posted);
+            Assert.Equal(240m, decreaseVoucher.TotalDebit);
+            Assert.Equal(240m, decreaseVoucher.TotalCredit);
+            Assert.Contains(decreaseVoucher.Items, x => x.Account.Code == "5202" && x.Debit == 240m && x.Credit == 0m);
+            Assert.Contains(decreaseVoucher.Items, x => x.Account.Code == "1105" && x.Credit == 240m && x.Debit == 0m);
+            var duplicateDecreaseVoucher = await accounting.CreateVoucherForInventoryAdjustmentAsync(decrease);
+            Assert.Equal(decreaseVoucher.Id, duplicateDecreaseVoucher.Id);
+            Assert.Equal(1, await context.JournalVouchers.CountAsync(x =>
+                x.ReferenceType == AccountingReferenceType.InventoryAdjustment && x.ReferenceId == (int)decrease.Id));
+
+            await inventoryService.ApplyAdjustmentAsync(new AdjustmentDto
+            {
+                ProductId = 1,
+                WarehouseId = 1,
+                ActualQuantity = 12m,
+                Description = "Physical count increase"
+            });
+
+            Assert.Equal(12m, inventory.Quantity);
+            var increase = await context.InventoryTransactions.SingleAsync(x =>
+                x.TransactionType == InventoryTransactionType.Adjustment && x.QuantityChange > 0);
+            Assert.Equal(5m, increase.QuantityChange);
+            Assert.Equal(500m, increase.TotalCost);
+            Assert.Equal(5m, increase.RemainingFifoQuantity);
+            Assert.Equal(increase.Id, increase.ReferenceId);
+            var increaseVoucher = await context.JournalVouchers
+                .Include(x => x.Items).ThenInclude(x => x.Account)
+                .SingleAsync(x => x.ReferenceType == AccountingReferenceType.InventoryAdjustment
+                    && x.ReferenceId == (int)increase.Id && x.Status == JournalVoucherStatus.Posted);
+            Assert.Equal(500m, increaseVoucher.TotalDebit);
+            Assert.Equal(500m, increaseVoucher.TotalCredit);
+            Assert.Contains(increaseVoucher.Items, x => x.Account.Code == "1105" && x.Debit == 500m && x.Credit == 0m);
+            Assert.Contains(increaseVoucher.Items, x => x.Account.Code == "4201" && x.Credit == 500m && x.Debit == 0m);
+            Assert.Equal(2, await context.JournalVouchers.CountAsync(x =>
+                x.ReferenceType == AccountingReferenceType.InventoryAdjustment && x.Status == JournalVoucherStatus.Posted));
+        }
+
+        [Fact(DisplayName = "Purchase invoice cancellation is blocked after its source FIFO layer has been consumed")]
+        public async Task RollbackPurchaseInvoice_RejectsConsumedSourceLayer()
+        {
+            var (context, _, _, inventoryService, _, _) = CreateTestRig(nameof(RollbackPurchaseInvoice_RejectsConsumedSourceLayer));
+            var invoice = new PurchaseInvoice
+            {
+                Id = 901,
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                SupplierId = 1,
+                PurchaserUserId = "user-admin",
+                Number = "PI-ROLLBACK-901",
+                IssueDate = new DateTime(2025, 4, 1),
+                Status = InvoiceStatus.Final,
+                Description = "Purchase rollback test",
+                Items = new List<PurchaseInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 5m, UnitPricePurchase = 100m, LineTotal = 500m }
+                }
+            };
+            var inventory = new Inventory
+            {
+                TenantId = 1, WarehouseId = 1, ProductId = 1,
+                Quantity = 15m, AverageUnitCost = 100m, CreatedAt = DateTime.UtcNow
+            };
+            var sourceLayer = new InventoryTransaction
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProductId = 1,
+                QuantityChange = 5m, RemainingFifoQuantity = 2m, UnitCost = 100m, TotalCost = 500m,
+                TransactionType = InventoryTransactionType.Purchase,
+                ReferenceType = InventoryReferenceType.PurchaseInvoice,
+                ReferenceId = invoice.Id, CreatedAt = DateTime.UtcNow, Description = "Partially consumed source layer"
+            };
+            context.Inventories.Add(inventory);
+            context.InventoryTransactions.AddRange(sourceLayer, new InventoryTransaction
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProductId = 1,
+                QuantityChange = 10m, RemainingFifoQuantity = 10m, UnitCost = 100m, TotalCost = 1_000m,
+                TransactionType = InventoryTransactionType.Purchase,
+                ReferenceType = InventoryReferenceType.PurchaseInvoice,
+                ReferenceId = 902, CreatedAt = DateTime.UtcNow, Description = "Other purchase layer"
+            });
+            await context.SaveChangesAsync();
+
+            Assert.Throws<InvalidOperationException>(() => inventoryService.RollbackInventoryForPurchaseInvoice(invoice));
+            Assert.Equal(15m, inventory.Quantity);
+            Assert.Equal(2m, sourceLayer.RemainingFifoQuantity);
+
+            sourceLayer.RemainingFifoQuantity = 5m;
+            inventoryService.RollbackInventoryForPurchaseInvoice(invoice);
+            Assert.Equal(10m, inventory.Quantity);
+            Assert.Equal(0m, sourceLayer.RemainingFifoQuantity);
+        }
+
+        [Fact(DisplayName = "Sales return cancellation is blocked after its returned FIFO layer has been consumed")]
+        public async Task RollbackSalesReturn_RejectsConsumedReturnedLayer()
+        {
+            var (context, _, _, inventoryService, _, _) = CreateTestRig(nameof(RollbackSalesReturn_RejectsConsumedReturnedLayer));
+            var returnInvoice = new SalesReturnInvoice
+            {
+                Id = 903,
+                Number = "SR-ROLLBACK-903",
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProjectId = 1,
+                SellerUserId = "user-admin",
+                IssueDate = new DateTime(2025, 4, 1),
+                Status = InvoiceStatus.Final,
+                Items = new List<SalesReturnInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 5m, UnitPriceReturn = 120m, UnitCost = 100m, TotalCost = 500m, LineTotal = 600m }
+                }
+            };
+            var inventory = new Inventory
+            {
+                TenantId = 1, WarehouseId = 1, ProductId = 1,
+                Quantity = 12m, AverageUnitCost = 100m, CreatedAt = DateTime.UtcNow
+            };
+            var sourceLayer = new InventoryTransaction
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProductId = 1,
+                QuantityChange = 5m, RemainingFifoQuantity = 2m, UnitCost = 100m, TotalCost = 500m,
+                TransactionType = InventoryTransactionType.ReturnSale,
+                ReferenceType = InventoryReferenceType.SalesReturnInvoice,
+                ReferenceId = returnInvoice.Id, CreatedAt = DateTime.UtcNow, Description = "Partially consumed returned layer"
+            };
+            context.Inventories.Add(inventory);
+            context.InventoryTransactions.Add(sourceLayer);
+            await context.SaveChangesAsync();
+
+            Assert.Throws<InvalidOperationException>(() => inventoryService.RollbackInventoryForSalesReturn(returnInvoice));
+            Assert.Equal(12m, inventory.Quantity);
+            Assert.Equal(2m, sourceLayer.RemainingFifoQuantity);
+
+            sourceLayer.RemainingFifoQuantity = 5m;
+            inventoryService.RollbackInventoryForSalesReturn(returnInvoice);
+            Assert.Equal(7m, inventory.Quantity);
+            Assert.Equal(0m, sourceLayer.RemainingFifoQuantity);
+        }
+
+
+        private static void SetTenantPrincipal(ControllerBase controller)
+        {
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                        new[] { new Claim("TenantId", "1") }, "UnitTest"))
+                }
+            };
+        }
+
+        [Fact(DisplayName = "Confirm فروش: ردیف‌های تکراری کالا نمی‌توانند سقف برگشت را دور بزنند")]
+        public async Task ConfirmSalesReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity()
+        {
+            var (context, uow, accounting, inventory, _, fiscalYear) =
+                CreateTestRig(nameof(ConfirmSalesReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity));
+
+            var source = new SalesInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProjectId = 1,
+                SellerUserId = "user-admin", Number = "SI-DUP-1",
+                IssueDate = new DateTime(2025, 4, 1), Status = InvoiceStatus.Final,
+                Subtotal = 10_000m, Total = 10_000m, Description = "source",
+                Items = new List<SalesInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10m, UnitPriceSell = 1_000m, LineTotal = 10_000m }
+                }
+            };
+            context.SalesInvoices.Add(source);
+            await context.SaveChangesAsync();
+
+            var returnInvoice = new SalesReturnInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, ProjectId = 1,
+                SalesInvoiceId = source.Id, SellerUserId = "user-admin", Number = "SR-DUP-1",
+                IssueDate = new DateTime(2025, 4, 2), Status = InvoiceStatus.Proforma,
+                Subtotal = 12_000m, Total = 12_000m, Description = "duplicate rows",
+                Items = new List<SalesReturnInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m },
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m }
+                }
+            };
+            context.SalesReturnInvoices.Add(returnInvoice);
+            await context.SaveChangesAsync();
+
+            var controller = new SalesReturnInvoiceController(
+                uow, inventory, accounting, fiscalYear, NullLogger<SalesReturnInvoiceController>.Instance);
+            SetTenantPrincipal(controller);
+
+            var result = await controller.Confirm(returnInvoice.Id);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Equal(InvoiceStatus.Proforma, returnInvoice.Status);
+            Assert.Empty(await context.InventoryTransactions
+                .Where(x => x.ReferenceType == InventoryReferenceType.SalesReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+            Assert.Empty(await context.JournalVouchers
+                .Where(x => x.ReferenceType == AccountingReferenceType.SalesReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+        }
+
+        [Fact(DisplayName = "Confirm خرید: ردیف‌های تکراری کالا نمی‌توانند سقف برگشت را دور بزنند")]
+        public async Task ConfirmPurchaseReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity()
+        {
+            var (context, uow, accounting, inventory, _, fiscalYear) =
+                CreateTestRig(nameof(ConfirmPurchaseReturn_RejectsDuplicateProductRowsThatExceedSourceQuantity));
+
+            var source = new PurchaseInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1,
+                PurchaserUserId = "user-admin", Number = "PI-DUP-1",
+                IssueDate = new DateTime(2025, 4, 1), Status = InvoiceStatus.Final,
+                Subtotal = 10_000m, Total = 10_000m, Description = "source",
+                Items = new List<PurchaseInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 10m, UnitPricePurchase = 1_000m, LineTotal = 10_000m }
+                }
+            };
+            context.PurchaseInvoices.Add(source);
+            await context.SaveChangesAsync();
+
+            var returnInvoice = new PurchaseReturnInvoice
+            {
+                TenantId = 1, FiscalYearId = 1, WarehouseId = 1, SupplierId = 1,
+                PurchaseInvoiceId = source.Id, PurchaserUserId = "user-admin", Number = "PR-DUP-1",
+                IssueDate = new DateTime(2025, 4, 2), Status = InvoiceStatus.Proforma,
+                Subtotal = 12_000m, Total = 12_000m, Description = "duplicate rows",
+                Items = new List<PurchaseReturnInvoiceItem>
+                {
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m },
+                    new() { TenantId = 1, ProductId = 1, Quantity = 6m, UnitPriceReturn = 1_000m, LineTotal = 6_000m }
+                }
+            };
+            context.PurchaseReturnInvoices.Add(returnInvoice);
+            await context.SaveChangesAsync();
+
+            var controller = new PurchaseReturnInvoiceController(
+                uow, inventory, accounting, fiscalYear, NullLogger<PurchaseReturnInvoiceController>.Instance);
+            SetTenantPrincipal(controller);
+
+            var result = await controller.Confirm(returnInvoice.Id);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Equal(InvoiceStatus.Proforma, returnInvoice.Status);
+            Assert.Empty(await context.InventoryTransactions
+                .Where(x => x.ReferenceType == InventoryReferenceType.PurchaseReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+            Assert.Empty(await context.JournalVouchers
+                .Where(x => x.ReferenceType == AccountingReferenceType.PurchaseReturnInvoice
+                    && x.ReferenceId == returnInvoice.Id)
+                .ToListAsync());
+        }
+
+    }
+
+    public class FiscalYearMaintenanceSecurityTests
+    {
+        [Fact]
+        public async Task StartupFiscalYearMaintenanceScope_AllowsScopedSeedAndUpdateWithoutAuthenticatedUser()
+        {
+            var currentUser = new MutableCurrentUserService
+            {
+                TenantId = null,
+                UserId = null,
+                IsAuthenticated = false
+            };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = null };
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("FiscalYearMaintenance_" + Guid.NewGuid().ToString("N"))
+                .Options;
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Tenants.Add(new Tenant
+            {
+                Id = 42,
+                TenantCode = "TENANT42",
+                TenantTitle = "Tenant 42",
+                IsActive = false,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            await FiscalYearSeeder.SeedCurrentFiscalYearAsync(context, 42);
+
+            using (context.BeginTenantFiscalYearMaintenanceScope(42))
+            {
+                var fiscalYear = await context.FiscalYears.IgnoreQueryFilters()
+                    .SingleAsync(f => f.TenantId == 42 && !f.IsDeleted);
+                fiscalYear.IsCurrent = false;
+                await context.SaveChangesAsync();
+            }
+
+            Assert.False(await context.FiscalYears.IgnoreQueryFilters()
+                .Where(f => f.TenantId == 42)
+                .Select(f => f.IsCurrent)
+                .SingleAsync());
+        }
+    }
+
+    public class TenantProvisioningSecurityTests
+    {
+        [Fact]
+        public async Task AnonymousProvisioningScope_AllowsOnlyInitialFiscalYearForTargetTenant()
+        {
+            var currentUser = new MutableCurrentUserService
+            {
+                TenantId = null,
+                UserId = null,
+                IsAuthenticated = false
+            };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = null };
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("TenantProvisioning_" + Guid.NewGuid().ToString("N"))
+                .Options;
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Tenants.Add(new Tenant
+            {
+                Id = 42,
+                TenantCode = "TENANT42",
+                TenantTitle = "Tenant 42",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            var initialFiscalYear = new FiscalYear
+            {
+                TenantId = 42,
+                Title = "Initial fiscal year",
+                StartDate = new DateTime(2026, 3, 21),
+                EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = true,
+                IsClosed = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            context.FiscalYears.Add(initialFiscalYear);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
+
+            using (context.BeginTenantProvisioningScope(42))
+            {
+                await context.SaveChangesAsync();
+            }
+
+            Assert.True(await context.FiscalYears.IgnoreQueryFilters()
+                .AnyAsync(f => f.TenantId == 42 && f.Title == "Initial fiscal year"));
+        }
+
+        [Fact]
+        public async Task AnonymousProvisioningScope_CannotCreateFiscalYearForDifferentTenant()
+        {
+            var currentUser = new MutableCurrentUserService
+            {
+                TenantId = null,
+                UserId = null,
+                IsAuthenticated = false
+            };
+            var currentFiscalYear = new MutableCurrentFiscalYearService { FiscalYearId = null };
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase("TenantProvisioningMismatch_" + Guid.NewGuid().ToString("N"))
+                .Options;
+
+            await using var context = new ApplicationDbContext(options, currentUser, currentFiscalYear);
+            context.Tenants.Add(new Tenant
+            {
+                Id = 42,
+                TenantCode = "TENANT42",
+                TenantTitle = "Tenant 42",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            context.FiscalYears.Add(new FiscalYear
+            {
+                TenantId = 43,
+                Title = "Spoofed fiscal year",
+                StartDate = new DateTime(2026, 3, 21),
+                EndDate = new DateTime(2027, 3, 20),
+                IsCurrent = true,
+                IsClosed = false,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            using (context.BeginTenantProvisioningScope(42))
+            {
+                await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.SaveChangesAsync());
+            }
         }
     }
 }

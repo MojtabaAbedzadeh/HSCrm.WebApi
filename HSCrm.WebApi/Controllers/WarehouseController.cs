@@ -166,6 +166,7 @@ namespace HSCrm.WebApi.Controllers
 
   
         [HttpGet("WarehouseDropdownList")]
+        [Permission(Permissions.Warehouses.View)]
         public ApiResponse<IEnumerable<DropdownDto>> WarehouseDropdownList()
         {
             var tenantId = User.GetTenantId();

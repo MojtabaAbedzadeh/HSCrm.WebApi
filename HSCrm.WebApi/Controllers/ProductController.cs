@@ -224,6 +224,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("Search")]
+        [Permission(Permissions.Products.View)]
         public ApiResponse<IEnumerable<object>> Search([FromQuery] string term)
         {
             if (string.IsNullOrEmpty(term))
@@ -270,6 +271,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("ProductDropdownList")]
+        [Permission(Permissions.Products.View)]
         public ApiResponse ProductDropdownList()
         {
             var claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList();

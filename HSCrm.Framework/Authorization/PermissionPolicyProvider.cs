@@ -15,6 +15,8 @@ public class PermissionPolicyProvider : DefaultAuthorizationPolicyProvider
 
             var policy = new AuthorizationPolicyBuilder();
             policy.RequireAuthenticatedUser();
+            policy.RequireClaim("TenantId");
+            policy.RequireClaim("FiscalYearId");
             policy.AddRequirements(new PermissionRequirement(permission));
 
             return policy.Build();
