@@ -8,7 +8,6 @@ using HSCrm.Entities.Models;
 using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -18,13 +17,11 @@ namespace HSCrm.WebApi.Controllers
     public class TenantController : ControllerBase
     {
         private readonly IUnitOfWork _context;
-        private readonly IHttpContextAccessor _httpContextAccessor;
 
 
-        public TenantController(IUnitOfWork context, IHttpContextAccessor httpContextAccessor)
+        public TenantController(IUnitOfWork context)
         {
             _context = context;
-            _httpContextAccessor = httpContextAccessor;
         }
 
         [HttpGet("GetTenant")]
@@ -90,8 +87,6 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                var userId = _httpContextAccessor.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
                 Tenant tenant = new Tenant()
                 {
                     TenantTitle = model.TenantTitle,
@@ -137,8 +132,6 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Tenants.Edit)]
         public ApiResponse Update([FromForm] TenantEditModel model)
         {
-            var userId = _httpContextAccessor.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
             if (model.TenantId == 0) return new ApiResponse
             {
                 Status = false,
@@ -148,7 +141,13 @@ namespace HSCrm.WebApi.Controllers
 
             var getTenant = _context.tenantUW.GetById(model.TenantId);
 
-            if (getTenant != null)
+            if (getTenant == null) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
             {
                 getTenant.TenantTitle = model.TenantTitle;
                 getTenant.Address = model.Address;
