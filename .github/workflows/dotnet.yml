@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ master ]
   push:
-    branches: [ master, security/hardening ]
+    branches: [ master, security/hardening, release/1.0.0-security ]
 
 permissions:
   contents: read
