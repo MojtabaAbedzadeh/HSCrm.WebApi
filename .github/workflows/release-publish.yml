@@ -40,8 +40,8 @@ jobs:
       - name: Generate idempotent database migration script
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "${{ runner.temp }}\\publish\\database" | Out-Null
-          dotnet ef migrations script --idempotent --project HSCrm.DataModel/HSCrm.DataModel.csproj --startup-project HSCrm.WebApi/HSCrm.WebApi.csproj --output "${{ runner.temp }}\\publish\\database\\HSCrm-Database-Idempotent.sql"
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/publish/database" | Out-Null
+          dotnet ef migrations script --idempotent --project HSCrm.DataModel/HSCrm.DataModel.csproj --startup-project HSCrm.WebApi/HSCrm.WebApi.csproj --output "$env:RUNNER_TEMP/publish/database/HSCrm-Database-Idempotent.sql"
 
       - name: Publish Backend for IIS
         run: dotnet publish HSCrm.WebApi/HSCrm.WebApi.csproj --configuration Release --no-restore --output "${{ runner.temp }}\publish\backend"
@@ -69,7 +69,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hscrm-database-migrations-${{ github.ref_name }}
-          path: ${{ runner.temp }}\\publish\\database\\HSCrm-Database-Idempotent.sql
+          path: ${{ runner.temp }}/publish/database/HSCrm-Database-Idempotent.sql
           if-no-files-found: error
           retention-days: 30
 
