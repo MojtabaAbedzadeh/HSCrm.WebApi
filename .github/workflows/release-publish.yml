@@ -46,8 +46,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Restore
-        run: dotnet restore HSCrm.WebApi.sln
+      - name: Restore unit and SQL Server integration test dependencies
+        run: dotnet restore HSCrm.UnitTests/HSCrm.UnitTests.csproj
       - name: Run unit and SQL Server integration tests
         run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=release-tests.trx"
       - name: Upload test results
