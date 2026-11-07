@@ -20,7 +20,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  integration-tests:
+    name: Unit and SQL Server integration tests
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: ${{ secrets.CI_SQLSERVER_PASSWORD }}
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "bash -c 'echo > /dev/tcp/127.0.0.1/1433' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 30s
+    env:
+      HSCrmSqlServer: "Server=localhost,1433;Database=master;User Id=sa;Password=${{ secrets.CI_SQLSERVER_PASSWORD }};TrustServerCertificate=True;Encrypt=True"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore unit and SQL Server integration test dependencies
+        run: dotnet restore HSCrm.UnitTests/HSCrm.UnitTests.csproj
+      - name: Run unit and SQL Server integration tests
+        run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=release-tests.trx"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hscrm-backend-test-results-${{ github.run_id }}
+          path: '**/TestResults/*.trx'
+          if-no-files-found: ignore
+          retention-days: 14
+
   publish:
+    needs: integration-tests
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -47,9 +87,6 @@ jobs:
 
       - name: Build
         run: dotnet build HSCrm.WebApi.sln --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --logger "trx;LogFileName=release-tests.trx"
 
       - name: Install EF Core tools
         run: dotnet tool install --global dotnet-ef --version 8.0.21
@@ -95,11 +132,3 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hscrm-backend-test-results-${{ github.run_id }}
-          path: '**/TestResults/*.trx'
-          if-no-files-found: ignore
-          retention-days: 14
