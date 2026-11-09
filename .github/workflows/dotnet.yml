@@ -1,0 +1,58 @@
+name: .NET 8 build and tests
+
+on:
+  pull_request:
+    branches: [ master, security/hardening ]
+  push:
+    branches: [ master, security/hardening ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: "Test_only_Password!2026"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "bash -c 'echo > /dev/tcp/127.0.0.1/1433' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 30s
+    env:
+      HSCrmSqlServer: "Server=localhost,1433;Database=master;User Id=sa;Password=Test_only_Password!2026;TrustServerCertificate=True;Encrypt=True"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore HSCrm.WebApi.sln
+      - name: Build
+        run: dotnet build HSCrm.WebApi.sln --configuration Release --no-restore
+      - name: Test
+        run: dotnet test HSCrm.UnitTests/HSCrm.UnitTests.csproj --configuration Release --logger "trx;LogFileName=tests.trx"
+      - name: Validate idempotent EF migration script generation
+        shell: bash
+        run: |
+          dotnet tool install --global dotnet-ef --version 8.0.21
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet ef migrations script --idempotent --project HSCrm.DataModel/HSCrm.DataModel.csproj --startup-project HSCrm.WebApi/HSCrm.WebApi.csproj --output "$RUNNER_TEMP/HSCrm-Database-Idempotent.sql"
+          test -s "$RUNNER_TEMP/HSCrm-Database-Idempotent.sql"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/TestResults/*.trx'
+          if-no-files-found: ignore

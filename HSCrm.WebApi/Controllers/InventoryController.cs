@@ -1,4 +1,6 @@
-﻿using HSCrm.DataModel.Services.Interface;
+using Common.Permissions;
+using Framework.Authorization;
+using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models.Dto;
 using HSCrm.Framework.Extensions;
@@ -15,16 +17,15 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IInventoryService _inventoryService;
         private readonly ICurrentFiscalYearService _fiscalYearService;
-        private readonly IUnitOfWork _context;
 
-        public InventoryController(IInventoryService inventoryService, IUnitOfWork context, ICurrentFiscalYearService fiscalYearService)
+        public InventoryController(IInventoryService inventoryService, ICurrentFiscalYearService fiscalYearService)
         {
             _inventoryService = inventoryService;
-            _context = context;
             _fiscalYearService = fiscalYearService;
         }
 
         [HttpPost("kardex")]
+        [Permission(Permissions.Inventories.View)]
         public async Task<ActionResult<ApiResponse>> GetProductKardex([FromBody] KardexReportFilterDto filter)
         {
             if (filter == null || filter.ProductId <= 0)
@@ -66,6 +67,7 @@ namespace HSCrm.WebApi.Controllers
         /// گزارش ارزش‌گذاری ریالی موجودی انبار به هر دو روش میانگین موزون متحرک و FIFO
         /// </summary>
         [HttpGet("ValuationReport")]
+        [Permission(Permissions.Inventories.View)]
         public async Task<ActionResult<ApiResponse<List<InventoryValuationDto>>>> GetValuationReport(
             [FromQuery] int? warehouseId,
             CancellationToken ct)
@@ -81,6 +83,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("ApplyAdjustment")]
+        [Permission(Permissions.Inventories.Edit)]
         public async Task<IActionResult> ApplyAdjustment([FromBody] AdjustmentRequest model)
         {
             var tenantId = User.GetTenantId();
@@ -103,12 +106,9 @@ namespace HSCrm.WebApi.Controllers
             {
                 ProductId = model.ProductId,
                 WarehouseId = model.WarehouseId,
-                QuantityChange = model.ActualQuantity,
-                ReferenceId = model.ReferenceId,
+                ActualQuantity = model.ActualQuantity,
                 Description = model.Description
             });
-
-            await _context.SaveAsync();
 
             return Ok(new ApiResponse
             {
@@ -125,7 +125,5 @@ namespace HSCrm.WebApi.Controllers
         [Required] public int WarehouseId { get; set; }
         [Required] public decimal ActualQuantity { get; set; }
         public string? Description { get; set; }
-        public long ReferenceId { get; set; }
-        public InventoryReferenceType ReferenceType { get; set; }
     }
 }

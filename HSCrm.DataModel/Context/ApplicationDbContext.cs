@@ -13,6 +13,9 @@ namespace HSCrm.DataModel.Context
 {
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, string, IdentityUserClaim<string>, UserRole, IdentityUserLogin<string>, IdentityRoleClaim<string>, IdentityUserToken<string>>
     {
+        private bool _allowFiscalYearTransitionWrites;
+        private int? _tenantProvisioningTenantId;
+        private bool _allowTenantFiscalYearMaintenanceWrites;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         public int CurrentTenantId => _currentUserService?.TenantId ?? 0;
@@ -884,14 +887,10 @@ namespace HSCrm.DataModel.Context
                     var fiscalProp = Expression.Property(parameter, nameof(IFiscalYearScoped.FiscalYearId));
                     var currentFiscal = Expression.Property(Expression.Constant(this), nameof(CurrentFiscalYearId));
 
-                    // مقایسه ایمن بر مبنای Nullable<int> بدون دسترسی مستقیم به Property Value
+                    // A missing FiscalYear claim must not disable the fiscal-year filter.
+                    // It should match only rows whose FiscalYearId is null.
                     var nullableFiscalProp = Expression.Convert(fiscalProp, typeof(int?));
-                    var nullConstant = Expression.Constant(null, typeof(int?));
-
-                    var isNullFiscal = Expression.Equal(currentFiscal, nullConstant);
-                    var isEqualFiscal = Expression.Equal(nullableFiscalProp, currentFiscal);
-
-                    var fiscalFilter = Expression.OrElse(isNullFiscal, isEqualFiscal);
+                    var fiscalFilter = Expression.Equal(nullableFiscalProp, currentFiscal);
 
                     combinedBody = combinedBody == null
                         ? fiscalFilter
@@ -923,23 +922,82 @@ namespace HSCrm.DataModel.Context
         private void ApplyAuditTenantAndFiscalYearInfo()
         {
             var entries = ChangeTracker.Entries()
-                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified || e.State == EntityState.Deleted)
                 .ToList();
 
             foreach (var entry in entries)
             {
-                // Tenant
+                var currentTenantId = _currentUserService?.TenantId ?? 0;
+
+                // Tenant: never allow tenant-scoped writes without an authenticated tenant context.
                 if (entry.Entity is TenantScopedEntity tenantEntity)
                 {
-                    if (tenantEntity.TenantId == 0 && _currentUserService.TenantId.HasValue)
-                        tenantEntity.TenantId = _currentUserService.TenantId.Value;
+                    var isScopedTenantFiscalYearWrite = entry.Entity is FiscalYear
+                        && _tenantProvisioningTenantId.HasValue
+                        && tenantEntity.TenantId == _tenantProvisioningTenantId.Value
+                        && (entry.State == EntityState.Added
+                            || (_allowTenantFiscalYearMaintenanceWrites && entry.State == EntityState.Modified));
+
+                    if (currentTenantId <= 0 && !isScopedTenantFiscalYearWrite)
+                        throw new UnauthorizedAccessException("برای ثبت یا ویرایش اطلاعات، شرکت معتبر لازم است.");
+
+                    var tenantProperty = entry.Property(nameof(TenantScopedEntity.TenantId));
+                    if (entry.State == EntityState.Added)
+                    {
+                        if (isScopedTenantFiscalYearWrite)
+                        {
+                            // Only a fiscal year for the verified scope tenant may be written here.
+                        }
+                        else if (tenantEntity.TenantId == 0)
+                            tenantEntity.TenantId = currentTenantId;
+                        else if (tenantEntity.TenantId != currentTenantId)
+                            throw new UnauthorizedAccessException("ثبت اطلاعات برای شرکت دیگری مجاز نیست.");
+                    }
+                    else
+                    {
+                        var originalTenantId = tenantProperty.OriginalValue is int original ? original : 0;
+                        if (isScopedTenantFiscalYearWrite)
+                        {
+                            if (originalTenantId != _tenantProvisioningTenantId || tenantEntity.TenantId != _tenantProvisioningTenantId)
+                                throw new UnauthorizedAccessException("تغییر سال مالی خارج از شرکت مجاز نیست.");
+                        }
+                        else if (originalTenantId != currentTenantId || tenantEntity.TenantId != currentTenantId)
+                            throw new UnauthorizedAccessException("تغییر اطلاعات متعلق به شرکت دیگری مجاز نیست.");
+                    }
                 }
 
-                // FiscalYear
+                // Fiscal year is also a write boundary. Never accept a client-supplied
+                // fiscal year different from the one bound to the authenticated token.
                 if (entry.Entity is IFiscalYearScoped fiscalEntity)
                 {
-                    if (fiscalEntity.FiscalYearId == 0 && _currentFiscalYearService.FiscalYearId.HasValue)
-                        fiscalEntity.FiscalYearId = _currentFiscalYearService.FiscalYearId.Value;
+                    var currentFiscalYearId = _currentFiscalYearService?.FiscalYearId ?? 0;
+                    if (currentFiscalYearId <= 0)
+                        throw new UnauthorizedAccessException("برای ثبت یا ویرایش این اطلاعات، سال مالی معتبر لازم است.");
+
+                    var fiscalYearProperty = entry.Property(nameof(IFiscalYearScoped.FiscalYearId));
+                    if (entry.State == EntityState.Added)
+                    {
+                        if (fiscalEntity.FiscalYearId == 0)
+                            fiscalEntity.FiscalYearId = currentFiscalYearId;
+
+                        if (!_allowFiscalYearTransitionWrites && fiscalEntity.FiscalYearId != currentFiscalYearId)
+                            throw new UnauthorizedAccessException("ثبت اطلاعات در سال مالی دیگری مجاز نیست.");
+
+                        if (_allowFiscalYearTransitionWrites && !IsFiscalYearOwnedByTenant(fiscalEntity.FiscalYearId, currentTenantId))
+                            throw new UnauthorizedAccessException("سال مالی مقصد متعلق به شرکت جاری نیست.");
+                    }
+                    else
+                    {
+                        var originalFiscalYearId = fiscalYearProperty.OriginalValue is int original ? original : 0;
+                        if (!_allowFiscalYearTransitionWrites &&
+                            (originalFiscalYearId != currentFiscalYearId || fiscalEntity.FiscalYearId != currentFiscalYearId))
+                            throw new UnauthorizedAccessException("تغییر اطلاعات متعلق به سال مالی دیگری مجاز نیست.");
+
+                        if (_allowFiscalYearTransitionWrites &&
+                            (!IsFiscalYearOwnedByTenant(originalFiscalYearId, currentTenantId) ||
+                             !IsFiscalYearOwnedByTenant(fiscalEntity.FiscalYearId, currentTenantId)))
+                            throw new UnauthorizedAccessException("سال مالی رکورد متعلق به شرکت جاری نیست.");
+                    }
                 }
 
                 // Audit fields
@@ -961,6 +1019,67 @@ namespace HSCrm.DataModel.Context
                 }
             }
         }
+        // Anonymous tenant registration may create exactly one initial fiscal year
+        // for a tenant that was created and persisted in this same request.
+        public IDisposable BeginTenantProvisioningScope(int tenantId)
+        {
+            if (tenantId <= 0 || !Tenants.IgnoreQueryFilters()
+                .Any(t => t.Id == tenantId && t.IsActive && !t.IsDeleted))
+                throw new UnauthorizedAccessException("شرکت مقصد برای ایجاد سال مالی معتبر نیست.");
+
+            var previous = _tenantProvisioningTenantId;
+            _tenantProvisioningTenantId = tenantId;
+            return new CallbackScope(() => _tenantProvisioningTenantId = previous);
+        }
+
+        // Startup seeding may add/update fiscal-year metadata for one verified active tenant.
+        // The write guard limits this scope to FiscalYear entities only.
+        public IDisposable BeginTenantFiscalYearMaintenanceScope(int tenantId)
+        {
+            if (tenantId <= 0 || !Tenants.IgnoreQueryFilters()
+                .Any(t => t.Id == tenantId && !t.IsDeleted))
+                throw new UnauthorizedAccessException("شرکت مقصد برای نگهداری سال مالی معتبر نیست.");
+
+            var previousTenantId = _tenantProvisioningTenantId;
+            var previousMaintenance = _allowTenantFiscalYearMaintenanceWrites;
+            _tenantProvisioningTenantId = tenantId;
+            _allowTenantFiscalYearMaintenanceWrites = true;
+            return new CallbackScope(() =>
+            {
+                _tenantProvisioningTenantId = previousTenantId;
+                _allowTenantFiscalYearMaintenanceWrites = previousMaintenance;
+            });
+        }
+
+        // Restricted internal scope for the accounting year-close service only.
+        // Cross-year writes remain tenant-bound and are validated against FiscalYears.
+        internal IDisposable BeginFiscalYearTransitionWriteScope()
+        {
+            var previous = _allowFiscalYearTransitionWrites;
+            _allowFiscalYearTransitionWrites = true;
+            return new CallbackScope(() => _allowFiscalYearTransitionWrites = previous);
+        }
+
+        private bool IsFiscalYearOwnedByTenant(int fiscalYearId, int tenantId)
+        {
+            if (fiscalYearId <= 0 || tenantId <= 0)
+                return false;
+
+            return FiscalYears.Local.Any(f => f.Id == fiscalYearId && f.TenantId == tenantId) ||
+                   FiscalYears.IgnoreQueryFilters().Any(f => f.Id == fiscalYearId && f.TenantId == tenantId);
+        }
+
+        private sealed class CallbackScope : IDisposable
+        {
+            private Action? _onDispose;
+            public CallbackScope(Action onDispose) => _onDispose = onDispose;
+            public void Dispose()
+            {
+                _onDispose?.Invoke();
+                _onDispose = null;
+            }
+        }
+
         public override int SaveChanges()
         {
             cleanStr();

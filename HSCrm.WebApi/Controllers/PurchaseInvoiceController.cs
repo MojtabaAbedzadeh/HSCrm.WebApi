@@ -39,9 +39,15 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpGet("SettlementSummary/{id}")]
+        [Permission(Permissions.PurchaseInvoices.View)]
         public IActionResult SettlementSummary(int id)
         {
-            var invoice = _context.purchaseInvoiceUW.GetById(id);
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized("شرکت یا سال مالی معتبر مشخص نیست.");
+
+            var invoice = _context.purchaseInvoiceUW.Get(x => x.Id == id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).FirstOrDefault();
             if (invoice == null)
                 return NotFound();
 
@@ -54,8 +60,13 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse<IEnumerable<PurchaseInvoiceModel>> Get(string supplierFullName = null, DateTime? fromDate = null, DateTime? toDate = null, decimal? minTotal = null, decimal? maxTotal = null)
         {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse<IEnumerable<PurchaseInvoiceModel>> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "شرکت یا سال مالی معتبر مشخص نیست." };
+
             var query = _context.purchaseInvoiceUW
-                .Get(null, true, x => x.Supplier, x => x.Tenant)
+                .Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted, true, x => x.Supplier, x => x.Tenant)
                 .AsQueryable();
 
             if (!string.IsNullOrEmpty(supplierFullName))
@@ -120,7 +131,7 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<PurchaseInvoice>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.PurchaseInvoices.View)]
-        public ApiResponse GetById(int InvoiceId)
+        public ApiResponse GetById([FromRoute(Name = "id")] int InvoiceId)
         {
             var factor = _context.purchaseInvoiceUW
        .Query()
@@ -128,7 +139,8 @@ namespace HSCrm.WebApi.Controllers
            .ThenInclude(x => x.Product)
        .Include(x => x.Supplier)
        .Include(x => x.Warehouse)
-       .FirstOrDefault(x => x.Id == InvoiceId);
+       .FirstOrDefault(x => x.Id == InvoiceId && x.TenantId == User.GetTenantId()
+           && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted);
 
             if (factor == null)
             {
@@ -163,8 +175,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse<IEnumerable<PurchaseInvoice>> GetBySupplierId(int supplierId)
         {
-            // ✅ فیلتر بر اساس تامین‌کننده (Supplier) به جای پروژه
-            var factors = _context.purchaseInvoiceUW.Get(x => x.SupplierId == supplierId).ToList();
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue
+                || !_context.supplierUW.Get(x => x.Id == supplierId && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                return new ApiResponse<IEnumerable<PurchaseInvoice>> { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "تأمین‌کننده یافت نشد." };
+
+            var factors = _context.purchaseInvoiceUW.Get(x => x.SupplierId == supplierId && x.TenantId == tenantId.Value
+                && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).ToList();
 
             if (factors == null || !factors.Any())
             {
@@ -187,6 +205,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateInvoice")]
+        [Permission(Permissions.PurchaseInvoices.Create)]
         public async Task<ApiResponse> Create([FromBody] PurchaseInvoiceCreateModel model)
         {
             try
@@ -260,6 +279,16 @@ namespace HSCrm.WebApi.Controllers
                         Message = "انبار معتبر نیست.",
                         StatusCode = ApiResultStatusCode.BadRequest
                     };
+
+                if (!_context.supplierUW.Get(x => x.Id == model.SupplierId && x.TenantId == tenantId.Value && !x.IsDeleted).Any()
+                    || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantId.Value && x.IsActive && !x.IsDeleted).Any()
+                    || !_context.fiscalYearUW.Get(x => x.Id == fiscalYear.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).Any())
+                    return new ApiResponse { Status = false, Message = "تأمین‌کننده، انبار یا سال مالی متعلق به شرکت جاری نیست یا معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+
+                var requestedProductIds = model.Items.Select(x => x.ProductId).Distinct().ToList();
+                if (requestedProductIds.Any(id => id <= 0)
+                    || _context.productUW.Get(x => requestedProductIds.Contains(x.Id) && x.TenantId == tenantId.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != requestedProductIds.Count)
+                    return new ApiResponse { Status = false, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
 
                 if (!DateTime.TryParseExact(model.IssueDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var issueDate))
                     issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
@@ -374,6 +403,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("UpdateInvoice")]
+        [Permission(Permissions.PurchaseInvoices.Edit)]
         public async Task<ApiResponse> Update([FromBody] PurchaseInvoiceEditModel model)
         {
             if (model == null)
@@ -386,6 +416,13 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse { Status = false, Message = "حداقل یک قلم کالا باید ثبت شود.", StatusCode = ApiResultStatusCode.BadRequest };
             }
 
+            var normalizedInvoiceNumber = model.InvoiceNumber?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedInvoiceNumber) || model.IssueDate == default)
+                return new ApiResponse { Status = false, Message = "شماره و تاریخ فاکتور الزامی و معتبر است.", StatusCode = ApiResultStatusCode.BadRequest };
+
+            if (model.Items.Any(item => item.ProductId <= 0 || item.Quantity <= 0 || item.UnitPrice < 0 || item.Discount < 0 || item.Tax < 0))
+                return new ApiResponse { Status = false, Message = "مقادیر کالا، تعداد، قیمت، تخفیف یا مالیات معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+
             // لود کردن فاکتور به همراه آیتم‌های فعلی
             var invoice = _context.purchaseInvoiceUW
                 .Get()
@@ -396,6 +433,27 @@ namespace HSCrm.WebApi.Controllers
             {
                 return new ApiResponse { Status = false, Message = "فاکتور یافت نشد.", StatusCode = ApiResultStatusCode.NotFound };
             }
+
+            var tenantIdForUpdate = User.GetTenantId();
+            var fiscalYearForUpdate = _currentFiscalYearService.FiscalYearId;
+            if (!tenantIdForUpdate.HasValue || !fiscalYearForUpdate.HasValue
+                || invoice.TenantId != tenantIdForUpdate.Value
+                || invoice.FiscalYearId != fiscalYearForUpdate.Value
+                || !_context.supplierUW.Get(x => x.Id == model.SupplierId && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any()
+                || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantIdForUpdate.Value && x.IsActive && !x.IsDeleted).Any())
+                return new ApiResponse { Status = false, Message = "فاکتور، تأمین‌کننده یا انبار متعلق به شرکت/سال مالی جاری نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+
+            if (_context.purchaseInvoiceUW.Get(x => x.Id != invoice.Id
+                && x.TenantId == tenantIdForUpdate.Value
+                && x.FiscalYearId == fiscalYearForUpdate.Value
+                && x.Number == normalizedInvoiceNumber
+                && !x.IsDeleted).Any())
+                return new ApiResponse { Status = false, Message = "شماره فاکتور در سال مالی جاری تکراری است.", StatusCode = ApiResultStatusCode.Conflict };
+
+            var updateProductIds = model.Items.Select(x => x.ProductId).Distinct().ToList();
+            if (updateProductIds.Any(id => id <= 0)
+                || _context.productUW.Get(x => updateProductIds.Contains(x.Id) && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != updateProductIds.Count)
+                return new ApiResponse { Status = false, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
 
             // گارد ویرایش فاکتور نهایی
             if (invoice.Status == InvoiceStatus.Final)
@@ -411,8 +469,8 @@ namespace HSCrm.WebApi.Controllers
                 invoice.WarehouseId = model.WarehouseId;
                 invoice.SupplierId = model.SupplierId;
                 invoice.IssueDate = model.IssueDate;
-                invoice.Number = model.InvoiceNumber?.Trim();
-                invoice.Status = model.Status;
+                invoice.Number = normalizedInvoiceNumber;
+                invoice.Status = InvoiceStatus.Proforma;
                 invoice.PurchaserUserId = User.GetUserId();
 
                 // 2. حذف کامل آیتم‌های قبلی از ChangeTracker و دیتابیس
@@ -435,7 +493,7 @@ namespace HSCrm.WebApi.Controllers
                     var lineTax = item.Tax;
                     var lineTotal = (item.Quantity * item.UnitPrice) - lineDiscount + lineTax;
 
-                    subtotal += (item.Quantity * item.UnitPrice);
+                    subtotal += lineTotal;
 
                     invoice.Items.Add(new PurchaseInvoiceItem
                     {
@@ -456,7 +514,7 @@ namespace HSCrm.WebApi.Controllers
                 invoice.Subtotal = subtotal;
                 invoice.Tax = model.InvoiceTax;
                 invoice.Discount = model.InvoiceDiscount;
-                invoice.Total = subtotal - invoice.Discount + invoice.Tax;
+                invoice.Total = Math.Max(0m, subtotal - invoice.Discount + invoice.Tax);
 
                 // 4. آپدیت هدر و ذخیره تغییرات
                 _context.purchaseInvoiceUW.Update(invoice);
@@ -501,6 +559,7 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpPost("ConfirmInvoice/{id}")]
+        [Permission(Permissions.PurchaseInvoices.Approve)]
         public async Task<ApiResponse> ConfirmInvoice(int id)
         {
             var tenantId = User.GetTenantId();
@@ -631,6 +690,7 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpPost("CancelInvoice/{id}")]
+        [Permission(Permissions.PurchaseInvoices.Delete)]
         public async Task<ApiResponse> Cancel(int id, [FromBody] string? reason)
         {
             var tenantId = User.GetTenantId();
@@ -754,6 +814,7 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpPost("RejectInvoice/{id}")]
+        [Permission(Permissions.PurchaseInvoices.Reject)]
         public async Task<ApiResponse> Reject(int id, [FromBody] string? reason)
         {
             var tenantId = User.GetTenantId();

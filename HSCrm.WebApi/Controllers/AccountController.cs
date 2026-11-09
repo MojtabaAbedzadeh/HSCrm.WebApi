@@ -1,4 +1,6 @@
-﻿using HSCrm.Common.PublicTools;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
+using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -25,6 +27,7 @@ namespace HSCrm.WebApi.Controllers
         private readonly IUnitOfWork _iuwcontext;
         private readonly IPermissionService _permissionService;
         private readonly ILogger<AccountController> _logger;
+        private readonly IConfiguration _configuration;
 
         public AccountController(
             UserManager<ApplicationUser> userManager,
@@ -34,7 +37,8 @@ namespace HSCrm.WebApi.Controllers
             ApplicationDbContext context,
             IPermissionService permissionService,
             IUnitOfWork iuwcontext,
-            ILogger<AccountController> logger)
+            ILogger<AccountController> logger,
+            IConfiguration configuration)
         {
             _context = context;
             _userManager = userManager;
@@ -44,8 +48,11 @@ namespace HSCrm.WebApi.Controllers
             _permissionService = permissionService;
             _iuwcontext = iuwcontext;
             _logger = logger;
+            _configuration = configuration;
         }
 
+        [AllowAnonymous]
+        [EnableRateLimiting("TenantRegistration")]
         [HttpPost("RegisterTenant")]
         public async Task<IActionResult> RegisterTenant(RegisterTenantDto model, CancellationToken ct)
         {
@@ -90,8 +97,11 @@ namespace HSCrm.WebApi.Controllers
                     CreatedAt = DateTime.Now
                 };
 
-                _context.FiscalYears.Add(defaultFiscalYear);
-                await _context.SaveChangesAsync(ct);
+                using (_context.BeginTenantProvisioningScope(tenant.Id))
+                {
+                    _context.FiscalYears.Add(defaultFiscalYear);
+                    await _context.SaveChangesAsync(ct);
+                }
 
                 var user = new ApplicationUser
                 {
@@ -129,9 +139,12 @@ namespace HSCrm.WebApi.Controllers
                     return BadRequest(roleResult.Errors);
                 }
 
-                await transaction.CommitAsync(ct);
-
+                // Generate the response token before committing provisioning.
+                // If token generation fails, tenant, fiscal year, owner and role assignment
+                // are still rolled back together instead of leaving an unusable registration.
                 var token = await _token.GenerateTokenAsync(user, defaultFiscalYear.Id, ct);
+
+                await transaction.CommitAsync(ct);
 
                 return Ok(new
                 {
@@ -149,6 +162,8 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
+        [AllowAnonymous]
+        [EnableRateLimiting("Auth")]
         [Route("check-user")]
         [HttpPost]
         public async Task<IActionResult> CheckUser(UserLoginModel model, CancellationToken ct)
@@ -167,6 +182,7 @@ namespace HSCrm.WebApi.Controllers
             var allFiscalYears = await _iuwcontext.fiscalYearUW
                 .Get(f => f.TenantId == user!.TenantId)
                 .IgnoreQueryFilters()
+                .Where(f => !f.IsDeleted && !f.IsClosed)
                 .OrderByDescending(f => f.Id)
                 .ToListAsync(ct);
 
@@ -206,6 +222,8 @@ namespace HSCrm.WebApi.Controllers
             });
         }
 
+        [AllowAnonymous]
+        [EnableRateLimiting("Auth")]
         [Route("login")]
         [HttpPost]
         public async Task<IActionResult> Login(UserLoginModel model, CancellationToken ct)
@@ -229,6 +247,7 @@ namespace HSCrm.WebApi.Controllers
                 var fiscalYear = await _iuwcontext.fiscalYearUW
                     .Get(f => f.Id == model.FiscalYearId && f.TenantId == user!.TenantId)
                     .IgnoreQueryFilters()
+                    .Where(f => !f.IsDeleted)
                     .SingleOrDefaultAsync(ct);
 
                 if (fiscalYear == null)
@@ -247,11 +266,11 @@ namespace HSCrm.WebApi.Controllers
                     UserId = user.Id,
                     FirstName = user.UserFirstName,
                     LastName = user.UserLastName,
-                    UserImageUrl = user.UserImageUrl,
+                    UserImageUrl = user.UserImageUrl ?? string.Empty,
                     TenantId = user.TenantId.ToString(),
-                    UserName = user.UserName,
+                    UserName = user.UserName ?? string.Empty,
                     Roles = roles,
-                    Email = user.Email,
+                    Email = user.Email ?? string.Empty,
                     Permissions = permissions,
                     FiscalYearStatus = fiscalYearStatus,
                     UserStatus = user.UserStatus,
@@ -268,6 +287,37 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
+        [Authorize]
+        [HttpPost("SwitchFiscalYear")]
+        public async Task<IActionResult> SwitchFiscalYear([FromBody] int fiscalYearId, CancellationToken ct)
+        {
+            if (fiscalYearId <= 0)
+                return BadRequest(new { message = "سال مالی انتخاب‌شده معتبر نیست." });
+
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null || user.TenantId <= 0 || !user.UserStatus)
+                return Unauthorized(new { message = "کاربر احراز هویت‌شده معتبر نیست." });
+
+            var fiscalYear = await _iuwcontext.fiscalYearUW
+                .Get(f => f.Id == fiscalYearId && f.TenantId == user.TenantId)
+                .IgnoreQueryFilters()
+                .Where(f => !f.IsDeleted && !f.IsClosed && f.Tenant.IsActive && !f.Tenant.IsDeleted)
+                .SingleOrDefaultAsync(ct);
+
+            if (fiscalYear == null)
+                return BadRequest(new { message = "سال مالی انتخاب‌شده برای شرکت جاری معتبر یا باز نیست." });
+
+            var token = await _token.GenerateTokenAsync(user, fiscalYear.Id, ct);
+
+            return Ok(new
+            {
+                Token = token,
+                FiscalYearId = fiscalYear.Id,
+                FiscalYearTitle = fiscalYear.Title,
+                FiscalYearStatus = ResolveFiscalYearStatus(fiscalYear)
+            });
+        }
+
         private async Task<IActionResult?> ValidateCredentialsAsync(ApplicationUser? user, string password)
         {
             if (user == null)
@@ -276,7 +326,7 @@ namespace HSCrm.WebApi.Controllers
             if (!user.UserStatus)
                 return Unauthorized("User account is inactive.");
 
-            if (user.Tenant == null || !user.Tenant.IsActive)
+            if (user.Tenant == null || !user.Tenant.IsActive || user.Tenant.IsDeleted)
                 return Unauthorized("Tenant is inactive.");
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
@@ -310,10 +360,27 @@ namespace HSCrm.WebApi.Controllers
             return 2; // غیرفعال / غیرجاری
         }
 
+        private string? GetPublicBaseUrl()
+        {
+            var configured = _configuration["PublicBaseUrl"];
+            if (string.IsNullOrWhiteSpace(configured))
+                return null;
+
+            if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+                || !string.IsNullOrEmpty(uri.UserInfo)
+                || uri.AbsolutePath != "/"
+                || !string.IsNullOrEmpty(uri.Query)
+                || !string.IsNullOrEmpty(uri.Fragment))
+                throw new InvalidOperationException("PublicBaseUrl must be an absolute HTTP(S) origin without credentials, path, query, or fragment.");
+
+            return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+
         private string BuildDefaultAvatarUrl()
         {
-            var baseUrl = $"{Request.Scheme}://{Request.Host.Value}";
-            return $"{baseUrl}{DefaultAvatarPath}";
+            var baseUrl = GetPublicBaseUrl();
+            return baseUrl == null ? DefaultAvatarPath : $"{baseUrl}{DefaultAvatarPath}";
         }
     }
 }

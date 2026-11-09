@@ -39,9 +39,15 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("SettlementSummary/{id}")]
+        [Permission(Permissions.SalesInvoices.View)]
         public IActionResult SettlementSummary(int id)
         {
-            var invoice = _context.salesInvoiceUW.GetById(id);
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized("شرکت یا سال مالی معتبر مشخص نیست.");
+
+            var invoice = _context.salesInvoiceUW.Get(x => x.Id == id && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).FirstOrDefault();
             if (invoice == null)
                 return NotFound();
 
@@ -55,7 +61,12 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoice>> Get()
         {
-            var invoices = _context.salesInvoiceUW.Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant).ToList();
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse<IEnumerable<SalesInvoice>> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "شرکت یا سال مالی معتبر مشخص نیست." };
+
+            var invoices = _context.salesInvoiceUW.Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted, true, x => x.Project, x => x.Project.Customer, x => x.Tenant).ToList();
 
             return new ApiResponse<IEnumerable<SalesInvoice>>
             {
@@ -73,7 +84,11 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse GetById(int invoiceId)
         {
-            var invoice = _context.salesInvoiceUW.GetById(invoiceId);
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+            var invoice = tenantId.HasValue && fiscalYearId.HasValue
+                ? _context.salesInvoiceUW.Get(x => x.Id == invoiceId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted).FirstOrDefault()
+                : null;
 
             if (invoice == null) return new ApiResponse<SalesInvoice>
             {
@@ -113,7 +128,7 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.NoContent.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            var tenantId = User?.GetTenantId() ?? (model.TenantId > 0 ? model.TenantId : (int?)null);
+            var tenantId = User.GetTenantId();
             if (!tenantId.HasValue)
             {
                 return new ApiResponse
@@ -167,6 +182,22 @@ namespace HSCrm.WebApi.Controllers
                                            .FirstOrDefault()
                     ?? 1;
 
+                if (!_context.fiscalYearUW.Get(f => f.Id == fiscalYearId && f.TenantId == tenantId.Value && !f.IsClosed && !f.IsDeleted).Any()
+                    || !_context.warehouseUW.Get(w => w.Id == model.WarehouseId && w.TenantId == tenantId.Value && w.IsActive && !w.IsDeleted).Any()
+                    || !_context.projectUW.Get(p => p.Id == model.ProjectId && p.TenantId == tenantId.Value && !p.IsDeleted).Any())
+                {
+                    transaction?.Rollback();
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "سال مالی، انبار یا پروژه متعلق به شرکت جاری نیست یا معتبر نیست." };
+                }
+
+                var requestedProductIds = model.Items.Select(i => i.ProductId).Distinct().ToList();
+                if (requestedProductIds.Any(id => id <= 0)
+                    || _context.productUW.Get(p => requestedProductIds.Contains(p.Id) && p.TenantId == tenantId.Value && !p.IsDeleted).Select(p => p.Id).Distinct().Count() != requestedProductIds.Count)
+                {
+                    transaction?.Rollback();
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست." };
+                }
+
                 decimal subtotal = model.Items.Sum(i => i.Quantity * i.UnitPrice);
                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
 
@@ -188,7 +219,7 @@ namespace HSCrm.WebApi.Controllers
                     }
                 }
 
-                var userId = User?.GetUserId() ?? model.SellerUserId;
+                var userId = User.GetUserId();
 
                 var invoice = new SalesInvoice
                 {
@@ -198,12 +229,12 @@ namespace HSCrm.WebApi.Controllers
                     ProjectId = model.ProjectId,
                     Number = model.InvoiceNumber,
                     IssueDate = issueDate,
-                    Status = model.Status,
+                    Status = InvoiceStatus.Proforma,
                     Subtotal = subtotal,
                     Discount = model.InvoiceDiscount,
                     Tax = model.InvoiceTax,
                     Total = finalTotal,
-                    SellerUserId = model.SellerUserId,
+                    SellerUserId = userId,
                     CreatedById = userId,
                     Description = "فاکتور فروش شماره " + model.InvoiceNumber,
                     CreatedAt = DateTime.Now
@@ -237,12 +268,21 @@ namespace HSCrm.WebApi.Controllers
 
                 transaction?.Commit();
 
-                return new ApiResponse<SalesInvoice>
+                // Return a compact payload instead of the tracked EF entity.
+                // Serializing invoice navigation properties after Commit can fail on
+                // circular references even though the transaction has already succeeded.
+                return new ApiResponse
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                    Data = invoice
+                    AdditionalData = new
+                    {
+                        invoice.Id,
+                        invoice.Number,
+                        invoice.Total,
+                        Status = (byte)invoice.Status
+                    }
                 };
             }
             catch (NotEnoughInventoryException)
@@ -336,17 +376,25 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
-                var oldStatus = invoice.Status;
-                var newStatus = (InvoiceStatus)model.Status;
+                var tenantIdForUpdate = User.GetTenantId();
+                var fiscalYearIdForUpdate = _currentFiscalYearService?.FiscalYearId;
+                if (!tenantIdForUpdate.HasValue || !fiscalYearIdForUpdate.HasValue
+                    || invoice.TenantId != tenantIdForUpdate.Value
+                    || invoice.FiscalYearId != fiscalYearIdForUpdate.Value
+                    || !_context.fiscalYearUW.Get(x => x.Id == fiscalYearIdForUpdate.Value && x.TenantId == tenantIdForUpdate.Value && !x.IsClosed && !x.IsDeleted).Any()
+                    || !_context.warehouseUW.Get(x => x.Id == invoice.WarehouseId && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any()
+                    || !_context.projectUW.Get(x => x.Id == model.ProjectId && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Any())
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "فاکتور، پروژه، انبار یا سال مالی متعلق به شرکت جاری نیست." };
 
-                if (oldStatus == InvoiceStatus.Final)
-                {
-                    _inventory.RollbackInventory(invoice);
-                    await _accountingService.CancelVoucherByReferenceAsync(
-                        AccountingReferenceType.SalesInvoice,
-                        invoice.Id,
-                        "ویرایش فاکتور فروش");
-                }
+                var updateProductIds = model.Items?.Select(x => x.ProductId).Distinct().ToList() ?? new List<int>();
+                if (updateProductIds.Count == 0 || updateProductIds.Any(id => id <= 0)
+                    || _context.productUW.Get(x => updateProductIds.Contains(x.Id) && x.TenantId == tenantIdForUpdate.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != updateProductIds.Count)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست." };
+
+                if (invoice.Status == InvoiceStatus.Final)
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "فاکتور نهایی قابل ویرایش نیست؛ ابتدا باید از مسیر ابطال اقدام شود." };
+
+                var newStatus = InvoiceStatus.Proforma;
 
                 _context.salesInvoiceItemUW.DeleteByRange(x => x.SalesInvoiceId == invoice.Id);
                 invoice.Items.Clear();
@@ -361,12 +409,14 @@ namespace HSCrm.WebApi.Controllers
                         Quantity = item.Quantity,
                         UnitPriceSell = item.UnitPrice,
                         LineTotal = item.UnitPrice * item.Quantity,
-                        TenantId = User?.GetTenantId() ?? invoice.TenantId,
+                        TenantId = tenantIdForUpdate.Value,
                         CreatedAt = DateTime.UtcNow,
-                        CreatedById = User?.GetUserId()
+                        CreatedById = User.GetUserId()
                     });
                 }
 
+                invoice.ProjectId = model.ProjectId;
+                invoice.SellerUserId = User.GetUserId();
                 invoice.Subtotal = subtotal;
                 invoice.Total = subtotal - invoice.Discount + invoice.Tax;
                 invoice.Status = newStatus;
@@ -402,7 +452,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("ConfirmInvoice")]
-        [Permission(Permissions.SalesInvoices.Create)]
+        [Permission(Permissions.SalesInvoices.Approve)]
         public async Task<IActionResult> Confirm([FromForm] int invoiceId)
         {
             using var tran = _context.BeginTransaction();
@@ -414,10 +464,13 @@ namespace HSCrm.WebApi.Controllers
                     return BadRequest("شناسه مستاجر (TenantId) نامعتبر است.");
 
                 var tenantId = tenantIdOpt.Value;
+                var fiscalYearId = _currentFiscalYearService?.FiscalYearId;
+                if (!fiscalYearId.HasValue)
+                    return BadRequest("سال مالی فعال یافت نشد.");
                 var userId = User?.GetUserId();
 
                 var invoice = (await _context.salesInvoiceUW.GetAsync(
-                    x => x.Id == invoiceId && x.TenantId == tenantId,
+                    x => x.Id == invoiceId && x.TenantId == tenantId && x.FiscalYearId == fiscalYearId.Value && !x.IsDeleted,
                     asNoTracking: false,
                     includes: x => x.Items
                 )).FirstOrDefault();
@@ -428,48 +481,23 @@ namespace HSCrm.WebApi.Controllers
                 if (invoice.Status == InvoiceStatus.Final)
                     return BadRequest("قبلاً تأیید شده");
 
-                // ۱. بررسی اولیه موجودی تمام اقلام
-                var inventoriesToUpdate = new List<(Inventory Inventory, SalesInvoiceItem Item)>();
-
+                // Validate all lines before the shared inventory service mutates stock or FIFO layers.
                 foreach (var item in invoice.Items)
                 {
                     var inventory = (await _context.inventoryUW.GetAsync(
-                        x => x.TenantId == tenantId && x.ProductId == item.ProductId,
+                        x => x.TenantId == tenantId && x.WarehouseId == invoice.WarehouseId
+                            && x.ProductId == item.ProductId && !x.IsDeleted,
                         asNoTracking: false
                     )).FirstOrDefault();
 
                     if (inventory == null || inventory.Quantity < item.Quantity)
                         return Conflict($"موجودی کالای {item.ProductId} کافی نیست");
-
-                    inventoriesToUpdate.Add((inventory, item));
-                }
-
-                // ۲. کسر موجودی، محاسبه بهای تمام‌شده (COGS) و ثبت تراکنش انبار با WarehouseId معتبر
-                foreach (var (inventory, item) in inventoriesToUpdate)
-                {
-                    item.UnitCost = inventory.AverageUnitCost;
-                    item.TotalCost = Math.Round(item.Quantity * inventory.AverageUnitCost, 2);
-                    inventory.Quantity -= item.Quantity;
-
-                    _context.inventoryTransactionUW.Create(new InventoryTransaction
-                    {
-                        TenantId = tenantId,
-                        FiscalYearId = invoice.FiscalYearId,
-                        WarehouseId = inventory.WarehouseId,
-                        ProductId = item.ProductId,
-                        QuantityChange = -item.Quantity,
-                        UnitCost = item.UnitCost,
-                        TotalCost = item.TotalCost,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedById = userId,
-                        Description = "تأیید فاکتور فروش شماره " + invoice.Number,
-                        TransactionType = InventoryTransactionType.Sale,
-                        ReferenceId = invoice.Id,
-                        ReferenceType = InventoryReferenceType.SalesInvoice
-                    });
                 }
 
                 invoice.Status = InvoiceStatus.Final;
+
+                // Keep stock quantity, COGS valuation, FIFO layers, and transaction logs in one path.
+                _inventory.ApplyInventoryForSalesInvoice(invoice, InventoryCostingMethod.WeightedAverage);
 
                 await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice);
                 await _context.SaveAsync();
@@ -494,7 +522,8 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoiceItem>> GetDetail(int invoiceId)
         {
-            var invoice = _context.salesInvoiceItemUW.Get(i => i.SalesInvoiceId == invoiceId);
+            var tenantId = User.GetTenantId();
+            var invoice = _context.salesInvoiceItemUW.Get(i => i.SalesInvoiceId == invoiceId && i.TenantId == tenantId && !i.IsDeleted);
 
             if (invoice == null) return new ApiResponse<IEnumerable<SalesInvoiceItem>>
             {

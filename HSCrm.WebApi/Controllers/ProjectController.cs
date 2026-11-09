@@ -157,6 +157,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("ProjectDropdownList")]
+        [Permission(Permissions.Projects.View)]
         public ApiResponse ProjectDropdownList(int tenantId)
         {
             IEnumerable<DropdownDto> projectList = _context.projectUW.Get(p => p.TenantId == User.GetTenantId().Value).Select(p => new DropdownDto

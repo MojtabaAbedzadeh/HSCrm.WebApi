@@ -161,6 +161,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("SupplierDropdownList")]
+        [Permission(Permissions.Suppliers.View)]
         public ApiResponse SupplierDropdownList(int tenantId)
         {
             IEnumerable<DropdownDto> supplierList = _context.supplierUW.Get(s => s.TenantId == User.GetTenantId().Value).Select(p => new DropdownDto

@@ -9,7 +9,8 @@ namespace HSCrm.Entities.Models
         public required string UserNameC { get; set; }
         public required string PhoneNumberC { get; set; }
         public string? EmailC { get; set; }
-        public string? UserImageUrlC { get; set; }       
+        public string? UserImageUrlC { get; set; }
+        public string? PasswordC { get; set; }       
         public bool UserGenderC { get; set; }
         public int TenantId { get; set; }
     }

@@ -9,6 +9,7 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
@@ -34,13 +35,27 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetUsers")]
         [Permission(Permissions.Users.View)]
-        public async Task<ApiResponse<List<ApplicationUser>>> Get(CancellationToken ct)
+        public async Task<ApiResponse<List<UserModelDto>>> Get(CancellationToken ct)
         {
-            var persons = (await _context.userManagerUW
-                .GetAsync(u => u.UserType != 3 && u.UserType != 110 && u.TenantId == User.GetTenantId().Value, asNoTracking: true, ct: ct))
-                .ToList();
+            var tenantId = User.GetTenantId();
+            var persons = tenantId.HasValue
+                ? await _userManager.Users.AsNoTracking()
+                    .Where(u => u.TenantId == tenantId.Value && u.UserType != 3 && u.UserType != 110)
+                    .Select(u => new UserModelDto
+                    {
+                        Id = u.Id,
+                        UserFirstName = u.UserFirstName,
+                        UserLastName = u.UserLastName,
+                        UserName = u.UserName ?? string.Empty,
+                        Email = u.Email ?? string.Empty,
+                        PhoneNumber = u.PhoneNumber ?? string.Empty,
+                        UserImageUrl = u.UserImageUrl ?? string.Empty,
+                        UserStatus = u.UserStatus,
+                        RoleName = u.UserRoles.Select(ur => ur.Role.Name).FirstOrDefault() ?? string.Empty
+                    }).ToListAsync(ct)
+                : new List<UserModelDto>();
 
-            return new ApiResponse<List<ApplicationUser>>
+            return new ApiResponse<List<UserModelDto>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
@@ -51,26 +66,27 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetUserById")]
         [Produces("application/json")]
-        [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(UserModelDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Users.View)]
-        public ApiResponse GetById(string userId)
+        public ApiResponse<UserModelDto> GetById(string userId)
         {
-            var request = _context.userManagerUW.GetById(userId);
+            var tenantId = User.GetTenantId();
+            var request = tenantId.HasValue ? _context.userManagerUW.Get(u => u.Id == userId && u.TenantId == tenantId.Value).FirstOrDefault() : null;
 
-            if (request == null) return new ApiResponse
+            if (request == null) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.NotFound,
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            return new ApiResponse<ApplicationUser>
+            return new ApiResponse<UserModelDto>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                Data = request
+                Data = ToUserDto(request)
             };
         }
 
@@ -90,12 +106,26 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                // بررسی تکراری بودن
-                var userNameExist = await _userManager.FindByNameAsync(model.UserNameC);
-                var emailExist = await _userManager.FindByEmailAsync(model.EmailC);
-                var phoneExist = _userManager.Users.FirstOrDefault(x => x.PhoneNumber == model.PhoneNumberC);
+                var tenantId = User.GetTenantId();
+                if (!tenantId.HasValue || tenantId.Value <= 0)
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.BadRequest,
+                        Message = "شرکت جاری معتبر نیست."
+                    };
+                }
 
-                if (userNameExist != null || emailExist != null || phoneExist != null)
+                // Identity usernames/emails are globally unique; phone numbers are checked consistently.
+                var userNameExist = await _userManager.FindByNameAsync(model.UserNameC);
+                var emailExist = string.IsNullOrWhiteSpace(model.EmailC)
+                    ? null
+                    : await _userManager.FindByEmailAsync(model.EmailC);
+                var phoneExist = await _userManager.Users
+                    .AnyAsync(x => x.PhoneNumber == model.PhoneNumberC);
+
+                if (userNameExist != null || emailExist != null || phoneExist)
                 {
                     return new ApiResponse<UserModelDto>
                     {
@@ -115,28 +145,45 @@ namespace HSCrm.WebApi.Controllers
                     UserGender = model.UserGenderC,
                     PhoneNumber = model.PhoneNumberC,
                     Email = model.EmailC,
-                    TenantId = User.GetTenantId().Value,                    
+                    TenantId = tenantId.Value,                    
                     IsTenantOwner = false,
                     UserName = model.UserNameC
                 };
 
-                IdentityResult result = await _userManager.CreateAsync(user, "@Omid1364");
+                if (string.IsNullOrWhiteSpace(model.PasswordC))
+                    return new ApiResponse<UserModelDto> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "برای کاربر باید رمز عبور اختصاصی تعیین شود." };
 
+                // Keep user creation and initial role assignment atomic.
+                await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+                IdentityResult result = await _userManager.CreateAsync(user, model.PasswordC);
                 if (!result.Succeeded)
                 {
                     return new ApiResponse<UserModelDto>
                     {
                         Status = false,
-                        StatusCode = ApiResultStatusCode.ServerError,
+                        StatusCode = ApiResultStatusCode.BadRequest,
                         Message = string.Join(" | ", result.Errors.Select(x => x.Description))
                     };
                 }
 
-                // افزودن نقش
+                // افزودن نقش اولیه؛ در صورت شکست، تراکنش ایجاد کاربر نیز Rollback می‌شود.
                 string roleName = user.UserType == 1 ? "Admin" : "user";
-                await _userManager.AddToRoleAsync(user, roleName);
+                var roleResult = await _userManager.AddToRoleAsync(user, roleName);
+                if (!roleResult.Succeeded)
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.ServerError,
+                        Message = "ایجاد نقش اولیه برای کاربر ناموفق بود: " +
+                                  string.Join(" | ", roleResult.Errors.Select(x => x.Description))
+                    };
+                }
 
-                // ✅ ساخت DTO (دیگه Entity برنمی‌گردونیم)
+                await transaction.CommitAsync();
+
+                // ساخت DTO؛ هیچ Entity مربوط به Identity به خروجی API نشت نمی‌کند.
                 var dto = new UserModelDto
                 {
                     Id = user.Id,
@@ -170,19 +217,19 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("UpdateUser")]
-        [ProducesResponseType(typeof(ApplicationUser), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(UserModelDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.Users.Edit)]
-        public async Task<ApiResponse<ApplicationUser>> Update([FromBody] UserEditModel model)
+        public async Task<ApiResponse<UserModelDto>> Update([FromBody] UserEditModel model)
         {
-            if (string.IsNullOrEmpty(model.UserId)) return new ApiResponse<ApplicationUser>
+            if (string.IsNullOrEmpty(model.UserId)) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.NotFound,
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
             };
 
-            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            if (!ModelState.IsValid) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.BadRequest,
@@ -191,31 +238,32 @@ namespace HSCrm.WebApi.Controllers
 
             try
             {
-                var getUser = await _userManager.FindByIdAsync(model.UserId);
+                var tenantId = User.GetTenantId();
+                var getUser = tenantId.HasValue ? await _userManager.Users.FirstOrDefaultAsync(u => u.Id == model.UserId && u.TenantId == tenantId.Value) : null;
 
                 if (getUser != null)
                 {
                     var mapModel = _map.Map(model, getUser);
                     IdentityResult result = await _userManager.UpdateAsync(mapModel);
-                    if (result.Succeeded) return new ApiResponse<ApplicationUser>
+                    if (result.Succeeded) return new ApiResponse<UserModelDto>
                     {
                         Status = true,
                         StatusCode = ApiResultStatusCode.Success,
                         Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                        Data = getUser
+                        Data = ToUserDto(getUser)
                     };
                 }
             }
             catch (Exception)
             {
-                return new ApiResponse<ApplicationUser>
+                return new ApiResponse<UserModelDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
                     Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
                 };
             }
-            return new ApiResponse<ApplicationUser>
+            return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.ServerError,
@@ -225,16 +273,16 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpDelete("DeleteUser")]
         [Permission(Permissions.Users.Delete)]
-        public async Task<ApiResponse<ApplicationUser>> Delete(string userId)
+        public async Task<ApiResponse<UserModelDto>> Delete(string userId)
         {
-            if (string.IsNullOrEmpty(userId)) return new ApiResponse<ApplicationUser>
+            if (string.IsNullOrEmpty(userId)) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.NotFound,
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
             };
 
-            if (!ModelState.IsValid) return new ApiResponse<ApplicationUser>
+            if (!ModelState.IsValid) return new ApiResponse<UserModelDto>
             {
                 Status = false,
                 StatusCode = ApiResultStatusCode.BadRequest,
@@ -244,39 +292,67 @@ namespace HSCrm.WebApi.Controllers
             try
             {
 
-                var getUser = await _userManager.FindByIdAsync(userId);
+                var tenantId = User.GetTenantId();
+                var currentUserId = User.GetUserId();
+                var getUser = tenantId.HasValue
+                    ? await _userManager.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId.Value)
+                    : null;
 
-                if (getUser != null)
+                if (getUser == null)
                 {
-                    _context.userManagerUW.Delete(getUser);
-                    return new ApiResponse<ApplicationUser>
+                    return new ApiResponse<UserModelDto>
                     {
-                        Status = true,
-                        StatusCode = ApiResultStatusCode.Success,
-                        Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
-                        Data = getUser
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.NotFound,
+                        Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
                     };
                 }
+
+                // Preserve financial/audit references and invalidate existing JWTs instead of hard-deleting Identity rows.
+                if (getUser.IsTenantOwner || getUser.UserType == 4 || getUser.UserType == 110
+                    || string.Equals(getUser.Id, currentUserId, StringComparison.Ordinal))
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.Conflict,
+                        Message = "حذف یا غیرفعال‌سازی مدیر مالک، مدیر سیستم یا حساب کاربری جاری مجاز نیست."
+                    };
+                }
+
+                getUser.UserStatus = false;
+                var result = await _userManager.UpdateSecurityStampAsync(getUser);
+                if (!result.Succeeded)
+                {
+                    return new ApiResponse<UserModelDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.ServerError,
+                        Message = string.Join(" | ", result.Errors.Select(x => x.Description))
+                    };
+                }
+
+                return new ApiResponse<UserModelDto>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "کاربر با موفقیت غیرفعال شد و نشست‌های قبلی او باطل شدند.",
+                    Data = ToUserDto(getUser)
+                };
             }
             catch
             {
-                return new ApiResponse<ApplicationUser>
+                return new ApiResponse<UserModelDto>
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.ServerError,
                     Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
                 };
             }
-            return new ApiResponse<ApplicationUser>
-            {
-                Status = false,
-                StatusCode = ApiResultStatusCode.ServerError,
-                Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
-            };
         }
 
         [HttpPost("AssignRole")]
-        [Permission(Permissions.Users.Create)]
+        [Permission(Permissions.Roles.ManagePermissions)]
         public async Task<ApiResponse> AssignRole(AssignRoleModel model)
         {
             try
@@ -300,24 +376,37 @@ namespace HSCrm.WebApi.Controllers
                     AdditionalData = null
                 };
             }
-            catch (InvalidOperationException invalidOpEx)
+            catch (InvalidOperationException)
             {
                 return new ApiResponse<object>
                 {
                     Status = false,
-                    Message = $"خطای عملیاتی: {invalidOpEx.Message}",
-                    StatusCode = ApiResultStatusCode.NotFound                                 
+                    Message = "کاربر یا نقش موردنظر یافت نشد یا انجام این تغییر مجاز نیست.",
+                    StatusCode = ApiResultStatusCode.Conflict
                 };
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return new ApiResponse<object>
                 {
                     Status = false,
-                    Message = $"یک خطای غیرمنتظره رخ داد: {ex.Message}",
-                    StatusCode = ApiResultStatusCode.ServerError 
+                    Message = ApiResultStatusCode.ServerError.DisplayNameAttribute(DisplayProperty.Name),
+                    StatusCode = ApiResultStatusCode.ServerError
                 };
             }
         }
+        private static UserModelDto ToUserDto(ApplicationUser user) => new()
+        {
+            Id = user.Id,
+            UserFirstName = user.UserFirstName,
+            UserLastName = user.UserLastName,
+            UserName = user.UserName ?? string.Empty,
+            Email = user.Email ?? string.Empty,
+            PhoneNumber = user.PhoneNumber ?? string.Empty,
+            UserImageUrl = user.UserImageUrl ?? string.Empty,
+            UserStatus = user.UserStatus,
+            RoleName = string.Empty
+        };
+
     }
 }

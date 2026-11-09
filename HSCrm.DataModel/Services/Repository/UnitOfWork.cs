@@ -1,6 +1,7 @@
 ﻿using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace HSCrm.DataModel.Services.Repository
 {
@@ -79,9 +80,50 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<PurchaseReturnInvoiceItem> purchaseReturnInvoiceItemUW => _purchaseReturnInvoiceItem ??= new GenericCRUDClass<PurchaseReturnInvoiceItem>(_context);
 
 
+        public async Task<bool> AcquireSalesInvoiceReturnLockAsync(int invoiceId, int tenantId, int fiscalYearId, CancellationToken ct = default)
+        {
+            if (_context.Database.ProviderName == "Microsoft.EntityFrameworkCore.SqlServer")
+            {
+                return await _context.SalesInvoices
+                    .FromSqlInterpolated($@"SELECT * FROM [SalesInvoices] WITH (UPDLOCK, HOLDLOCK)
+                        WHERE [Id] = {invoiceId} AND [TenantId] = {tenantId}
+                        AND [FiscalYearId] = {fiscalYearId} AND [IsDeleted] = 0")
+                    .AsNoTracking()
+                    .Select(x => x.Id)
+                    .AnyAsync(ct);
+            }
+
+            return await _context.SalesInvoices.AnyAsync(x =>
+                x.Id == invoiceId && x.TenantId == tenantId &&
+                x.FiscalYearId == fiscalYearId && !x.IsDeleted, ct);
+        }
+
+        public async Task<bool> AcquirePurchaseInvoiceReturnLockAsync(int invoiceId, int tenantId, int fiscalYearId, CancellationToken ct = default)
+        {
+            if (_context.Database.ProviderName == "Microsoft.EntityFrameworkCore.SqlServer")
+            {
+                return await _context.PurchaseInvoices
+                    .FromSqlInterpolated($@"SELECT * FROM [PurchaseInvoices] WITH (UPDLOCK, HOLDLOCK)
+                        WHERE [Id] = {invoiceId} AND [TenantId] = {tenantId}
+                        AND [FiscalYearId] = {fiscalYearId} AND [IsDeleted] = 0")
+                    .AsNoTracking()
+                    .Select(x => x.Id)
+                    .AnyAsync(ct);
+            }
+
+            return await _context.PurchaseInvoices.AnyAsync(x =>
+                x.Id == invoiceId && x.TenantId == tenantId &&
+                x.FiscalYearId == fiscalYearId && !x.IsDeleted, ct);
+        }
+
         public IEntityTransaction BeginTransaction()
         {
             return new EntityTransaction(_context);
+        }
+
+        public IEntityTransaction BeginTransaction(System.Data.IsolationLevel isolationLevel)
+        {
+            return new EntityTransaction(_context, isolationLevel);
         }
         public async Task<IEntityTransaction> BeginTransactionAsync(CancellationToken ct = default)
         {

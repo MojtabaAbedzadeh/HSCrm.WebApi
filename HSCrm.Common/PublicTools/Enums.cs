@@ -198,7 +198,9 @@ namespace HSCrm.Common.PublicTools
             SalesReturnInvoice = 10,
 
             [Display(Name = "فاکتور برگشت از خرید")]
-            PurchaseReturnInvoice = 11
+            PurchaseReturnInvoice = 11,
+            [Display(Name = "تعدیل موجودی انبار")]
+            InventoryAdjustment = 12
         }
 
         /// <summary>

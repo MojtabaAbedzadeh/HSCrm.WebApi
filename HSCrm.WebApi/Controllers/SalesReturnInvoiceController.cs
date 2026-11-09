@@ -54,6 +54,7 @@ namespace HSCrm.WebApi.Controllers
                 .Include(x => x.Warehouse)
                 .Include(x => x.Project)
                     .ThenInclude(p => p.Customer)
+                .Where(x => x.TenantId == User.GetTenantId() && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(customerFullName))
@@ -125,7 +126,7 @@ namespace HSCrm.WebApi.Controllers
                 .Include(x => x.Project)
                     .ThenInclude(p => p.Customer)
                 .Include(x => x.Warehouse)
-                .FirstOrDefault(x => x.Id == id);
+                .FirstOrDefault(x => x.Id == id && x.TenantId == User.GetTenantId() && x.FiscalYearId == _currentFiscalYearService.FiscalYearId && !x.IsDeleted);
 
             if (returnInvoice == null)
             {
@@ -182,6 +183,18 @@ namespace HSCrm.WebApi.Controllers
                 });
             }
 
+            var tenantId = User.GetTenantId();
+            var userId = User.GetUserId();
+            if (!tenantId.HasValue || userId == null
+                || !_context.fiscalYearUW.Get(x => x.Id == fiscalYearId.Value && x.TenantId == tenantId.Value && !x.IsClosed && !x.IsDeleted).Any()
+                || !_context.warehouseUW.Get(x => x.Id == model.WarehouseId && x.TenantId == tenantId.Value && x.IsActive && !x.IsDeleted).Any() || !_context.projectUW.Get(x => x.Id == model.ProjectId && x.TenantId == tenantId.Value && !x.IsDeleted).Any())
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شرکت، انبار، طرف حساب یا سال مالی معتبر نیست." });
+
+            var requestedProductIds = model.Items.Select(x => x.ProductId).Distinct().ToList();
+            if (requestedProductIds.Any(x => x <= 0)
+                || _context.productUW.Get(x => requestedProductIds.Contains(x.Id) && x.TenantId == tenantId.Value && !x.IsDeleted).Select(x => x.Id).Distinct().Count() != requestedProductIds.Count)
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "یک یا چند کالا متعلق به شرکت جاری نیست یا معتبر نیست." });
+
             // اگر فاکتور فروش مرجع مشخص شده باشد، کنترل عدم برگشت بیش از تعداد فروخته‌شده
             if (model.SalesInvoiceId.HasValue && model.SalesInvoiceId.Value > 0)
             {
@@ -189,9 +202,9 @@ namespace HSCrm.WebApi.Controllers
                     .Query()
                     .AsNoTracking()
                     .Include(x => x.Items)
-                    .FirstOrDefaultAsync(x => x.Id == model.SalesInvoiceId.Value, ct);
+                    .FirstOrDefaultAsync(x => x.Id == model.SalesInvoiceId.Value && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted, ct);
 
-                if (origInvoice == null)
+                if (origInvoice == null || origInvoice.ProjectId != model.ProjectId)
                 {
                     return BadRequest(new ApiResponse
                     {
@@ -205,10 +218,19 @@ namespace HSCrm.WebApi.Controllers
                     .Query()
                     .AsNoTracking()
                     .Include(x => x.Items)
-                    .Where(x => x.SalesInvoiceId == model.SalesInvoiceId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted)
+                    .Where(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value && x.SalesInvoiceId == model.SalesInvoiceId.Value && x.Status == InvoiceStatus.Final && !x.IsDeleted)
                     .ToListAsync(ct);
 
-                foreach (var reqItem in model.Items)
+                // Group request rows by product so duplicate rows cannot bypass the total return limit.
+                var requestedQuantities = model.Items
+                    .GroupBy(x => x.ProductId)
+                    .Select(group => new
+                    {
+                        ProductId = group.Key,
+                        Quantity = group.Sum(x => x.Quantity)
+                    });
+
+                foreach (var reqItem in requestedQuantities)
                 {
                     var soldQty = origInvoice.Items
                         .Where(x => x.ProductId == reqItem.ProductId)
@@ -240,12 +262,12 @@ namespace HSCrm.WebApi.Controllers
                     SalesInvoiceId = model.SalesInvoiceId,
                     ProjectId = model.ProjectId,
                     WarehouseId = model.WarehouseId,
-                    TenantId = model.TenantId,
+                    TenantId = tenantId.Value,
                     FiscalYearId = fiscalYearId.Value,
                     IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
-                    SellerUserId = model.SellerUserId,
-                    Status = model.Status,
-                    CreatedById = model.SellerUserId,
+                    SellerUserId = userId,
+                    Status = InvoiceStatus.Proforma,
+                    CreatedById = userId,
                     CreatedAt = DateTime.UtcNow,
                     Description = model.Description ?? $"فاکتور برگشت از فروش شماره {model.InvoiceNumber}",
                     Items = new List<SalesReturnInvoiceItem>()
@@ -257,7 +279,7 @@ namespace HSCrm.WebApi.Controllers
 
                 foreach (var itemDto in model.Items)
                 {
-                    if (itemDto.Quantity <= 0 || itemDto.UnitPrice < 0)
+                    if (itemDto.Quantity <= 0 || itemDto.UnitPrice < 0 || itemDto.Discount < 0 || itemDto.Tax < 0)
                         throw new InvalidOperationException("مقادیر تعداد یا قیمت واحد برگشتی نامعتبر است.");
 
                     var lineSubTotal = itemDto.Quantity * itemDto.UnitPrice;
@@ -273,8 +295,8 @@ namespace HSCrm.WebApi.Controllers
                         LineTotal = lineTotal,
                         UnitCost = itemDto.UnitCost ?? 0m,
                         TotalCost = itemDto.UnitCost.HasValue ? Math.Round(itemDto.Quantity * itemDto.UnitCost.Value, 2) : 0m,
-                        TenantId = model.TenantId,
-                        CreatedById = model.SellerUserId,
+                        TenantId = tenantId.Value,
+                        CreatedById = userId,
                         CreatedAt = DateTime.UtcNow
                     });
 
@@ -328,20 +350,93 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.SalesReturnInvoices.Approve)]
         public async Task<IActionResult> Confirm(int id, CancellationToken ct = default)
         {
-            var returnInvoice = await _context.salesReturnInvoiceUW
-                .Query()
-                .Include(x => x.Items)
-                .FirstOrDefaultAsync(x => x.Id == id, ct);
-
-            if (returnInvoice == null)
-                return NotFound("فاکتور برگشت از فروش یافت نشد.");
-
-            if (returnInvoice.Status != InvoiceStatus.Proforma)
-                return BadRequest("فقط پیش‌فاکتور برگشتی قابل تأیید نهایی است.");
-
-            using var transaction = await _context.BeginTransactionAsync(ct);
+            // Serialize confirmation against other returns of the same source invoice.
+            using var transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
             try
             {
+                var tenantId = User.GetTenantId();
+                var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+                var returnInvoice = await _context.salesReturnInvoiceUW
+                    .Query()
+                    .Include(x => x.Items)
+                    .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId
+                        && x.FiscalYearId == fiscalYearId && !x.IsDeleted, ct);
+
+                if (returnInvoice == null)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return NotFound("فاکتور برگشت از فروش یافت نشد.");
+                }
+
+                if (returnInvoice.Status != InvoiceStatus.Proforma)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return BadRequest("فقط پیش‌فاکتور برگشتی قابل تأیید نهایی است.");
+                }
+
+                if (returnInvoice.SalesInvoiceId.HasValue)
+                {
+                    // Lock the source invoice row before reading prior returns. This serializes
+                    // confirmations that target the same invoice on SQL Server.
+                    var sourceInvoiceLocked = await _context.AcquireSalesInvoiceReturnLockAsync(
+                        returnInvoice.SalesInvoiceId.Value, tenantId!.Value, fiscalYearId!.Value, ct);
+
+                    if (!sourceInvoiceLocked)
+                    {
+                        await transaction.RollbackAsync(ct);
+                        return BadRequest("فاکتور فروش مرجع یافت نشد یا متعلق به شرکت/سال مالی جاری نیست.");
+                    }
+
+                    var sourceInvoice = await _context.salesInvoiceUW
+                        .Query()
+                        .AsNoTracking()
+                        .Include(x => x.Items)
+                        .FirstOrDefaultAsync(x => x.Id == returnInvoice.SalesInvoiceId.Value
+                            && x.TenantId == tenantId && x.FiscalYearId == fiscalYearId
+                            && x.Status == InvoiceStatus.Final && !x.IsDeleted, ct);
+
+                    if (sourceInvoice == null || sourceInvoice.ProjectId != returnInvoice.ProjectId)
+                    {
+                        await transaction.RollbackAsync(ct);
+                        return BadRequest("فاکتور فروش مرجع معتبر و نهایی یافت نشد.");
+                    }
+
+                    var previousReturns = await _context.salesReturnInvoiceUW
+                        .Query()
+                        .AsNoTracking()
+                        .Include(x => x.Items)
+                        .Where(x => x.TenantId == tenantId && x.FiscalYearId == fiscalYearId
+                            && x.SalesInvoiceId == returnInvoice.SalesInvoiceId
+                            && x.Status == InvoiceStatus.Final && !x.IsDeleted)
+                        .ToListAsync(ct);
+
+                    var requestedQuantities = returnInvoice.Items
+                        .GroupBy(x => x.ProductId)
+                        .Select(group => new { ProductId = group.Key, Quantity = group.Sum(x => x.Quantity) });
+
+                    foreach (var requested in requestedQuantities)
+                    {
+                        var soldQty = sourceInvoice.Items
+                            .Where(x => x.ProductId == requested.ProductId)
+                            .Sum(x => x.Quantity);
+                        var alreadyReturnedQty = previousReturns
+                            .SelectMany(x => x.Items)
+                            .Where(x => x.ProductId == requested.ProductId)
+                            .Sum(x => x.Quantity);
+
+                        if (requested.Quantity <= 0 || requested.Quantity + alreadyReturnedQty > soldQty)
+                        {
+                            await transaction.RollbackAsync(ct);
+                            return BadRequest(new ApiResponse
+                            {
+                                Status = false,
+                                StatusCode = ApiResultStatusCode.Conflict,
+                                Message = "تعداد برگشتی از سقف تعداد فروخته‌شده در فاکتور مرجع بیشتر است."
+                            });
+                        }
+                    }
+                }
+
                 returnInvoice.Status = InvoiceStatus.Final;
                 returnInvoice.ModifiedAt = DateTime.UtcNow;
 
@@ -361,12 +456,23 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync(ct);
-                return BadRequest(new ApiResponse
+                try
+                {
+                    await transaction.RollbackAsync(ct);
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogWarning(rollbackException,
+                        "Rollback failed after confirming SalesReturnInvoice {ReturnInvoiceId}; the database may already have rolled back the transaction.",
+                        id);
+                }
+
+                _logger.LogError(ex, "Error confirming SalesReturnInvoice {ReturnInvoiceId}", id);
+                return StatusCode(500, new ApiResponse
                 {
                     Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = ex.Message
+                    StatusCode = ApiResultStatusCode.ServerError,
+                    Message = "خطا در تأیید نهایی فاکتور برگشتی رخ داد."
                 });
             }
         }
@@ -379,10 +485,22 @@ namespace HSCrm.WebApi.Controllers
             if (string.IsNullOrWhiteSpace(reason))
                 return BadRequest("ذکر دلیل ابطال الزامی است.");
 
+            // Read and mutate the return invoice under the same serializable transaction
+            // used by Confirm, preventing a stale Proforma read from racing with confirmation.
+            using var transaction = _context.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return Unauthorized("شرکت یا سال مالی معتبر مشخص نیست.");
+
             var returnInvoice = await _context.salesReturnInvoiceUW
                 .Query()
                 .Include(x => x.Items)
-                .FirstOrDefaultAsync(x => x.Id == id, ct);
+                .FirstOrDefaultAsync(x => x.Id == id
+                    && x.TenantId == tenantId.Value
+                    && x.FiscalYearId == fiscalYearId.Value
+                    && !x.IsDeleted, ct);
 
             if (returnInvoice == null)
                 return NotFound("فاکتور برگشت از فروش یافت نشد.");
@@ -390,7 +508,6 @@ namespace HSCrm.WebApi.Controllers
             if (returnInvoice.Status == InvoiceStatus.Cancelled)
                 return BadRequest("این فاکتور برگشتی قبلاً باطل شده است.");
 
-            using var transaction = await _context.BeginTransactionAsync(ct);
             try
             {
                 if (returnInvoice.Status == InvoiceStatus.Final)
@@ -420,7 +537,18 @@ namespace HSCrm.WebApi.Controllers
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync(ct);
+                try
+                {
+                    await transaction.RollbackAsync(ct);
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogWarning(rollbackException,
+                        "Rollback failed after cancelling SalesReturnInvoice {ReturnInvoiceId}; the database may already have rolled back the transaction.",
+                        id);
+                }
+
+                _logger.LogError(ex, "Error cancelling SalesReturnInvoice {ReturnInvoiceId}", id);
                 return BadRequest(new ApiResponse
                 {
                     Status = false,
