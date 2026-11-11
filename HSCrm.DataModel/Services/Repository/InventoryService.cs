@@ -826,7 +826,7 @@ namespace HSCrm.DataModel.Services.Repository
                     Description = dto.Description,
                     ReferenceId = dto.ReferenceId,
                     ReferenceType = InventoryReferenceType.Adjustment,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                 };
 
                 await _context.InventoryTransactions.AddAsync(transactionLog, ct);

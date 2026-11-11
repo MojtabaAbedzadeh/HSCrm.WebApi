@@ -100,7 +100,7 @@ namespace HSCrm.WebApi.Controllers
                     ProjectTitle = model.ProjectTitle,
                     CustomerId = model.CustomerId,
                     ProjectLocation = model.ProjectLocation,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedById= User.GetUserId(),
                     Status = "Active",
                     TenantId = User.GetTenantId().Value
@@ -156,7 +156,7 @@ namespace HSCrm.WebApi.Controllers
                 getProject.ProjectTitle = model.ProjectTitle;
                 getProject.ProjectLocation = model.ProjectLocation;
                 getProject.CustomerId = model.CustomerId;
-                getProject.ModifiedAt = DateTime.Now;
+                getProject.ModifiedAt = DateTime.UtcNow;
                 getProject.ModifiedById = User.GetUserId();
             }
 

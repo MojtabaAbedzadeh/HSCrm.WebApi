@@ -104,7 +104,7 @@ namespace HSCrm.WebApi.Controllers
                     IsDeleted = false,
                     LogoUrl = model.LogoUrl,
                     TenantCode = TenantCodeGenerator.Generate(model.TenantTitle),
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedById = User.GetUserId(),
                     Currency = model.Currency
                 };
@@ -154,7 +154,7 @@ namespace HSCrm.WebApi.Controllers
             {
                 getTenant.TenantTitle = model.TenantTitle;
                 getTenant.Address = model.Address;
-                getTenant.ModifiedAt = DateTime.Now;
+                getTenant.ModifiedAt = DateTime.UtcNow;
                 getTenant.ModifiedById = User.GetUserId();
             }
 

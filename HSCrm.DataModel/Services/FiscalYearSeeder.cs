@@ -10,7 +10,7 @@ namespace HSCrm.DataModel.Seeders
         public static async Task SeedCurrentFiscalYearAsync(ApplicationDbContext context, int tenantId)
         {
             var persianCalendar = new PersianCalendar();
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
 
             var persianYear = persianCalendar.GetYear(now);
 

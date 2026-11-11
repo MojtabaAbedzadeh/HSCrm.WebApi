@@ -98,7 +98,7 @@ namespace HSCrm.WebApi.Controllers
                     Title = model.Title,
                     IsActive = model.IsActive,
                     Address = model.Address,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedById = User.GetUserId(),
                     TenantId = User.GetTenantId().Value
                 };
@@ -162,7 +162,7 @@ namespace HSCrm.WebApi.Controllers
                 getWarehouse.Title = model.Title;
                 getWarehouse.IsActive = model.IsActive;
                 getWarehouse.Address = model.Address;
-                getWarehouse.ModifiedAt = DateTime.Now;
+                getWarehouse.ModifiedAt = DateTime.UtcNow;
                 getWarehouse.ModifiedById = User.GetUserId();
             }
 

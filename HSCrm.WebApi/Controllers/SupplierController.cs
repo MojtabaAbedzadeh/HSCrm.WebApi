@@ -107,7 +107,7 @@ namespace HSCrm.WebApi.Controllers
                     SupplierPhone = model.SupplierPhone,
                     CreatedById = User.GetUserId(),
                     TenantId = User.GetTenantId().Value,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                 };
 
                 _context.supplierUW.Create(supplier);
@@ -160,7 +160,7 @@ namespace HSCrm.WebApi.Controllers
                 getSupplier.SupplierFullName = model.SupplierFullName;
                 getSupplier.SupplierPhone = model.SupplierPhone;
                 getSupplier.SupplierAddress = model.SupplierAddress;
-                getSupplier.ModifiedAt = DateTime.Now;
+                getSupplier.ModifiedAt = DateTime.UtcNow;
                 getSupplier.ModifiedById = User.GetUserId();
             }
 

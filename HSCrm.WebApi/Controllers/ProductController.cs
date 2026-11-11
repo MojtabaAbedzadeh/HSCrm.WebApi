@@ -147,7 +147,7 @@ namespace HSCrm.WebApi.Controllers
                     TenantId = User.GetTenantId().GetValueOrDefault(),
                     CreatedById = User.GetUserId(),
                     IsActive = model.IsActive,
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 _context.productUW.Create(product);

@@ -227,7 +227,7 @@ namespace HSCrm.WebApi.Controllers
         //        PaymentDate = model.PaymentDate,
         //        Amount = model.Amount,
         //        Method = model.Method,
-        //        CreatedAt = DateTime.Now,
+        //        CreatedAt = DateTime.UtcNow,
         //        CreatedById = userId,
         //        ReferenceNo = model.ReferenceNo
         //    };
@@ -274,7 +274,7 @@ namespace HSCrm.WebApi.Controllers
                     Amount = model.Amount,
                     BankAccountId = model.BankAccountId,
                     Method = model.Method,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedById = userId,
                     ReferenceNo = model.ReferenceNo,
                     Description = model.Description // اگر در مدل فیلد توضیحات داری
@@ -426,7 +426,7 @@ namespace HSCrm.WebApi.Controllers
                     Method = model.PaymentMethod,
                     Description = model.Description,
                     CreatedById = User.GetUserId(),
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 _context.paymentUW.Create(payment);

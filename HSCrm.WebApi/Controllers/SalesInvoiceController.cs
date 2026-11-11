@@ -177,7 +177,7 @@ namespace HSCrm.WebApi.Controllers
                 if (finalTotal < 0)
                     finalTotal = 0;
 
-                DateTime issueDate = DateTime.Now;
+                DateTime issueDate = DateTime.UtcNow;
                 if (!string.IsNullOrWhiteSpace(model.IssueDate))
                 {
                     try
@@ -186,7 +186,7 @@ namespace HSCrm.WebApi.Controllers
                     }
                     catch
                     {
-                        issueDate = DateTime.Now;
+                        issueDate = DateTime.UtcNow;
                     }
                 }
 
@@ -208,7 +208,7 @@ namespace HSCrm.WebApi.Controllers
                     SellerUserId = model.SellerUserId,
                     CreatedById = userId,
                     Description = "فاکتور فروش شماره " + model.InvoiceNumber,
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 foreach (var item in model.Items)
@@ -220,7 +220,7 @@ namespace HSCrm.WebApi.Controllers
                         UnitPriceSell = item.UnitPrice,
                         Discount = item.Discount,
                         Tax = item.Tax,
-                        CreatedAt = DateTime.Now,
+                        CreatedAt = DateTime.UtcNow,
                         CreatedById = userId,
                         TenantId = tenantId.Value,
                         LineTotal = (item.Quantity * item.UnitPrice) - item.Discount + item.Tax

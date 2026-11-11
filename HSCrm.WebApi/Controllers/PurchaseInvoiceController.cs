@@ -283,7 +283,7 @@ namespace HSCrm.WebApi.Controllers
                     Total = total,
                     FiscalYearId = fiscalYear.Value,
                     CreatedById = User.GetUserId(),
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     PayStatus = SettlementStatus.Unpaid,
                     Description = "فاکتور خرید از تامین کننده با شناسه " + model.SupplierId,
                     PaidAmount = 0
@@ -322,7 +322,7 @@ namespace HSCrm.WebApi.Controllers
                         UnitPricePurchase = item.UnitPrice,
                         Discount = item.Discount,
                         Tax = item.Tax,
-                        CreatedAt = DateTime.Now,
+                        CreatedAt = DateTime.UtcNow,
                         CreatedById = User.GetUserId()
                     });
                 }

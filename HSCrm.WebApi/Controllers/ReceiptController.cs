@@ -89,7 +89,7 @@ namespace HSCrm.WebApi.Controllers
 
             receipt.TenantId = _currentUserService.TenantId ?? model.TenantId;
             receipt.FiscalYearId = (int)_currentFiscalYearService.FiscalYearId;
-            receipt.CreatedAt = DateTime.Now;
+            receipt.CreatedAt = DateTime.UtcNow;
             receipt.CreatedById = model.UserId;
 
             using var transaction = _context.BeginTransaction();
@@ -141,7 +141,7 @@ namespace HSCrm.WebApi.Controllers
             receipt.Method = model.Method;
             receipt.ReferenceNo = model.ReferenceNo;
             receipt.Description = model.Description;
-            receipt.ModifiedAt = DateTime.Now;
+            receipt.ModifiedAt = DateTime.UtcNow;
             receipt.ModifiedById = _currentUserService.UserId;
 
             _context.receiptUW.Update(receipt, cancellationToken);

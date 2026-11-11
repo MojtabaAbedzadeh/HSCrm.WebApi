@@ -293,7 +293,7 @@ namespace HSCrm.WebApi.Controllers
                     Phone = model.Phone,
                     Email = model.Email,
                     Address = model.Address,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedById = currentUserId,
                     TenantId = tenantId.Value,
                     ApplicationUserId = user.Id
@@ -398,7 +398,7 @@ namespace HSCrm.WebApi.Controllers
             getCustomer.Phone = model.Phone;
             getCustomer.Email = model.Email;
             getCustomer.Address = model.Address;
-            getCustomer.ModifiedAt = DateTime.Now;
+            getCustomer.ModifiedAt = DateTime.UtcNow;
             getCustomer.ModifiedById = currentUserId;
 
             if (!string.IsNullOrEmpty(getCustomer.ApplicationUserId))

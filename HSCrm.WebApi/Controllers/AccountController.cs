@@ -70,14 +70,14 @@ namespace HSCrm.WebApi.Controllers
                     CompanyPhone = model.CompanyPhone,
                     CompanyEmail = model.CompanyEmail,
                     IsActive = true,
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 _context.Tenants.Add(tenant);
                 await _context.SaveChangesAsync(ct);
 
                 var persianCalendar = new System.Globalization.PersianCalendar();
-                int currentYear = persianCalendar.GetYear(DateTime.Now);
+                int currentYear = persianCalendar.GetYear(DateTime.UtcNow);
                 int lastDayOfEsfand = persianCalendar.GetDaysInMonth(currentYear, 12);
 
                 var defaultFiscalYear = new FiscalYear
@@ -88,7 +88,7 @@ namespace HSCrm.WebApi.Controllers
                     EndDate = persianCalendar.ToDateTime(currentYear, 12, lastDayOfEsfand, 23, 59, 59, 0),
                     IsCurrent = true,
                     IsClosed = false,
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 _context.FiscalYears.Add(defaultFiscalYear);
@@ -301,7 +301,7 @@ namespace HSCrm.WebApi.Controllers
             if (fiscalYear.IsClosed)
                 return 2;
 
-            var today = DateTime.Today;
+            var today = DateTime.UtcNow.Date;
             var endDate = fiscalYear.EndDate.Date;
 
             if (fiscalYear.IsCurrent && endDate >= today)

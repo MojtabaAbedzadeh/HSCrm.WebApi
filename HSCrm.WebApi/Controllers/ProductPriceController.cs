@@ -92,9 +92,9 @@ namespace HSCrm.WebApi.Controllers
             // اگر قیمت فعال قبلی وجود دارد -> ببندش
             if (oldPrice != null)
             {
-                oldPrice.EffectiveTo = DateTime.Now;
+                oldPrice.EffectiveTo = DateTime.UtcNow;
                 oldPrice.IsActive = false;
-                oldPrice.ModifiedAt = DateTime.Now;
+                oldPrice.ModifiedAt = DateTime.UtcNow;
                 oldPrice.ModifiedById = User.GetUserId();
 
                 _context.priceUW.Update(oldPrice);
@@ -111,7 +111,7 @@ namespace HSCrm.WebApi.Controllers
                     IsActive = true,
                     EffectiveFrom = ConvertDate.ConvertShamsiToMiladi(model.EffectiveFrom),
                     EffectiveTo = null,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedById =  User.GetUserId(),
                     IsDeleted = false,
                     TenantId = User.GetTenantId().Value
