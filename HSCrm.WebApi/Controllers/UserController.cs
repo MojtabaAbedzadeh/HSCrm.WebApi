@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using AutoMapper;
 using Common.Permissions;
 using Framework.Authorization;
@@ -13,6 +14,7 @@ using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class UserController : ControllerBase
@@ -56,7 +58,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Users.View)]
         public ApiResponse GetById(string userId)
         {
-            var request = _context.userManagerUW.GetById(userId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var request = _context.userManagerUW.Get(u => u.Id == userId && u.TenantId == tenantId.Value).FirstOrDefault();
 
             if (request == null) return new ApiResponse
             {

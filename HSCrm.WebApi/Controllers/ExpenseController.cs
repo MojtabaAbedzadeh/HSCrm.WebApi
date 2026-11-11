@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
@@ -11,6 +12,7 @@ using SinaPharm.Common;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class ExpenseController : ControllerBase

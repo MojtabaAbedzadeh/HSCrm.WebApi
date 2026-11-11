@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
@@ -13,6 +14,7 @@ using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class SupplierController : ControllerBase
@@ -50,7 +52,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Suppliers.View)]
         public ApiResponse GetById(int supplierId)
         {
-            var supplier = _context.supplierUW.GetById(supplierId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var supplier = _context.supplierUW.Get(s => s.Id == supplierId && s.TenantId == tenantId.Value).FirstOrDefault();
 
             if (supplier == null) return new ApiResponse
             {
@@ -137,7 +146,14 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            var getSupplier = _context.supplierUW.GetById(model.SupplierId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var getSupplier = _context.supplierUW.Get(s => s.Id == model.SupplierId && s.TenantId == tenantId.Value, false).FirstOrDefault();
 
             if (getSupplier != null)
             {

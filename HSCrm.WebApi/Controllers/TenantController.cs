@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.Common.PublicTools;
@@ -13,6 +14,7 @@ using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class TenantController : ControllerBase

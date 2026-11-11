@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models.Dto;
@@ -9,6 +10,7 @@ using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class InventoryController : ControllerBase

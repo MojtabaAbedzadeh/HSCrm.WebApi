@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using AutoMapper;
 using Common.Permissions;
 using Framework.Authorization;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class ReceiptController : ControllerBase

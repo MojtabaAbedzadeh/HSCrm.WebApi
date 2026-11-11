@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
@@ -14,6 +15,7 @@ using CustomerCreateModel = HSCrm.Entities.Models.CustomerCreateModel;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class CustomerController : ControllerBase
@@ -134,7 +136,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Customers.View)]
         public ApiResponse GetById(int customerId)
         {
-            var customer = _context.customerUW.GetById(customerId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var customer = _context.customerUW.Get(c => c.Id == customerId && c.TenantId == tenantId.Value).FirstOrDefault();
 
             if (customer == null)
             {
@@ -367,7 +376,14 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
-            var getCustomer = _context.customerUW.GetById(model.CustomerId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var getCustomer = _context.customerUW.Get(c => c.Id == model.CustomerId && c.TenantId == tenantId.Value, false).FirstOrDefault();
             if (getCustomer == null)
             {
                 return new ApiResponse

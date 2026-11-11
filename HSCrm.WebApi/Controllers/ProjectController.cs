@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 ﻿using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
@@ -11,6 +12,7 @@ using static HSCrm.Common.PublicTools.StringCleaner;
 
 namespace HSCrm.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class ProjectController : ControllerBase
@@ -44,7 +46,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Projects.View)]
         public ApiResponse GetById(int projectId)
         {
-            var projects = _context.projectUW.GetById(projectId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var projects = _context.projectUW.Get(p => p.Id == projectId && p.TenantId == tenantId.Value).FirstOrDefault();
 
             if (projects == null) return new ApiResponse<Project>
             {
@@ -133,7 +142,14 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            var getProject = _context.projectUW.GetById(model.ProjectId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var getProject = _context.projectUW.Get(p => p.Id == model.ProjectId && p.TenantId == tenantId.Value, false).FirstOrDefault();
 
             if (getProject != null)
             {

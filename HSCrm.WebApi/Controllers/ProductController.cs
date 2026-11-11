@@ -74,7 +74,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Products.View)]
         public ApiResponse GetById(int productId)
         {
-            var product = _context.productUW.GetById(productId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var product = _context.productUW.Get(p => p.Id == productId && p.TenantId == tenantId.Value).FirstOrDefault();
 
             if (product == null)
             {
@@ -181,7 +188,14 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
-            var getProduct = _context.productUW.GetById(model.ProductId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var getProduct = _context.productUW.Get(p => p.Id == model.ProductId && p.TenantId == tenantId.Value, false).FirstOrDefault();
 
             if (getProduct == null)
             {

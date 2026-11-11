@@ -46,7 +46,14 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Warehouses.View)]
         public ApiResponse GetById(int warehouseId)
         {
-            var warehouse = _context.warehouseUW.GetById(warehouseId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var warehouse = _context.warehouseUW.Get(w => w.Id == warehouseId && w.TenantId == tenantId.Value).FirstOrDefault();
 
             if (warehouse == null) return new ApiResponse
             {
@@ -141,7 +148,14 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.Conflict.DisplayNameAttribute(DisplayProperty.Name)
             };
 
-            var getWarehouse = _context.warehouseUW.GetById(model.WarehouseId);
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+            var getWarehouse = _context.warehouseUW.Get(w => w.Id == model.WarehouseId && w.TenantId == tenantId.Value, false).FirstOrDefault();
 
             if (getWarehouse != null)
             {
