@@ -26,3 +26,12 @@
         public bool IsActive { get; set; }
     }
 }
+
+
+    public class InvoicePatternUpdateModel
+    {
+        public string? SalesInvoicePattern { get; set; }
+        public string? PurchaseInvoicePattern { get; set; }
+        public string? SalesReturnPattern { get; set; }
+        public string? PurchaseReturnPattern { get; set; }
+    }

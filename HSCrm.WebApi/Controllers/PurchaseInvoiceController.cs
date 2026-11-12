@@ -28,8 +28,16 @@ namespace HSCrm.WebApi.Controllers
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly IPaymentSettlementService _paymentSettlementService;
         private readonly ILogger<PurchaseInvoiceController> _logger;
+        private readonly IInvoiceNumberGenerator? _invoiceNumberGenerator;
 
-        public PurchaseInvoiceController(IUnitOfWork context, IInventoryService inventory, ICurrentFiscalYearService currentFiscalYearService, IPaymentSettlementService paymentSettlementService, ILogger<PurchaseInvoiceController> logger, IAccountingService accountingService)
+        public PurchaseInvoiceController(
+            IUnitOfWork context,
+            IInventoryService inventory,
+            ICurrentFiscalYearService currentFiscalYearService,
+            IPaymentSettlementService paymentSettlementService,
+            ILogger<PurchaseInvoiceController> logger,
+            IAccountingService accountingService,
+            IInvoiceNumberGenerator? invoiceNumberGenerator = null)
         {
             _context = context;
             _inventory = inventory;
@@ -37,6 +45,38 @@ namespace HSCrm.WebApi.Controllers
             _paymentSettlementService = paymentSettlementService;
             _logger = logger;
             _accountingService = accountingService;
+            _invoiceNumberGenerator = invoiceNumberGenerator;
+        }
+
+        [HttpGet("GetNextInvoiceNumber")]
+        public async Task<ApiResponse<object>> GetNextInvoiceNumber([FromQuery] int? fiscalYearId = null)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse<object>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
+            var fyId = fiscalYearId ?? _currentFiscalYearService?.FiscalYearId;
+            var nextNumber = _invoiceNumberGenerator != null
+                ? await _invoiceNumberGenerator.GenerateNextPurchaseInvoiceNumberAsync(tenantId.Value, fyId)
+                : $"PINV-{DateTime.UtcNow.Year}-0001";
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+
+            return new ApiResponse<object>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new
+                {
+                    nextInvoiceNumber = nextNumber,
+                    pattern = tenant?.PurchaseInvoicePattern ?? "PINV-{YEAR}-{SEQ:4}"
+                }
+            };
         }
 
 
@@ -218,15 +258,19 @@ namespace HSCrm.WebApi.Controllers
                         StatusCode = ApiResultStatusCode.BadRequest
                     };
 
-                if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
-                    return new ApiResponse
-                    {
-                        Status = false,
-                        Message = "شماره فاکتور الزامی است.",
-                        StatusCode = ApiResultStatusCode.BadRequest
-                    };
-
                 var fiscalYear = _currentFiscalYearService.FiscalYearId;
+
+                if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
+                {
+                    if (_invoiceNumberGenerator != null)
+                    {
+                        model.InvoiceNumber = await _invoiceNumberGenerator.GenerateNextPurchaseInvoiceNumberAsync(tenantId.Value, fiscalYear);
+                    }
+                    else
+                    {
+                        model.InvoiceNumber = $"PINV-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpper()}";
+                    }
+                }
                 if (fiscalYear == null)
                     return new ApiResponse
                     {

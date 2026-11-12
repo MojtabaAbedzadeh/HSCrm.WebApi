@@ -25,19 +25,53 @@ namespace HSCrm.WebApi.Controllers
         private readonly IAccountingService _accountingService;
         private readonly IPaymentSettlementService _paymentSettlementService;
         private readonly ICurrentFiscalYearService? _currentFiscalYearService;
+        private readonly IInvoiceNumberGenerator? _invoiceNumberGenerator;
 
         public SalesInvoiceController(
             IUnitOfWork context,
             IInventoryService inventory,
             IPaymentSettlementService paymentSettlementService,
             IAccountingService accountingService,
-            ICurrentFiscalYearService? currentFiscalYearService = null)
+            ICurrentFiscalYearService? currentFiscalYearService = null,
+            IInvoiceNumberGenerator? invoiceNumberGenerator = null)
         {
             _context = context;
             _inventory = inventory;
             _paymentSettlementService = paymentSettlementService;
             _accountingService = accountingService;
             _currentFiscalYearService = currentFiscalYearService;
+            _invoiceNumberGenerator = invoiceNumberGenerator;
+        }
+
+        [HttpGet("GetNextInvoiceNumber")]
+        public async Task<ApiResponse<object>> GetNextInvoiceNumber([FromQuery] int? fiscalYearId = null)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse<object>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
+            var fyId = fiscalYearId ?? _currentFiscalYearService?.FiscalYearId;
+            var nextNumber = _invoiceNumberGenerator != null
+                ? await _invoiceNumberGenerator.GenerateNextSalesInvoiceNumberAsync(tenantId.Value, fyId)
+                : $"INV-{DateTime.UtcNow.Year}-0001";
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+
+            return new ApiResponse<object>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new
+                {
+                    nextInvoiceNumber = nextNumber,
+                    pattern = tenant?.SalesInvoicePattern ?? "INV-{YEAR}-{SEQ:4}"
+                }
+            };
         }
 
         [HttpGet("SettlementSummary/{id}")]
@@ -126,14 +160,35 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            int fiscalYearId = _currentFiscalYearService?.FiscalYearId
+                ?? _context.fiscalYearUW?.Get(f => f.TenantId == tenantId.Value && f.IsCurrent && !f.IsClosed)
+                                       .Select(f => f.Id)
+                                       .FirstOrDefault()
+                ?? 1;
+
+            DateTime issueDate = DateTime.UtcNow;
+            if (!string.IsNullOrWhiteSpace(model.IssueDate))
+            {
+                try
+                {
+                    issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
+                }
+                catch
+                {
+                    issueDate = DateTime.UtcNow;
+                }
+            }
+
             if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
             {
-                return new ApiResponse
+                if (_invoiceNumberGenerator != null)
                 {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.BadRequest,
-                    Message = "شماره فاکتور الزامی است."
-                };
+                    model.InvoiceNumber = await _invoiceNumberGenerator.GenerateNextSalesInvoiceNumberAsync(tenantId.Value, fiscalYearId, issueDate);
+                }
+                else
+                {
+                    model.InvoiceNumber = $"INV-{issueDate:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpper()}";
+                }
             }
 
             var transaction = _context.BeginTransaction();

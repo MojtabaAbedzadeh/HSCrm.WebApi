@@ -456,5 +456,57 @@ namespace HSCrm.UnitTests
             Assert.True(response.Status);
             Assert.Equal(ApiResultStatusCode.Success, response.StatusCode);
         }
+
+        [Fact(DisplayName = "10. ایجاد فاکتور فروش بدون شماره: شماره فاکتور باید طبق الگوی پیش‌فرض/سفارشی خودکار تولید شود")]
+        public async Task CreateSalesInvoice_WhenInvoiceNumberEmpty_AutoGeneratesInvoiceNumber()
+        {
+            // Arrange
+            var env = CreateTestEnvironment("SalesAutoNumber");
+            var generatorMock = new Mock<IInvoiceNumberGenerator>();
+            generatorMock.Setup(x => x.GenerateNextSalesInvoiceNumberAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<DateTime?>()))
+                .ReturnsAsync("INV-1404-0001");
+
+            var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim("TenantId", "1"),
+                new Claim("FiscalYearId", "1"),
+                new Claim(ClaimTypes.NameIdentifier, "user-admin")
+            }, "TestAuth"));
+
+            var autoController = new SalesInvoiceController(
+                env.Uow,
+                env.InventoryMock.Object,
+                env.SettlementMock.Object,
+                env.AccountingMock.Object,
+                env.CurrentFiscalYear,
+                generatorMock.Object)
+            {
+                ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } }
+            };
+
+            var model = new SalesInvoiceCreateModel
+            {
+                TenantId = 1,
+                WarehouseId = 1,
+                ProjectId = 1,
+                InvoiceNumber = "", // شماره خالی برای فعال شدن صدور خودکار
+                IssueDate = "1404/01/25",
+                SellerUserId = "user-100",
+                Status = InvoiceStatus.Proforma,
+                Items = new List<SalesInvoiceItemCreateModel>
+                {
+                    new() { ProductId = 1, Quantity = 1, UnitPrice = 5_000_000m }
+                }
+            };
+
+            // Act
+            var response = await autoController.CreateSalesInvoice(model);
+
+            // Assert
+            Assert.NotNull(response);
+            Assert.True(response.Status);
+            Assert.Equal("INV-1404-0001", model.InvoiceNumber);
+            generatorMock.Verify(x => x.GenerateNextSalesInvoiceNumberAsync(1, 1, It.IsAny<DateTime?>()), Times.Once);
+        }
     }
 }

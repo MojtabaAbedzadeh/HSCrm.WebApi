@@ -187,5 +187,94 @@ namespace HSCrm.WebApi.Controllers
                 Data = tenantList
             };
         }
+
+        [HttpGet("GetInvoicePatterns")]
+        public ApiResponse<object> GetInvoicePatterns()
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse<object>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            if (tenant == null) return new ApiResponse<object>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
+            return new ApiResponse<object>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new
+                {
+                    salesInvoicePattern = tenant.SalesInvoicePattern ?? "INV-{YEAR}-{SEQ:4}",
+                    purchaseInvoicePattern = tenant.PurchaseInvoicePattern ?? "PINV-{YEAR}-{SEQ:4}",
+                    salesReturnPattern = tenant.SalesReturnPattern ?? "SRI-{YEAR}-{SEQ:4}",
+                    purchaseReturnPattern = tenant.PurchaseReturnPattern ?? "PRI-{YEAR}-{SEQ:4}",
+                    tokens = new[]
+                    {
+                        new { token = "{PREFIX}", description = "پیشوند نوع سند (مانند INV یا PINV)" },
+                        new { token = "{YEAR}", description = "سال ۴ رقمی شمسی (مانند ۱۴۰۴)" },
+                        new { token = "{YY}", description = "سال ۲ رقمی شمسی (مانند ۰۴)" },
+                        new { token = "{MONTH}", description = "ماه ۲ رقمی شمسی (مانند ۰۱)" },
+                        new { token = "{DAY}", description = "روز ۲ رقمی شمسی (مانند ۱۵)" },
+                        new { token = "{SEQ:4}", description = "شماره مسلسل با صفر پر شده (مانند ۰۰۰۱)" },
+                        new { token = "{TENANT}", description = "کد شناسه شرکت / مستأجر" }
+                    }
+                }
+            };
+        }
+
+        [HttpPut("UpdateInvoicePatterns")]
+        public ApiResponse UpdateInvoicePatterns([FromBody] InvoicePatternUpdateModel model)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            if (tenant == null) return new ApiResponse
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.NotFound,
+                Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
+            if (!string.IsNullOrWhiteSpace(model.SalesInvoicePattern))
+                tenant.SalesInvoicePattern = model.SalesInvoicePattern.Trim();
+
+            if (!string.IsNullOrWhiteSpace(model.PurchaseInvoicePattern))
+                tenant.PurchaseInvoicePattern = model.PurchaseInvoicePattern.Trim();
+
+            if (!string.IsNullOrWhiteSpace(model.SalesReturnPattern))
+                tenant.SalesReturnPattern = model.SalesReturnPattern.Trim();
+
+            if (!string.IsNullOrWhiteSpace(model.PurchaseReturnPattern))
+                tenant.PurchaseReturnPattern = model.PurchaseReturnPattern.Trim();
+
+            tenant.ModifiedAt = DateTime.UtcNow;
+            tenant.ModifiedById = User.GetUserId();
+
+            _context.tenantUW.Update(tenant);
+            _context.Save();
+
+            return new ApiResponse
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "الگوهای شماره‌گذاری فاکتورها با موفقیت به‌روزرسانی شد."
+            };
+        }
     }
 }

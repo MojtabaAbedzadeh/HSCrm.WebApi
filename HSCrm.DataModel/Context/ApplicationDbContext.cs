@@ -898,6 +898,17 @@ namespace HSCrm.DataModel.Context
                         : Expression.AndAlso(combinedBody, fiscalFilter);
                 }
 
+                                // فیلتر Soft-Delete برای کلیه موجودیت‌های AuditedEntity
+                if (typeof(AuditedEntity).IsAssignableFrom(clrType))
+                {
+                    var isDeletedProp = Expression.Property(parameter, nameof(AuditedEntity.IsDeleted));
+                    var falseConstant = Expression.Constant(false);
+                    var notDeletedFilter = Expression.Equal(isDeletedProp, falseConstant);
+                    combinedBody = combinedBody == null
+                        ? notDeletedFilter
+                        : Expression.AndAlso(combinedBody, notDeletedFilter);
+                }
+
                 if (combinedBody != null)
                 {
                     modelBuilder.Entity(clrType).HasQueryFilter(Expression.Lambda(combinedBody, parameter));
