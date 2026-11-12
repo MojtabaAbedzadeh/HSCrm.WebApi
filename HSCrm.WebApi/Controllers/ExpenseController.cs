@@ -82,6 +82,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetByProjectId")]
+        [HttpGet("GetProjectExpenses")]
         [Permission(Permissions.Expenses.View)]
         public ApiResponse<IEnumerable<Expense>> GetByProjectId(int projectId)
         {

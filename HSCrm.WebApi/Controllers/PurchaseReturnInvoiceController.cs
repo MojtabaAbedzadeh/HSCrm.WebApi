@@ -319,6 +319,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("Confirm/{id}")]
         [HttpPost("ConfirmInvoice/{id}")]
+        [HttpPost("{id:int}/Confirm")]
         [Permission(Permissions.PurchaseReturnInvoices.Approve)]
         public async Task<IActionResult> Confirm(int id, CancellationToken ct = default)
         {
@@ -367,6 +368,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("Cancel/{id}")]
         [HttpPost("CancelInvoice/{id}")]
+        [HttpPost("{id:int}/Cancel")]
         [Permission(Permissions.PurchaseReturnInvoices.Cancel)]
         public async Task<IActionResult> Cancel(int id, [FromBody] string reason, CancellationToken ct = default)
         {

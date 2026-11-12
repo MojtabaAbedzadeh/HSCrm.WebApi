@@ -331,6 +331,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetByProjectId")]
+        [HttpGet("GetProjectInvoices")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(SalesInvoiceModel), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]

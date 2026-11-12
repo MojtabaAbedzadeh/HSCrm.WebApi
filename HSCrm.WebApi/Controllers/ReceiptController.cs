@@ -36,6 +36,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet]
+        [HttpGet("GetReceipts")]
         [Permission(Permissions.Receipt.View)]
         public async Task<ActionResult<ApiResponse<IEnumerable<ReceiptModel>>>> GetAll(CancellationToken cancellationToken)
         {
@@ -82,6 +83,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost]
+        [HttpPost("Create")]
         [Permission(Permissions.Receipt.Create)]
         public async Task<ActionResult<ApiResponse<ReceiptModel>>> Create([FromBody] ReceiptCreateModel model, CancellationToken cancellationToken)
         {
