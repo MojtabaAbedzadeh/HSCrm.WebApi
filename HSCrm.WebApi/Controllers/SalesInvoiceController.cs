@@ -162,7 +162,7 @@ namespace HSCrm.WebApi.Controllers
 
             int fiscalYearId = _currentFiscalYearService?.FiscalYearId
                 ?? _context.fiscalYearUW?.Get(f => f.TenantId == tenantId.Value && f.IsCurrent && !f.IsClosed)
-                                       .Select(f => f.Id)
+                                       .Select(f => (int?)f.Id)
                                        .FirstOrDefault()
                 ?? 1;
 
@@ -191,6 +191,9 @@ namespace HSCrm.WebApi.Controllers
                 }
             }
 
+            var resolvedInvoiceNumber = model.InvoiceNumber!.Trim();
+            model.InvoiceNumber = resolvedInvoiceNumber;
+
             var transaction = _context.BeginTransaction();
 
             try
@@ -198,7 +201,7 @@ namespace HSCrm.WebApi.Controllers
                 bool invoiceNumberExists = false;
                 try
                 {
-                    var existingQuery = _context.salesInvoiceUW?.Get(i => i.Number == model.InvoiceNumber && i.TenantId == tenantId.Value);
+                    var existingQuery = _context.salesInvoiceUW?.Get(i => i.Number == resolvedInvoiceNumber && i.TenantId == tenantId.Value);
                     invoiceNumberExists = existingQuery != null && existingQuery.Any();
                 }
                 catch (InvalidOperationException)
@@ -218,12 +221,6 @@ namespace HSCrm.WebApi.Controllers
                     };
                 }
 
-                int fiscalYearId = _currentFiscalYearService?.FiscalYearId
-                    ?? _context.fiscalYearUW?.Get(f => f.TenantId == tenantId.Value && f.IsCurrent && !f.IsClosed)
-                                           .Select(f => f.Id)
-                                           .FirstOrDefault()
-                    ?? 1;
-
                 decimal subtotal = model.Items.Sum(i => i.Quantity * i.UnitPrice);
                 decimal itemsTotal = model.Items.Sum(i => (i.Quantity * i.UnitPrice) - i.Discount + i.Tax);
 
@@ -231,19 +228,6 @@ namespace HSCrm.WebApi.Controllers
 
                 if (finalTotal < 0)
                     finalTotal = 0;
-
-                DateTime issueDate = DateTime.UtcNow;
-                if (!string.IsNullOrWhiteSpace(model.IssueDate))
-                {
-                    try
-                    {
-                        issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
-                    }
-                    catch
-                    {
-                        issueDate = DateTime.UtcNow;
-                    }
-                }
 
                 var userId = User?.GetUserId() ?? model.SellerUserId;
 
@@ -253,7 +237,7 @@ namespace HSCrm.WebApi.Controllers
                     FiscalYearId = fiscalYearId,
                     WarehouseId = model.WarehouseId,
                     ProjectId = model.ProjectId,
-                    Number = model.InvoiceNumber,
+                    Number = resolvedInvoiceNumber,
                     IssueDate = issueDate,
                     Status = model.Status,
                     Subtotal = subtotal,
@@ -262,7 +246,7 @@ namespace HSCrm.WebApi.Controllers
                     Total = finalTotal,
                     SellerUserId = model.SellerUserId,
                     CreatedById = userId,
-                    Description = "فاکتور فروش شماره " + model.InvoiceNumber,
+                    Description = "فاکتور فروش شماره " + resolvedInvoiceNumber,
                     CreatedAt = DateTime.UtcNow
                 };
 

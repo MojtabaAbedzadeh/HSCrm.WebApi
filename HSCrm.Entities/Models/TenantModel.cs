@@ -1,4 +1,4 @@
-﻿namespace HSCrm.Entities.Models
+namespace HSCrm.Entities.Models
 {
     public class TenantCreateModel
     {
@@ -25,8 +25,6 @@
         public string? LogoUrl { get; set; }
         public bool IsActive { get; set; }
     }
-}
-
 
     public class InvoicePatternUpdateModel
     {
@@ -35,3 +33,4 @@
         public string? SalesReturnPattern { get; set; }
         public string? PurchaseReturnPattern { get; set; }
     }
+}

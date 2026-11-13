@@ -259,6 +259,13 @@ namespace HSCrm.WebApi.Controllers
                     };
 
                 var fiscalYear = _currentFiscalYearService.FiscalYearId;
+                if (fiscalYear == null)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "سال مالی فعال یافت نشد.",
+                        StatusCode = ApiResultStatusCode.NotFound
+                    };
 
                 if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
                 {
@@ -271,16 +278,12 @@ namespace HSCrm.WebApi.Controllers
                         model.InvoiceNumber = $"PINV-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpper()}";
                     }
                 }
-                if (fiscalYear == null)
-                    return new ApiResponse
-                    {
-                        Status = false,
-                        Message = "سال مالی فعال یافت نشد.",
-                        StatusCode = ApiResultStatusCode.NotFound
-                    };
+
+                var resolvedInvoiceNumber = model.InvoiceNumber!.Trim();
+                model.InvoiceNumber = resolvedInvoiceNumber;
 
                 var existsInvoice = _context.purchaseInvoiceUW
-                    .Get(x => x.Number == model.InvoiceNumber && x.FiscalYearId == fiscalYear.Value && x.TenantId == tenantId)
+                    .Get(x => x.Number == resolvedInvoiceNumber && x.FiscalYearId == fiscalYear.Value && x.TenantId == tenantId)
                     .Any();
 
                 if (existsInvoice)
@@ -315,7 +318,7 @@ namespace HSCrm.WebApi.Controllers
 
                 var invoice = new PurchaseInvoice
                 {
-                    Number = model.InvoiceNumber,
+                    Number = resolvedInvoiceNumber,
                     SupplierId = model.SupplierId,
                     WarehouseId = model.WarehouseId,
                     PurchaserUserId = User.GetUserId(),

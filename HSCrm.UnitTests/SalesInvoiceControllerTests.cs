@@ -82,8 +82,9 @@ namespace HSCrm.UnitTests
             {
                 Id = 1,
                 TenantId = 1,
-                Code = "PRD-01",
-                Name = "موتور آسانسور ساسی",
+                ProductTitle = "موتور آسانسور ساسی",
+                ProductUnit = "عدد",
+                IsActive = true,
                 CreatedAt = DateTime.UtcNow
             });
 
@@ -264,8 +265,8 @@ namespace HSCrm.UnitTests
             Assert.Equal(ApiResultStatusCode.NoContent, response.StatusCode);
         }
 
-        [Fact(DisplayName = "4. ایجاد فاکتور فروش: در صورت خالی بودن شماره فاکتور باید خطای BadRequest برگرداند")]
-        public async Task CreateSalesInvoice_WhenInvoiceNumberMissing_ReturnsBadRequest()
+        [Fact(DisplayName = "4. ایجاد فاکتور فروش: در صورت خالی بودن شماره فاکتور و نبود سرویس تولید الگو، شماره پیش‌فرض تولید می‌شود")]
+        public async Task CreateSalesInvoice_WhenInvoiceNumberMissing_GeneratesFallbackNumberAndSucceeds()
         {
             // Arrange
             var env = CreateTestEnvironment("SalesEmptyNumber");
@@ -290,8 +291,10 @@ namespace HSCrm.UnitTests
 
             // Assert
             Assert.NotNull(response);
-            Assert.False(response.Status);
-            Assert.Equal(ApiResultStatusCode.BadRequest, response.StatusCode);
+            Assert.True(response.Status);
+            Assert.Equal(ApiResultStatusCode.Success, response.StatusCode);
+            Assert.False(string.IsNullOrWhiteSpace(model.InvoiceNumber));
+            Assert.StartsWith("INV-", model.InvoiceNumber);
         }
 
         [Fact(DisplayName = "5. ایجاد فاکتور فروش: اگر شناسه شرکت (TenantId) وجود نداشته باشد باید BadRequest برگرداند")]

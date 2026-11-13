@@ -141,7 +141,7 @@ namespace HSCrm.DataModel.Services.Repository
         public string FormatNumber(string pattern, string defaultPrefix, int sequenceNumber, DateTime date, string? tenantCode = null)
         {
             if (string.IsNullOrWhiteSpace(pattern))
-                pattern = $"{defaultPrefix}-{YEAR}-{SEQ:4}";
+                pattern = $"{defaultPrefix}-{{YEAR}}-{{SEQ:4}}";
 
             int pYear = _persianCalendar.GetYear(date);
             int pMonth = _persianCalendar.GetMonth(date);

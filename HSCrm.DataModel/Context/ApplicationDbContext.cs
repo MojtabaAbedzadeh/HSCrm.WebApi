@@ -869,7 +869,9 @@ namespace HSCrm.DataModel.Context
                 Expression? combinedBody = null;
 
                 // فیلتر Tenant
-                if (typeof(TenantScopedEntity).IsAssignableFrom(clrType))
+                if (typeof(TenantScopedEntity).IsAssignableFrom(clrType)
+                    || clrType == typeof(Inventory)
+                    || clrType == typeof(InventoryTransaction))
                 {
                     var tenantProp = Expression.Property(parameter, nameof(TenantScopedEntity.TenantId));
                     // استفاده از پراپرتی تعریف شده خودمون

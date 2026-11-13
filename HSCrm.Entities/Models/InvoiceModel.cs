@@ -1,4 +1,4 @@
-﻿using HSCrm.Entities.Entities;
+using HSCrm.Entities.Entities;
 using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Entities.Models
@@ -10,7 +10,7 @@ namespace HSCrm.Entities.Models
         public int SupplierId { get; set; }
         public int WarehouseId { get; set; }
         public int TenantId { get; set; }
-        public required string InvoiceNumber { get; set; }
+        public string? InvoiceNumber { get; set; }
         public InvoiceStatus Status { get; set; }
         public decimal InvoiceDiscount { get; set; }
         public decimal InvoiceTax { get; set; }
@@ -81,7 +81,7 @@ namespace HSCrm.Entities.Models
         public int ProjectId { get; set; }
         public int WarehouseId { get; set; }
         public int TenantId { get; set; }
-        public required string InvoiceNumber { get; set; }
+        public string? InvoiceNumber { get; set; }
         public InvoiceStatus Status { get; set; } // Proforma / Final
         public decimal InvoiceDiscount { get; set; }
         public decimal InvoiceTax { get; set; }
