@@ -2,6 +2,7 @@ using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
+using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.StandardApiResult;
@@ -359,7 +360,7 @@ namespace HSCrm.UnitTests
 
             // اطمینان از اعمال انبار و صدور سند حسابداری
             env.InventoryMock.Verify(x => x.ApplyInventoryForSalesInvoice(It.IsAny<SalesInvoice>(), InventoryCostingMethod.WeightedAverage), Times.Once);
-            env.AccountingMock.Verify(x => x.CreateVoucherForSalesInvoiceAsync(It.IsAny<SalesInvoice>(), InventoryCostingMethod.WeightedAverage), Times.Once);
+            env.AccountingMock.Verify(x => x.CreateVoucherForSalesInvoiceAsync(It.IsAny<SalesInvoice>(), InventoryCostingMethod.WeightedAverage, It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact(DisplayName = "7. لیست کشویی انبار (WarehouseDropdownList): در پایگاه‌داده خالی بدون خطا لیست خالی برمی‌گرداند")]
