@@ -428,7 +428,8 @@ namespace HSCrm.UnitTests
             Assert.NotNull(data);
             Assert.Single(data);
             Assert.Equal(10, data[0].DrId);
-            Assert.Equal("انبار فعال ۱", data[0].DrName);
+            // ApplicationDbContext.cleanStr() هنگام ذخیره ارقام فارسی را با Fa2En به انگلیسی تبدیل می‌کند
+            Assert.Equal("انبار فعال 1", data[0].DrName);
         }
 
         [Fact(DisplayName = "9. ایجاد فاکتور فروش در صورت null بودن سال مالی جاری: نباید خطای InvalidOperationException بدهد")]
