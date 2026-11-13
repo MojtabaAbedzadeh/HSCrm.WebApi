@@ -41,6 +41,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetCustomer")]
+        [HttpGet("GetCustomers")]
         [Permission(Permissions.Customers.View)]
         public ApiResponse<IEnumerable<Customer>> Get()
         {

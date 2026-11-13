@@ -671,7 +671,8 @@ namespace HSCrm.DataModel.Services.Repository
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.JournalVoucher)
-                .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                .Where(x => !x.IsDeleted
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && !x.JournalVoucher.IsDeleted
                          && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value));
 
@@ -727,11 +728,15 @@ namespace HSCrm.DataModel.Services.Repository
             if (fromDate.HasValue) query = query.Where(x => x.JournalVoucher.VoucherDate >= fromDate.Value.Date);
             if (toDate.HasValue) query = query.Where(x => x.JournalVoucher.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
-            var rawItems = await query
-                .OrderBy(x => x.JournalVoucher.VoucherDate)
+            var rawItems = (await query.ToListAsync(ct))
+                .OrderBy(x => x.JournalVoucher.VoucherDate.Date)
+                .ThenBy(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.OpeningBalance
+                    ? 0
+                    : (x.JournalVoucher.ReferenceType == AccountingReferenceType.ClosingBalance ? 2 : 1))
                 .ThenBy(x => x.JournalVoucher.VoucherNumber)
+                .ThenBy(x => x.JournalVoucherId)
                 .ThenBy(x => x.RowNumber)
-                .ToListAsync(ct);
+                .ToList();
 
             decimal running = 0m;
             var result = new List<LedgerTransactionDto>();
@@ -777,7 +782,7 @@ namespace HSCrm.DataModel.Services.Repository
                 FiscalYearId = fiscalYearId,
                 CreatedAt = DateTime.UtcNow,
                 VoucherNumber = nextNumber,
-                VoucherDate = DateTime.UtcNow,
+                VoucherDate = DateTime.UtcNow.Date,
                 Description = $"سند موجودی اول دوره حساب بانکی/صندوق ({bankAccount.Title} - {bankAccount.BankName})",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.OpeningBalance,
@@ -2405,11 +2410,15 @@ namespace HSCrm.DataModel.Services.Repository
                 periodQuery = periodQuery.Where(x => x.JournalVoucher.VoucherDate <= endDay);
             }
 
-            var periodItems = await periodQuery
-                .OrderBy(x => x.JournalVoucher.VoucherDate)
+            var periodItems = (await periodQuery.ToListAsync(ct))
+                .OrderBy(x => x.JournalVoucher.VoucherDate.Date)
+                .ThenBy(x => x.JournalVoucher.ReferenceType == AccountingReferenceType.OpeningBalance
+                    ? 0
+                    : (x.JournalVoucher.ReferenceType == AccountingReferenceType.ClosingBalance ? 2 : 1))
                 .ThenBy(x => x.JournalVoucher.VoucherNumber)
+                .ThenBy(x => x.JournalVoucherId)
                 .ThenBy(x => x.RowNumber)
-                .ToListAsync(ct);
+                .ToList();
 
             decimal running = openingBalance;
             var lines = new List<PartyStatementLineDto>();

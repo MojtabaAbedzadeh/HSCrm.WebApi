@@ -60,6 +60,24 @@ namespace HSCrm.WebApi.Controllers
             });
         }
 
+        [HttpPost("SeedDefaultAccounts")]
+        [Permission(Permissions.AccountingAccounts.Create)]
+        public async Task<ActionResult<ApiResponse>> SeedDefaultAccounts(CancellationToken ct)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return Unauthorized(new ApiResponse { Status = false, Message = "شناسه شرکت معتبر نیست" });
+
+            await _accountingService.EnsureDefaultChartOfAccountsAsync(tenantId.Value, ct);
+
+            return Ok(new ApiResponse
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "حساب‌های پیش‌فرض با موفقیت ایجاد/به‌روزرسانی شدند."
+            });
+        }
+
         [HttpPost("CreateAccount")]
         [Permission(Permissions.AccountingAccounts.Create)]
         public async Task<ActionResult<ApiResponse<AccountingAccount>>> CreateAccount([FromBody] AccountingAccountCreateModel model, CancellationToken ct)
@@ -101,8 +119,9 @@ namespace HSCrm.WebApi.Controllers
         {
             var vouchers = await _unitOfWork.journalVoucherUW
                 .Get(x => !x.IsDeleted, asNoTracking: true, x => x.Items)
-                .OrderByDescending(x => x.VoucherDate)
+                .OrderByDescending(x => x.VoucherDate.Date)
                 .ThenByDescending(x => x.VoucherNumber)
+                .ThenByDescending(x => x.Id)
                 .ToListAsync(ct);
 
             return Ok(new ApiResponse<IEnumerable<JournalVoucher>>
@@ -111,6 +130,29 @@ namespace HSCrm.WebApi.Controllers
                 StatusCode = ApiResultStatusCode.Success,
                 Message = "لیست اسناد حسابداری دریافت شد",
                 Data = vouchers
+            });
+        }
+
+        [HttpGet("GetByReference")]
+        [Permission(Permissions.JournalVouchers.View)]
+        public async Task<ActionResult<ApiResponse<JournalVoucher?>>> GetByReference(
+            [FromQuery] AccountingReferenceType referenceType,
+            [FromQuery] int referenceId,
+            CancellationToken ct)
+        {
+            var voucher = await _unitOfWork.journalVoucherUW
+                .Get(x => !x.IsDeleted && x.ReferenceType == referenceType && x.ReferenceId == referenceId,
+                     asNoTracking: true,
+                     x => x.Items)
+                .OrderByDescending(x => x.Id)
+                .FirstOrDefaultAsync(ct);
+
+            return Ok(new ApiResponse<JournalVoucher?>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = voucher != null ? "سند یافت شد." : "سندی یافت نشد.",
+                Data = voucher
             });
         }
 

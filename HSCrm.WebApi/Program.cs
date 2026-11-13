@@ -8,6 +8,7 @@ using HSCrm.Framework.StandardApiResult;
 using HSCrm.Services.Tools.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,7 +22,11 @@ var configuration = builder.Configuration
     .Build();
 
 // ۳. کنترلرها و ثبت FluentValidation
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    });
 
 // ثبت Validatorها به روش مدرن و استاندارد DI از اسمبلی جاری
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();

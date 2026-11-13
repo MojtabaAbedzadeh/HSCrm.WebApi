@@ -31,6 +31,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetSupplier")]
+        [HttpGet("GetSuppliers")]
         [HttpGet("GetByTenant")]
         [Permission(Permissions.Suppliers.View)]
         public ApiResponse<IEnumerable<Supplier>> Get()

@@ -52,6 +52,7 @@ namespace HSCrm.WebApi.Controllers
         /// گزارش خلاصه موجودی لحظه‌ای، کل واریزی‌ها و کل برداشت‌های هر حساب بانکی / صندوق
         /// </summary>
         [HttpGet("BalancesSummary")]
+        [HttpGet("GetBalancesSummary")]
         [Permission(Permissions.BankAccounts.View)]
         public async Task<ActionResult<ApiResponse<List<BankAccountBalanceSummaryDto>>>> GetBalancesSummary(
             [FromQuery] DateTime? fromDate,

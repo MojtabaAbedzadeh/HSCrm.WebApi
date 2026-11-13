@@ -17,6 +17,8 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using System.Reflection;
 using System.Security.Claims;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Xunit;
 using static HSCrm.Common.PublicTools.Enums;
 
@@ -517,6 +519,156 @@ namespace HSCrm.UnitTests
                 .ToList();
 
             Assert.Empty(invalidParams);
+        }
+
+        [Fact(DisplayName = "9. حسابداری: سند افتتاحیه بانک باید قبل از پرداخت همان روز مرتب شود تا مانده در گردش درست محاسبه گردد")]
+        public async Task GetLedgerAsync_OpeningBalanceBeforeSameDayPayment_ComputesRunningBalanceCorrectly()
+        {
+            var env = CreateEnvironment(nameof(GetLedgerAsync_OpeningBalanceBeforeSameDayPayment_ComputesRunningBalanceCorrectly));
+
+            var bank = new BankAccount
+            {
+                Id = 10,
+                TenantId = 1,
+                Title = "جاری ملت",
+                BankName = "بانک ملی",
+                InitialBalance = 500_000_000m,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            env.Context.BankAccounts.Add(bank);
+
+            var accCashBank = new AccountingAccount
+            {
+                Id = 100,
+                TenantId = 1,
+                Code = AccountingService.ACC_CASH_BANK,
+                Title = "موجودی نقد و بانک (خزانه)",
+                Level = AccountLevel.Subsidiary,
+                Category = AccountCategory.Asset,
+                Nature = AccountNature.DebitOnly,
+                IsSystemAccount = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            env.Context.AccountingAccounts.Add(accCashBank);
+
+            var todayMidnight = DateTime.UtcNow.Date;
+            // سند #3 افتتاحیه با ساعت ۱۱ (شبیه‌سازی سند ثبت‌شده در میانه روز)
+            var vOpening = new JournalVoucher
+            {
+                Id = 3,
+                TenantId = 1,
+                FiscalYearId = 1,
+                VoucherNumber = 3,
+                VoucherDate = todayMidnight.AddHours(11),
+                Description = "موجودی اول دوره جاری ملت",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.OpeningBalance,
+                TotalDebit = 500_000_000m,
+                TotalCredit = 500_000_000m,
+                CreatedAt = DateTime.UtcNow,
+                Items = new List<JournalVoucherItem>
+                {
+                    new()
+                    {
+                        TenantId = 1,
+                        RowNumber = 1,
+                        AccountId = 100,
+                        BankAccountId = 10,
+                        Description = "موجودی اول دوره جاری ملت (بانک ملی)",
+                        Debit = 500_000_000m,
+                        Credit = 0m,
+                        CreatedAt = DateTime.UtcNow
+                    }
+                }
+            };
+
+            // سند #6 پرداخت همان روز با ساعت 00:00 (تاریخ انتخاب‌شده از تقویم)
+            var vPayment = new JournalVoucher
+            {
+                Id = 6,
+                TenantId = 1,
+                FiscalYearId = 1,
+                VoucherNumber = 6,
+                VoucherDate = todayMidnight,
+                Description = "کسر از جاری ملت بابت پرداخت شماره 1003",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.Payment,
+                TotalDebit = 45_420_900m,
+                TotalCredit = 45_420_900m,
+                CreatedAt = DateTime.UtcNow,
+                Items = new List<JournalVoucherItem>
+                {
+                    new()
+                    {
+                        TenantId = 1,
+                        RowNumber = 1,
+                        AccountId = 100,
+                        BankAccountId = 10,
+                        Description = "کسر از جاری ملت بابت پرداخت شماره 1003",
+                        Debit = 0m,
+                        Credit = 45_420_900m,
+                        CreatedAt = DateTime.UtcNow
+                    }
+                }
+            };
+
+            env.Context.JournalVouchers.AddRange(vOpening, vPayment);
+            await env.Context.SaveChangesAsync();
+
+            var svc = new AccountingService(env.Context, env.Uow, env.CurrentUser, env.CurrentFiscalYear);
+            var ledger = await svc.GetLedgerAsync(bankAccountId: 10);
+
+            Assert.Equal(2, ledger.Count);
+            Assert.Equal(3, ledger[0].VoucherNumber);
+            Assert.Equal(500_000_000m, ledger[0].RunningBalance);
+            Assert.Equal(6, ledger[1].VoucherNumber);
+            Assert.Equal(454_579_100m, ledger[1].RunningBalance);
+        }
+
+        [Fact(DisplayName = "10. سریال‌سازی JSON: چرخه ناوبری فاکتور فروش با IgnoreCycles نباید خطا دهد")]
+        public void SalesInvoiceSerialization_WithIgnoreCycles_DoesNotThrowOnNavigationLoop()
+        {
+            var invoice = new SalesInvoice
+            {
+                Id = 1,
+                TenantId = 1,
+                FiscalYearId = 1,
+                Number = "SINV-1",
+                SellerUserId = "u1",
+                Description = "تست",
+                IssueDate = DateTime.UtcNow,
+                Status = InvoiceStatus.Final,
+                Total = 1000m
+            };
+            var item = new SalesInvoiceItem
+            {
+                Id = 1,
+                TenantId = 1,
+                SalesInvoiceId = 1,
+                SalesInvoice = invoice,
+                ProductId = 5,
+                Quantity = 1,
+                UnitPriceSell = 1000m,
+                LineTotal = 1000m
+            };
+            invoice.Items.Add(item);
+
+            var payload = new ApiResponse<SalesInvoice>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "موفق",
+                Data = invoice
+            };
+
+            var opts = new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.IgnoreCycles
+            };
+
+            var json = JsonSerializer.Serialize(payload, opts);
+            Assert.Contains("SINV-1", json);
         }
     }
 }
