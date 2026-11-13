@@ -412,7 +412,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("UploadCompanyLogo")]
         [Permission(Permissions.Tenants.Edit)]
-        public async Task<IActionResult> UploadCompanyLogo([FromForm] IFormFile? file)
+        public async Task<IActionResult> UploadCompanyLogo(IFormFile? file)
         {
             var tenantId = User.GetTenantId();
             if (!tenantId.HasValue)

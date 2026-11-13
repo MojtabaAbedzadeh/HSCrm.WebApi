@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Moq;
+using System.Reflection;
 using System.Security.Claims;
 using Xunit;
 using static HSCrm.Common.PublicTools.Enums;
@@ -498,6 +499,24 @@ namespace HSCrm.UnitTests
             Assert.True(deleteRes.Status);
             Assert.Equal(ApiResultStatusCode.Success, deleteRes.StatusCode);
             Assert.Null(await env.Context.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == "usr-t1"));
+        }
+
+        [Fact(DisplayName = "8. Swagger: پارامترهای IFormFile نباید دارای صفت [FromForm] باشند")]
+        public void Controllers_IFormFileParameters_ShouldNotUseFromFormAttribute()
+        {
+            var controllerTypes = typeof(TenantController).Assembly
+                .GetTypes()
+                .Where(t => !t.IsAbstract && typeof(ControllerBase).IsAssignableFrom(t));
+
+            var invalidParams = controllerTypes
+                .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+                .SelectMany(m => m.GetParameters().Select(p => new { Method = m, Param = p }))
+                .Where(x => typeof(IFormFile).IsAssignableFrom(x.Param.ParameterType)
+                            && x.Param.GetCustomAttribute<FromFormAttribute>() != null)
+                .Select(x => $"{x.Method.DeclaringType?.Name}.{x.Method.Name}({x.Param.Name})")
+                .ToList();
+
+            Assert.Empty(invalidParams);
         }
     }
 }
