@@ -335,7 +335,7 @@ namespace HSCrm.WebApi.Controllers
             DateTime? parsedLockDate = null;
             if (!string.IsNullOrWhiteSpace(model.DocumentLockDate))
             {
-                var rawDate = CleanPersianDigits(model.DocumentLockDate.Trim());
+                var rawDate = model.DocumentLockDate.Trim().Fa2En();
                 var isLikelyShamsi = System.Text.RegularExpressions.Regex.IsMatch(rawDate, @"^1[34]\d{2}[/-]\d{1,2}[/-]\d{1,2}$");
                 if (isLikelyShamsi)
                 {
