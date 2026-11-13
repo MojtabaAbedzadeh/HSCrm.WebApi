@@ -11,134 +11,80 @@ namespace HSCrm.DataModel.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<byte>(
-                name: "DefaultCostingMethod",
-                table: "Tenants",
-                type: "tinyint",
-                nullable: false,
-                defaultValue: (byte)1);
+            migrationBuilder.Sql(@"
+IF COL_LENGTH(N'dbo.Tenants', N'DefaultCostingMethod') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [DefaultCostingMethod] tinyint NOT NULL CONSTRAINT [DF_Tenants_DefaultCostingMethod] DEFAULT CAST(1 AS tinyint);
 
-            migrationBuilder.AddColumn<decimal>(
-                name: "DefaultVatPercent",
-                table: "Tenants",
-                type: "decimal(18,2)",
-                precision: 18,
-                scale: 2,
-                nullable: false,
-                defaultValue: 0m);
+IF COL_LENGTH(N'dbo.Tenants', N'DefaultVatPercent') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [DefaultVatPercent] decimal(18,2) NOT NULL CONSTRAINT [DF_Tenants_DefaultVatPercent] DEFAULT 0.0;
 
-            migrationBuilder.AddColumn<DateTime>(
-                name: "DocumentLockDate",
-                table: "Tenants",
-                type: "datetime2",
-                nullable: true);
+IF COL_LENGTH(N'dbo.Tenants', N'DocumentLockDate') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [DocumentLockDate] datetime2 NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "InvoiceFooterText",
-                table: "Tenants",
-                type: "nvarchar(max)",
-                nullable: true);
+IF COL_LENGTH(N'dbo.Tenants', N'InvoiceFooterText') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [InvoiceFooterText] nvarchar(max) NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "InvoiceNumberingMode",
-                table: "Tenants",
-                type: "nvarchar(20)",
-                maxLength: 20,
-                nullable: false,
-                defaultValue: "Hybrid");
+IF COL_LENGTH(N'dbo.Tenants', N'InvoiceNumberingMode') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [InvoiceNumberingMode] nvarchar(20) NOT NULL CONSTRAINT [DF_Tenants_InvoiceNumberingMode] DEFAULT N'Hybrid';
 
-            migrationBuilder.AddColumn<string>(
-                name: "PurchaseInvoicePattern",
-                table: "Tenants",
-                type: "nvarchar(max)",
-                nullable: false,
-                defaultValue: "PINV-{YEAR}-{SEQ:4}");
+IF COL_LENGTH(N'dbo.Tenants', N'PurchaseInvoicePattern') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [PurchaseInvoicePattern] nvarchar(max) NOT NULL CONSTRAINT [DF_Tenants_PurchaseInvoicePattern] DEFAULT N'PINV-{YEAR}-{SEQ:4}';
 
-            migrationBuilder.AddColumn<string>(
-                name: "PurchaseReturnPattern",
-                table: "Tenants",
-                type: "nvarchar(max)",
-                nullable: false,
-                defaultValue: "PRI-{YEAR}-{SEQ:4}");
+IF COL_LENGTH(N'dbo.Tenants', N'PurchaseReturnPattern') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [PurchaseReturnPattern] nvarchar(max) NOT NULL CONSTRAINT [DF_Tenants_PurchaseReturnPattern] DEFAULT N'PRI-{YEAR}-{SEQ:4}';
 
-            migrationBuilder.AddColumn<string>(
-                name: "SalesInvoicePattern",
-                table: "Tenants",
-                type: "nvarchar(max)",
-                nullable: false,
-                defaultValue: "INV-{YEAR}-{SEQ:4}");
+IF COL_LENGTH(N'dbo.Tenants', N'SalesInvoicePattern') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [SalesInvoicePattern] nvarchar(max) NOT NULL CONSTRAINT [DF_Tenants_SalesInvoicePattern] DEFAULT N'INV-{YEAR}-{SEQ:4}';
 
-            migrationBuilder.AddColumn<string>(
-                name: "SalesReturnPattern",
-                table: "Tenants",
-                type: "nvarchar(max)",
-                nullable: false,
-                defaultValue: "SRI-{YEAR}-{SEQ:4}");
+IF COL_LENGTH(N'dbo.Tenants', N'SalesReturnPattern') IS NULL
+    ALTER TABLE [dbo].[Tenants] ADD [SalesReturnPattern] nvarchar(max) NOT NULL CONSTRAINT [DF_Tenants_SalesReturnPattern] DEFAULT N'SRI-{YEAR}-{SEQ:4}';
+");
 
-            migrationBuilder.UpdateData(
-                table: "Tenants",
-                keyColumn: "Id",
-                keyValue: 1,
-                columns: new[]
-                {
-                    "DefaultCostingMethod",
-                    "DefaultVatPercent",
-                    "InvoiceNumberingMode",
-                    "PurchaseInvoicePattern",
-                    "PurchaseReturnPattern",
-                    "SalesInvoicePattern",
-                    "SalesReturnPattern"
-                },
-                values: new object[]
-                {
-                    (byte)1,
-                    0m,
-                    "Hybrid",
-                    "PINV-{YEAR}-{SEQ:4}",
-                    "PRI-{YEAR}-{SEQ:4}",
-                    "INV-{YEAR}-{SEQ:4}",
-                    "SRI-{YEAR}-{SEQ:4}"
-                });
+            migrationBuilder.Sql(@"
+IF EXISTS (SELECT 1 FROM [dbo].[Tenants] WHERE [Id] = 1)
+BEGIN
+    UPDATE [dbo].[Tenants]
+    SET
+        [DefaultCostingMethod] = CASE WHEN [DefaultCostingMethod] = 0 THEN CAST(1 AS tinyint) ELSE [DefaultCostingMethod] END,
+        [InvoiceNumberingMode] = COALESCE(NULLIF(LTRIM(RTRIM([InvoiceNumberingMode])), N''), N'Hybrid'),
+        [PurchaseInvoicePattern] = COALESCE(NULLIF(LTRIM(RTRIM([PurchaseInvoicePattern])), N''), N'PINV-{YEAR}-{SEQ:4}'),
+        [PurchaseReturnPattern] = COALESCE(NULLIF(LTRIM(RTRIM([PurchaseReturnPattern])), N''), N'PRI-{YEAR}-{SEQ:4}'),
+        [SalesInvoicePattern] = COALESCE(NULLIF(LTRIM(RTRIM([SalesInvoicePattern])), N''), N'INV-{YEAR}-{SEQ:4}'),
+        [SalesReturnPattern] = COALESCE(NULLIF(LTRIM(RTRIM([SalesReturnPattern])), N''), N'SRI-{YEAR}-{SEQ:4}')
+    WHERE [Id] = 1;
+END
+");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "DefaultCostingMethod",
-                table: "Tenants");
+            migrationBuilder.Sql(@"
+DECLARE @dropSql nvarchar(max) = N'';
+SELECT @dropSql += N'ALTER TABLE [dbo].[Tenants] DROP CONSTRAINT [' + dc.name + N'];'
+FROM sys.default_constraints dc
+INNER JOIN sys.columns c ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+WHERE dc.parent_object_id = OBJECT_ID(N'dbo.Tenants')
+  AND c.name IN (
+      N'DefaultCostingMethod', N'DefaultVatPercent', N'DocumentLockDate',
+      N'InvoiceFooterText', N'InvoiceNumberingMode',
+      N'PurchaseInvoicePattern', N'PurchaseReturnPattern',
+      N'SalesInvoicePattern', N'SalesReturnPattern'
+  );
+IF LEN(@dropSql) > 0 EXEC sp_executesql @dropSql;
+");
 
-            migrationBuilder.DropColumn(
-                name: "DefaultVatPercent",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "DocumentLockDate",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "InvoiceFooterText",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "InvoiceNumberingMode",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "PurchaseInvoicePattern",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "PurchaseReturnPattern",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "SalesInvoicePattern",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "SalesReturnPattern",
-                table: "Tenants");
+            migrationBuilder.Sql(@"
+IF COL_LENGTH(N'dbo.Tenants', N'DefaultCostingMethod') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [DefaultCostingMethod];
+IF COL_LENGTH(N'dbo.Tenants', N'DefaultVatPercent') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [DefaultVatPercent];
+IF COL_LENGTH(N'dbo.Tenants', N'DocumentLockDate') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [DocumentLockDate];
+IF COL_LENGTH(N'dbo.Tenants', N'InvoiceFooterText') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [InvoiceFooterText];
+IF COL_LENGTH(N'dbo.Tenants', N'InvoiceNumberingMode') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [InvoiceNumberingMode];
+IF COL_LENGTH(N'dbo.Tenants', N'PurchaseInvoicePattern') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [PurchaseInvoicePattern];
+IF COL_LENGTH(N'dbo.Tenants', N'PurchaseReturnPattern') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [PurchaseReturnPattern];
+IF COL_LENGTH(N'dbo.Tenants', N'SalesInvoicePattern') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [SalesInvoicePattern];
+IF COL_LENGTH(N'dbo.Tenants', N'SalesReturnPattern') IS NOT NULL ALTER TABLE [dbo].[Tenants] DROP COLUMN [SalesReturnPattern];
+");
         }
     }
 }

@@ -215,10 +215,10 @@ namespace HSCrm.UnitTests
             env.Context.BankAccounts.Add(new BankAccount
             {
                 TenantId = 1,
+                Title = "حساب جاری بانک ملت",
                 BankName = "بانک ملت",
                 AccountNumber = "123456",
                 InitialBalance = 1000m,
-                CurrentBalance = 1000m,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             });
