@@ -264,7 +264,7 @@ namespace HSCrm.WebApi.Controllers
                     : InventoryCostingMethod.WeightedAverage,
                 DocumentLockDate = tenant.DocumentLockDate,
                 DocumentLockDateShamsi = tenant.DocumentLockDate.HasValue
-                    ? ConvertDate.ConvertMiladiToShamsiShort(tenant.DocumentLockDate.Value)
+                    ? ConvertDate.ConvertMiladiToShamsi(tenant.DocumentLockDate.Value, "yyyy/MM/dd").Fa2En()
                     : null
             };
 
