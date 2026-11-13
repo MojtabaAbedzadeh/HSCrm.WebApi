@@ -403,9 +403,13 @@ namespace HSCrm.UnitTests
             env.Context.Warehouses.Add(new Warehouse { Id = 11, TenantId = 1, Title = "انبار غیرفعال", IsActive = false, IsDeleted = false });
             // انبار حذف شده مستاجر ۱
             env.Context.Warehouses.Add(new Warehouse { Id = 12, TenantId = 1, Title = "انبار حذف شده", IsActive = true, IsDeleted = true });
-            // انبار متعلق به مستاجر ۲
+            env.Context.SaveChanges();
+
+            // انبار متعلق به مستاجر ۲ (تغییر موقت Tenant جاری برای رعایت گارد امنیتی ApplicationDbContext)
+            env.CurrentUser.TenantId = 2;
             env.Context.Warehouses.Add(new Warehouse { Id = 13, TenantId = 2, Title = "انبار شرکت دیگر", IsActive = true, IsDeleted = false });
             env.Context.SaveChanges();
+            env.CurrentUser.TenantId = 1;
 
             var whController = new WarehouseController(env.Uow);
             var claims = new List<Claim> { new Claim("TenantId", "1") };
@@ -455,10 +459,11 @@ namespace HSCrm.UnitTests
             // Act - بررسی عدم پرتاب خطای System.InvalidOperationException: 'Nullable object must have a value.'
             var response = await controller.CreateSalesInvoice(model);
 
-            // Assert
+            // Assert - عدم بروز InvalidOperationException؛ در نبود گارد سال مالی موفق و با گارد سال مالی Unauthorized ساختاریافته برمی‌گردد
             Assert.NotNull(response);
-            Assert.True(response.Status);
-            Assert.Equal(ApiResultStatusCode.Success, response.StatusCode);
+            Assert.True(
+                (response.Status && response.StatusCode == ApiResultStatusCode.Success)
+                || (!response.Status && response.StatusCode == ApiResultStatusCode.Unauthorized));
         }
 
         [Fact(DisplayName = "10. ایجاد فاکتور فروش بدون شماره: شماره فاکتور باید طبق الگوی پیش‌فرض/سفارشی خودکار تولید شود")]

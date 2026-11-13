@@ -297,6 +297,17 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.NotEnoughInventory.DisplayNameAttribute(DisplayProperty.Name)
                 };
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                transaction?.Rollback();
+
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = ex.Message
+                };
+            }
             catch (Exception)
             {
                 transaction?.Rollback();
