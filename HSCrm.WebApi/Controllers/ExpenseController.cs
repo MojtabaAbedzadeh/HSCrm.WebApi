@@ -81,6 +81,33 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
+        [HttpGet("GetById")]
+        [Permission(Permissions.Expenses.View)]
+        public ApiResponse<Expense> GetById(int expenseId)
+        {
+            var tenantId = User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
+            if (!tenantId.HasValue || !fiscalYearId.HasValue)
+                return new ApiResponse<Expense> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "دسترسی نامعتبر" };
+
+            var expense = _context.expenseUW
+                .Get(x => x.Id == expenseId && x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value,
+                     true, x => x.Project, x => x.Tenant, x => x.CreatedBy)
+                .SingleOrDefault();
+
+            if (expense == null)
+                return new ApiResponse<Expense> { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "هزینه یافت نشد" };
+
+            return new ApiResponse<Expense>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "دریافت اطلاعات هزینه موفق بود",
+                Data = expense
+            };
+        }
+
         [HttpGet("GetByProjectId")]
         [HttpGet("GetProjectExpenses")]
         [Permission(Permissions.Expenses.View)]
@@ -137,6 +164,10 @@ namespace HSCrm.WebApi.Controllers
             {
                 return new ApiResponse { Status = false, Message = "تاریخ وارد شده معتبر نیست" };
             }
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            if (tenant?.DocumentLockDate != null && expenseDate.Date <= tenant.DocumentLockDate.Value.Date)
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "ثبت سند در تاریخ‌های قفل‌شده امکان‌پذیر نیست." };
 
             IEntityTransaction? transaction = null;
             try
@@ -229,6 +260,20 @@ namespace HSCrm.WebApi.Controllers
             if (expense == null)
                 return new ApiResponse { Status = false, Message = "هزینه یافت نشد" };
 
+            DateTime parsedDate;
+            try
+            {
+                parsedDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
+            }
+            catch
+            {
+                return new ApiResponse { Status = false, Message = "تاریخ وارد شده معتبر نیست" };
+            }
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            if (tenant?.DocumentLockDate != null && (parsedDate.Date <= tenant.DocumentLockDate.Value.Date || expense.ExpenseDate.Date <= tenant.DocumentLockDate.Value.Date))
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "ویرایش سند در تاریخ‌های قفل‌شده امکان‌پذیر نیست." };
+
             try
             {
                 expense.ExpenseTitle = model.ExpenseTitle.Trim();
@@ -236,7 +281,7 @@ namespace HSCrm.WebApi.Controllers
                 expense.Type = model.Type;
                 expense.ProjectId = model.ProjectId;
                 expense.Amount = model.Amount;
-                expense.ExpenseDate = ConvertDate.ConvertShamsiToMiladi(model.ExpenseDate);
+                expense.ExpenseDate = parsedDate;
                 expense.PaymentStatus = model.PaymentStatus;
                 expense.PaidAmount = model.PaidAmount;
                 expense.BankAccountId = model.BankAccountId;

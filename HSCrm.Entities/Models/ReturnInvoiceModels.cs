@@ -1,4 +1,4 @@
-﻿using static HSCrm.Common.PublicTools.Enums;
+using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Entities.Models
 {
@@ -10,12 +10,12 @@ namespace HSCrm.Entities.Models
         public int ProjectId { get; set; }
         public int WarehouseId { get; set; }
         public int TenantId { get; set; }
-        public required string InvoiceNumber { get; set; }
+        public string? InvoiceNumber { get; set; }
         public InvoiceStatus Status { get; set; } = InvoiceStatus.Final;
         public decimal InvoiceDiscount { get; set; }
         public decimal InvoiceTax { get; set; }
         public required string IssueDate { get; set; } // تاریخ شمسی مثلا 1403/08/10
-        public required string SellerUserId { get; set; }
+        public string? SellerUserId { get; set; }
         public string? Description { get; set; }
         public List<SalesReturnInvoiceItemCreateModel> Items { get; set; } = new();
     }
@@ -62,12 +62,12 @@ namespace HSCrm.Entities.Models
         public int SupplierId { get; set; }
         public int WarehouseId { get; set; }
         public int TenantId { get; set; }
-        public required string InvoiceNumber { get; set; }
+        public string? InvoiceNumber { get; set; }
         public InvoiceStatus Status { get; set; } = InvoiceStatus.Final;
         public decimal InvoiceDiscount { get; set; }
         public decimal InvoiceTax { get; set; }
         public required string IssueDate { get; set; } // تاریخ شمسی
-        public required string PurchaserUserId { get; set; }
+        public string? PurchaserUserId { get; set; }
         public string? Description { get; set; }
         public List<PurchaseReturnInvoiceItemCreateModel> Items { get; set; } = new();
     }

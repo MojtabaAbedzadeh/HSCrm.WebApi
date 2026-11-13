@@ -84,9 +84,20 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+                };
+            }
+
             // گرفتن قیمت فعال قبلی
             var oldPrice = _context.priceUW
-                .Get(p => p.ProductId == model.ProId && p.EffectiveTo == null)
+                .Get(p => p.ProductId == model.ProId && p.TenantId == tenantId.Value && p.EffectiveTo == null)
                 .FirstOrDefault();
 
             // اگر قیمت فعال قبلی وجود دارد -> ببندش
@@ -112,9 +123,9 @@ namespace HSCrm.WebApi.Controllers
                     EffectiveFrom = ConvertDate.ConvertShamsiToMiladi(model.EffectiveFrom),
                     EffectiveTo = null,
                     CreatedAt = DateTime.UtcNow,
-                    CreatedById =  User.GetUserId(),
+                    CreatedById = User.GetUserId(),
                     IsDeleted = false,
-                    TenantId = User.GetTenantId().Value
+                    TenantId = tenantId.Value
                 };
 
                 _context.priceUW.Create(newPrice);
@@ -145,6 +156,15 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.ProductPrices.Edit)]
         public ApiResponse Update([FromForm] PriceEditModel model)
         {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
             // اعتبارسنجی اولیه
             if (model.ProductId == 0)
                 return new ApiResponse
@@ -156,7 +176,7 @@ namespace HSCrm.WebApi.Controllers
 
             // پیدا کردن قیمت فعال فعلی
             var currentPrice = _context.priceUW
-                .Get(p => p.ProductId == model.ProductId && p.EffectiveTo == null)
+                .Get(p => p.ProductId == model.ProductId && p.TenantId == tenantId.Value && p.EffectiveTo == null)
                 .FirstOrDefault();
 
             if (currentPrice == null)
@@ -198,7 +218,7 @@ namespace HSCrm.WebApi.Controllers
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     CreatedById = User.GetUserId(),
-                    TenantId = User.GetTenantId().Value,
+                    TenantId = tenantId.Value,
                     IsDeleted = false
                 };
 
@@ -224,6 +244,42 @@ namespace HSCrm.WebApi.Controllers
                     Message = $"Server error: {ex.Message}"
                 };
             }
+        }
+
+        [HttpDelete("DeletePrice/{id:int}")]
+        [Permission(Permissions.ProductPrices.Delete)]
+        public ApiResponse DeletePrice(int id)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+            var price = _context.priceUW
+                .Get(p => p.Id == id && p.TenantId == tenantId.Value)
+                .FirstOrDefault();
+
+            if (price == null)
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "قیمت مورد نظر یافت نشد."
+                };
+
+            _context.priceUW.Delete(price);
+            _context.Save();
+
+            return new ApiResponse
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "قیمت با موفقیت حذف شد."
+            };
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using Common.Permissions;
+using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Services.Interface;
@@ -107,9 +107,9 @@ namespace HSCrm.WebApi.Controllers
                 ExpenseId = p.ExpenseId,
 
                 Title = p.PurchaseInvoiceId.HasValue
-                    ? $"پرداخت از بابت فاکتور شماره  {p.PurchaseInvoice.Number}"
+                    ? $"پرداخت از بابت فاکتور شماره  {p.PurchaseInvoice?.Number ?? "-"}"
                     : p.ExpenseId.HasValue
-                    ? $"پرداخت از بابت {p.Expense?.ExpenseTitle}" +
+                    ? $"پرداخت از بابت {p.Expense?.ExpenseTitle ?? "-"}" +
                           $"{(p.Expense?.Project != null ? $" پروژه {p.Expense.Project.ProjectTitle}" : "")}"
                         : "پرداخت بدون مرجع"
             })
@@ -145,6 +145,7 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            var tenantId = _currentUserService.TenantId ?? User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
 
             var data = new List<PaymentReferenceDto>();
@@ -152,7 +153,9 @@ namespace HSCrm.WebApi.Controllers
             if (referenceType is "all" or "purchaseInvoice")
             {
                 var purchaseInvoices = _context.purchaseInvoiceUW
-                    .Get(x => x.FiscalYearId == fiscalYearId && (x.Number.Contains(term) || x.Supplier.SupplierFullName.Contains(term)),
+                    .Get(x => (!tenantId.HasValue || x.TenantId == tenantId.Value)
+                              && x.FiscalYearId == fiscalYearId
+                              && (x.Number.Contains(term) || (x.Supplier != null && x.Supplier.SupplierFullName.Contains(term))),
                     true,
                     x => x.Supplier)
                         .Take(15)
@@ -163,7 +166,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = x.Id,
                     Type = "purchaseInvoice",
-                    Title = $"{x.Number} - {x.Supplier.SupplierFullName}",
+                    Title = $"{x.Number} - {x.Supplier?.SupplierFullName ?? "-"}",
                     Amount = x.Total,
                     Date = x.IssueDate
                 }));
@@ -174,6 +177,7 @@ namespace HSCrm.WebApi.Controllers
                 var expenses = _context.expenseUW
                     .Get(
                         x =>
+                            (!tenantId.HasValue || x.TenantId == tenantId.Value) &&
                             x.FiscalYearId == fiscalYearId &&
                             x.ExpenseTitle.Contains(term),
                         true,
@@ -186,7 +190,7 @@ namespace HSCrm.WebApi.Controllers
                 {
                     Id = x.Id,
                     Type = "expense",
-                    Title = $"{x.ExpenseTitle} - {x.Project.ProjectTitle}",
+                    Title = $"{x.ExpenseTitle} - {x.Project?.ProjectTitle ?? "-"}",
                     Amount = x.Amount,
                     Date = x.ExpenseDate
                 }));
@@ -204,45 +208,6 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-        //[HttpPost("Create")]
-        //[Permission(Permissions.Payments.Create)]
-        //public ApiResponse Create([FromBody] PaymentModel model)
-        //{
-        //    if (model.PurchaseInvoiceId.HasValue == model.ExpenseId.HasValue)
-        //    {
-        //        return new ApiResponse
-        //        {
-        //            Status = false,
-        //            StatusCode = ApiResultStatusCode.BadRequest,
-        //            Message = "فقط یکی از فاکتور خرید یا هزینه باید انتخاب شود."
-        //        };
-        //    }
-        //    var userId = User.GetUserId();
-
-        //    var entity = new Payment
-        //    {
-        //        FiscalYearId = model.FiscalYearId,
-        //        PurchaseInvoiceId = model.PurchaseInvoiceId,
-        //        ExpenseId = model.ExpenseId,
-        //        PaymentDate = model.PaymentDate,
-        //        Amount = model.Amount,
-        //        Method = model.Method,
-        //        CreatedAt = DateTime.UtcNow,
-        //        CreatedById = userId,
-        //        ReferenceNo = model.ReferenceNo
-        //    };
-
-        //    _context.paymentUW.Create(entity);
-        //    _context.Save();
-
-        //    return new ApiResponse
-        //    {
-        //        Status = true,
-        //        StatusCode = ApiResultStatusCode.Success,
-        //        Message = "پرداخت با موفقیت ثبت شد."
-        //    };
-        //}
-
         [HttpPost("Create")]
         [Permission(Permissions.Payments.Create)]
         public async Task<ApiResponse> Create([FromBody] PaymentModel model)
@@ -258,6 +223,29 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            var tenantId = _currentUserService.TenantId ?? User.GetTenantId();
+            var fiscalYearId = model.FiscalYearId > 0 ? model.FiscalYearId : (_currentFiscalYearService.FiscalYearId ?? 0);
+            if (!tenantId.HasValue || fiscalYearId <= 0)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "اطلاعات شرکت یا سال مالی معتبر نیست."
+                };
+            }
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            if (tenant?.DocumentLockDate != null && model.PaymentDate.Date <= tenant.DocumentLockDate.Value.Date)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "ثبت پرداخت در تاریخ‌های قفل‌شده امکان‌پذیر نیست."
+                };
+            }
+
             var userId = User.GetUserId();
 
             // شروع تراکنش برای اطمینان از ثبت پرداخت و آپدیت فاکتور با هم
@@ -267,7 +255,8 @@ namespace HSCrm.WebApi.Controllers
                 // 2. ثبت رکورد پرداخت جدید
                 var entity = new Payment
                 {
-                    FiscalYearId = model.FiscalYearId,
+                    TenantId = tenantId.Value,
+                    FiscalYearId = fiscalYearId,
                     PurchaseInvoiceId = model.PurchaseInvoiceId,
                     ExpenseId = model.ExpenseId,
                     PaymentDate = model.PaymentDate,
@@ -277,7 +266,7 @@ namespace HSCrm.WebApi.Controllers
                     CreatedAt = DateTime.UtcNow,
                     CreatedById = userId,
                     ReferenceNo = model.ReferenceNo,
-                    Description = model.Description // اگر در مدل فیلد توضیحات داری
+                    Description = model.Description
                 };
 
                 _context.paymentUW.Create(entity);
@@ -390,13 +379,25 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
+                var tenantId = _currentUserService.TenantId ?? User.GetTenantId();
                 var invoice = _context.purchaseInvoiceUW.GetById(model.PurchaseInvoiceId);
-                if (invoice == null) return new ApiResponse
+                if (invoice == null || (tenantId.HasValue && invoice.TenantId != tenantId.Value)) return new ApiResponse
                 {
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
                     Message = ApiResultStatusCode.BadRequest.DisplayNameAttribute(DisplayProperty.Name)
                 };
+
+                var tenant = _context.tenantUW.GetById(invoice.TenantId);
+                if (tenant?.DocumentLockDate != null && model.PaymentDate.Date <= tenant.DocumentLockDate.Value.Date)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.BadRequest,
+                        Message = "ثبت پرداخت در تاریخ‌های قفل‌شده امکان‌پذیر نیست."
+                    };
+                }
 
                 if (invoice.Status != InvoiceStatus.Final) return new ApiResponse
                 {
@@ -419,6 +420,8 @@ namespace HSCrm.WebApi.Controllers
 
                 var payment = new Payment
                 {
+                    TenantId = invoice.TenantId,
+                    FiscalYearId = invoice.FiscalYearId,
                     PurchaseInvoiceId = invoice.Id,
                     Amount = model.Amount,
                     BankAccountId = model.BankAccountId,
@@ -454,10 +457,9 @@ namespace HSCrm.WebApi.Controllers
                     StatusCode = ApiResultStatusCode.Success,
                     Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                     AdditionalData = invoice
-                
                 };
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return new ApiResponse
                 {

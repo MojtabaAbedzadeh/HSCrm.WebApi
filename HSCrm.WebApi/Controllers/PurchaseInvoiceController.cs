@@ -60,11 +60,14 @@ namespace HSCrm.WebApi.Controllers
             };
 
             var fyId = fiscalYearId ?? _currentFiscalYearService?.FiscalYearId;
-            var nextNumber = _invoiceNumberGenerator != null
-                ? await _invoiceNumberGenerator.GenerateNextPurchaseInvoiceNumberAsync(tenantId.Value, fyId)
-                : $"PINV-{DateTime.UtcNow.Year}-0001";
+            var tenant = _context.tenantUW?.GetById(tenantId.Value);
+            var mode = string.IsNullOrWhiteSpace(tenant?.InvoiceNumberingMode) ? "Hybrid" : tenant.InvoiceNumberingMode;
 
-            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            var nextNumber = string.Equals(mode, "Manual", StringComparison.OrdinalIgnoreCase)
+                ? string.Empty
+                : (_invoiceNumberGenerator != null
+                    ? await _invoiceNumberGenerator.GenerateNextPurchaseInvoiceNumberAsync(tenantId.Value, fyId)
+                    : $"PINV-{DateTime.UtcNow.Year}-0001");
 
             return new ApiResponse<object>
             {
@@ -74,7 +77,11 @@ namespace HSCrm.WebApi.Controllers
                 Data = new
                 {
                     nextInvoiceNumber = nextNumber,
-                    pattern = tenant?.PurchaseInvoicePattern ?? "PINV-{YEAR}-{SEQ:4}"
+                    pattern = tenant?.PurchaseInvoicePattern ?? "PINV-{YEAR}-{SEQ:4}",
+                    numberingMode = mode,
+                    defaultVatPercent = tenant?.DefaultVatPercent ?? 0m,
+                    defaultCostingMethod = tenant?.DefaultCostingMethod ?? InventoryCostingMethod.WeightedAverage,
+                    invoiceFooterText = tenant?.InvoiceFooterText
                 }
             };
         }
@@ -102,7 +109,7 @@ namespace HSCrm.WebApi.Controllers
 
             if (!string.IsNullOrEmpty(supplierFullName))
             {
-                query = query.Where(x => x.Supplier.SupplierFullName.Contains(supplierFullName));
+                query = query.Where(x => x.Supplier != null && x.Supplier.SupplierFullName.Contains(supplierFullName));
             }
 
             if (fromDate.HasValue)
@@ -157,20 +164,22 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
-        [HttpGet("{id}")]
+        [HttpGet("GetById")]
+        [HttpGet("{id:int}")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(ApiResponse<PurchaseInvoice>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.PurchaseInvoices.View)]
-        public ApiResponse GetById(int InvoiceId)
+        public ApiResponse GetById(int? InvoiceId = null, int? id = null)
         {
+            var targetId = InvoiceId ?? id ?? 0;
             var factor = _context.purchaseInvoiceUW
-       .Query()
-       .Include(x => x.Items)
-           .ThenInclude(x => x.Product)
-       .Include(x => x.Supplier)
-       .Include(x => x.Warehouse)
-       .FirstOrDefault(x => x.Id == InvoiceId);
+                .Query()
+                .Include(x => x.Items)
+                    .ThenInclude(x => x.Product)
+                .Include(x => x.Supplier)
+                .Include(x => x.Warehouse)
+                .FirstOrDefault(x => x.Id == targetId);
 
             if (factor == null)
             {
@@ -205,7 +214,6 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.PurchaseInvoices.View)]
         public ApiResponse<IEnumerable<PurchaseInvoice>> GetBySupplierId(int supplierId)
         {
-            // ✅ فیلتر بر اساس تامین‌کننده (Supplier) به جای پروژه
             var factors = _context.purchaseInvoiceUW.Get(x => x.SupplierId == supplierId).ToList();
 
             if (factors == null || !factors.Any())
@@ -267,11 +275,52 @@ namespace HSCrm.WebApi.Controllers
                         StatusCode = ApiResultStatusCode.NotFound
                     };
 
-                if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
+                if (model.SupplierId <= 0)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "تأمین‌کننده معتبر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                if (model.WarehouseId <= 0)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "انبار معتبر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                if (!DateTime.TryParseExact(model.IssueDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var issueDate))
+                    issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
+
+                var tenant = _context.tenantUW?.GetById(tenantId.Value);
+                if (tenant?.DocumentLockDate != null && issueDate.Date <= tenant.DocumentLockDate.Value.Date)
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "ثبت فاکتور خرید در تاریخ‌های قفل‌شده امکان‌پذیر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                var numberingMode = tenant?.InvoiceNumberingMode ?? "Hybrid";
+                if (string.Equals(numberingMode, "Manual", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(model.InvoiceNumber))
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "در حالت شماره‌گذاری دستی، وارد کردن شماره فاکتور الزامی است.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+
+                if (string.Equals(numberingMode, "Auto", StringComparison.OrdinalIgnoreCase) && _invoiceNumberGenerator != null)
+                {
+                    model.InvoiceNumber = await _invoiceNumberGenerator.GenerateNextPurchaseInvoiceNumberAsync(tenantId.Value, fiscalYear, issueDate);
+                }
+                else if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
                 {
                     if (_invoiceNumberGenerator != null)
                     {
-                        model.InvoiceNumber = await _invoiceNumberGenerator.GenerateNextPurchaseInvoiceNumberAsync(tenantId.Value, fiscalYear);
+                        model.InvoiceNumber = await _invoiceNumberGenerator.GenerateNextPurchaseInvoiceNumberAsync(tenantId.Value, fiscalYear, issueDate);
                     }
                     else
                     {
@@ -294,30 +343,12 @@ namespace HSCrm.WebApi.Controllers
                         StatusCode = ApiResultStatusCode.Conflict
                     };
 
-                if (model.SupplierId <= 0)
-                    return new ApiResponse
-                    {
-                        Status = false,
-                        Message = "تأمین‌کننده معتبر نیست.",
-                        StatusCode = ApiResultStatusCode.BadRequest
-                    };
-
-                if (model.WarehouseId <= 0)
-                    return new ApiResponse
-                    {
-                        Status = false,
-                        Message = "انبار معتبر نیست.",
-                        StatusCode = ApiResultStatusCode.BadRequest
-                    };
-
-                if (!DateTime.TryParseExact(model.IssueDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var issueDate))
-                    issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
-
                 var subtotal = model.Items.Sum(x => (x.Quantity * x.UnitPrice) - x.Discount + x.Tax);
                 var total = subtotal - model.InvoiceDiscount + model.InvoiceTax;
 
                 var invoice = new PurchaseInvoice
                 {
+                    TenantId = tenantId.Value,
                     Number = resolvedInvoiceNumber,
                     SupplierId = model.SupplierId,
                     WarehouseId = model.WarehouseId,
@@ -435,7 +466,6 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse { Status = false, Message = "حداقل یک قلم کالا باید ثبت شود.", StatusCode = ApiResultStatusCode.BadRequest };
             }
 
-            // لود کردن فاکتور به همراه آیتم‌های فعلی
             var invoice = _context.purchaseInvoiceUW
                 .Get()
                 .Include(x => x.Items)
@@ -446,25 +476,28 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse { Status = false, Message = "فاکتور یافت نشد.", StatusCode = ApiResultStatusCode.NotFound };
             }
 
-            // گارد ویرایش فاکتور نهایی
             if (invoice.Status == InvoiceStatus.Final)
             {
                 return new ApiResponse { Status = false, Message = "فاکتور تایید نهایی شده و قابل ویرایش نیست.", StatusCode = ApiResultStatusCode.BadRequest };
+            }
+
+            var tenant = _context.tenantUW?.GetById(invoice.TenantId);
+            if (tenant?.DocumentLockDate != null && (model.IssueDate.Date <= tenant.DocumentLockDate.Value.Date || invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date))
+            {
+                return new ApiResponse { Status = false, Message = "ویرایش فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست.", StatusCode = ApiResultStatusCode.BadRequest };
             }
 
             using var tx = _context.BeginTransaction();
 
             try
             {
-                // 1. به‌روزرسانی هدر فاکتور
                 invoice.WarehouseId = model.WarehouseId;
                 invoice.SupplierId = model.SupplierId;
                 invoice.IssueDate = model.IssueDate;
-                invoice.Number = model.InvoiceNumber?.Trim();
+                invoice.Number = model.InvoiceNumber?.Trim() ?? invoice.Number;
                 invoice.Status = model.Status;
                 invoice.PurchaserUserId = User.GetUserId();
 
-                // 2. حذف کامل آیتم‌های قبلی از ChangeTracker و دیتابیس
                 if (invoice.Items != null && invoice.Items.Any())
                 {
                     _context.purchaseInvoiceDetailUW.RemoveRange(invoice.Items);
@@ -477,7 +510,6 @@ namespace HSCrm.WebApi.Controllers
 
                 decimal subtotal = 0m;
 
-                // 3. افزودن آیتم‌های جدید مستقیماً به Navigation Collection
                 foreach (var item in model.Items)
                 {
                     var lineDiscount = item.Discount;
@@ -501,17 +533,14 @@ namespace HSCrm.WebApi.Controllers
                     });
                 }
 
-                // انتساب مبالغ کل
                 invoice.Subtotal = subtotal;
                 invoice.Tax = model.InvoiceTax;
                 invoice.Discount = model.InvoiceDiscount;
                 invoice.Total = subtotal - invoice.Discount + invoice.Tax;
 
-                // 4. آپدیت هدر و ذخیره تغییرات
                 _context.purchaseInvoiceUW.Update(invoice);
                 await _context.SaveAsync();
 
-                // 5. اعمال در کاردکس انبار و صدور سند حسابداری در صورت تایید نهایی
                 if (invoice.Status == InvoiceStatus.Final)
                 {
                     await _inventory.ApplyInventoryForPurchaseInvoice(invoice);
@@ -589,6 +618,17 @@ namespace HSCrm.WebApi.Controllers
                         Status = false,
                         Message = "فاکتور یافت نشد.",
                         StatusCode = ApiResultStatusCode.NotFound
+                    };
+                }
+
+                var tenant = _context.tenantUW?.GetById(tenantId.Value);
+                if (tenant?.DocumentLockDate != null && invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "تأیید فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
                     };
                 }
 
@@ -722,6 +762,17 @@ namespace HSCrm.WebApi.Controllers
                     };
                 }
 
+                var tenant = _context.tenantUW?.GetById(tenantId.Value);
+                if (tenant?.DocumentLockDate != null && invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "ابطال فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
+                    };
+                }
+
                 if (invoice.Status == InvoiceStatus.Cancelled)
                 {
                     return new ApiResponse
@@ -842,6 +893,17 @@ namespace HSCrm.WebApi.Controllers
                         Status = false,
                         Message = "فاکتور خرید یافت نشد",
                         StatusCode = ApiResultStatusCode.NotFound
+                    };
+                }
+
+                var tenant = _context.tenantUW?.GetById(tenantId.Value);
+                if (tenant?.DocumentLockDate != null && invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date)
+                {
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        Message = "رد فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست.",
+                        StatusCode = ApiResultStatusCode.BadRequest
                     };
                 }
 

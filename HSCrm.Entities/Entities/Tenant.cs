@@ -1,3 +1,5 @@
+using static HSCrm.Common.PublicTools.Enums;
+
 namespace HSCrm.Entities.Entities
 {
     public class Tenant : AuditedEntity
@@ -17,5 +19,12 @@ namespace HSCrm.Entities.Entities
         public string PurchaseInvoicePattern { get; set; } = "PINV-{YEAR}-{SEQ:4}";
         public string SalesReturnPattern { get; set; } = "SRI-{YEAR}-{SEQ:4}";
         public string PurchaseReturnPattern { get; set; } = "PRI-{YEAR}-{SEQ:4}";
+
+        // تنظیمات جامع شرکت
+        public string InvoiceNumberingMode { get; set; } = "Hybrid"; // Auto, Manual, Hybrid
+        public decimal DefaultVatPercent { get; set; } = 0m;
+        public string? InvoiceFooterText { get; set; }
+        public InventoryCostingMethod DefaultCostingMethod { get; set; } = InventoryCostingMethod.WeightedAverage;
+        public DateTime? DocumentLockDate { get; set; }
     }
 }

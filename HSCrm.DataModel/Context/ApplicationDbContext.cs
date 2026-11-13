@@ -252,6 +252,7 @@ namespace HSCrm.DataModel.Context
                 e.ToTable("Tenants");
                 e.HasIndex(x => x.TenantTitle);
                 e.Property(x => x.Currency).HasMaxLength(10);
+                e.Property(x => x.InvoiceNumberingMode).HasMaxLength(20);
             });
 
             // ======================= Customer =======================

@@ -24,19 +24,58 @@ namespace HSCrm.WebApi.Controllers
         private readonly IAccountingService _accountingService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly ILogger<PurchaseReturnInvoiceController> _logger;
+        private readonly IInvoiceNumberGenerator? _invoiceNumberGenerator;
 
         public PurchaseReturnInvoiceController(
             IUnitOfWork context,
             IInventoryService inventory,
             IAccountingService accountingService,
             ICurrentFiscalYearService currentFiscalYearService,
-            ILogger<PurchaseReturnInvoiceController> logger)
+            ILogger<PurchaseReturnInvoiceController> logger,
+            IInvoiceNumberGenerator? invoiceNumberGenerator = null)
         {
             _context = context;
             _inventory = inventory;
             _accountingService = accountingService;
             _currentFiscalYearService = currentFiscalYearService;
             _logger = logger;
+            _invoiceNumberGenerator = invoiceNumberGenerator;
+        }
+
+        [HttpGet("GetNextInvoiceNumber")]
+        public async Task<ApiResponse<object>> GetNextInvoiceNumber([FromQuery] int? fiscalYearId = null)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue) return new ApiResponse<object>
+            {
+                Status = false,
+                StatusCode = ApiResultStatusCode.Unauthorized,
+                Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+            };
+
+            var fyId = fiscalYearId ?? _currentFiscalYearService?.FiscalYearId;
+            var tenant = _context.tenantUW?.GetById(tenantId.Value);
+            var mode = string.IsNullOrWhiteSpace(tenant?.InvoiceNumberingMode) ? "Hybrid" : tenant.InvoiceNumberingMode;
+
+            var nextNumber = string.Equals(mode, "Manual", StringComparison.OrdinalIgnoreCase)
+                ? string.Empty
+                : (_invoiceNumberGenerator != null
+                    ? await _invoiceNumberGenerator.GenerateNextPurchaseReturnNumberAsync(tenantId.Value, fyId)
+                    : $"PRI-{DateTime.UtcNow.Year}-0001");
+
+            return new ApiResponse<object>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new
+                {
+                    nextInvoiceNumber = nextNumber,
+                    pattern = tenant?.PurchaseReturnPattern ?? "PRI-{YEAR}-{SEQ:4}",
+                    numberingMode = mode,
+                    defaultVatPercent = tenant?.DefaultVatPercent ?? 0m
+                }
+            };
         }
 
         [HttpGet("GetPurchaseReturnInvoices")]
@@ -167,6 +206,17 @@ namespace HSCrm.WebApi.Controllers
                     Message = "فاکتور برگشت از خرید باید حداقل یک ردیف کالا داشته باشد."
                 });
 
+            var tenantId = User.GetTenantId() ?? (model.TenantId > 0 ? model.TenantId : (int?)null);
+            if (!tenantId.HasValue)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "شناسه شرکت معتبر نیست."
+                });
+            }
+
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
             if (fiscalYearId == null)
             {
@@ -177,6 +227,57 @@ namespace HSCrm.WebApi.Controllers
                     Message = "هیچ سال مالی فعالی برای سیستم تعریف نشده است."
                 });
             }
+
+            DateTime issueDate;
+            try
+            {
+                issueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate);
+            }
+            catch
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "تاریخ صدور معتبر نیست."
+                });
+            }
+
+            var tenant = _context.tenantUW?.GetById(tenantId.Value);
+            if (tenant?.DocumentLockDate != null && issueDate.Date <= tenant.DocumentLockDate.Value.Date)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "ثبت برگشت از خرید در تاریخ‌های قفل‌شده امکان‌پذیر نیست."
+                });
+            }
+
+            var numberingMode = tenant?.InvoiceNumberingMode ?? "Hybrid";
+            if (string.Equals(numberingMode, "Manual", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(model.InvoiceNumber))
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "در حالت شماره‌گذاری دستی، وارد کردن شماره فاکتور الزامی است."
+                });
+            }
+
+            if (string.Equals(numberingMode, "Auto", StringComparison.OrdinalIgnoreCase) && _invoiceNumberGenerator != null)
+            {
+                model.InvoiceNumber = await _invoiceNumberGenerator.GenerateNextPurchaseReturnNumberAsync(tenantId.Value, fiscalYearId, issueDate);
+            }
+            else if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
+            {
+                model.InvoiceNumber = _invoiceNumberGenerator != null
+                    ? await _invoiceNumberGenerator.GenerateNextPurchaseReturnNumberAsync(tenantId.Value, fiscalYearId, issueDate)
+                    : $"PRI-{issueDate:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpper()}";
+            }
+
+            var resolvedNumber = model.InvoiceNumber!.CleanName();
+            var purchaserUserId = !string.IsNullOrWhiteSpace(model.PurchaserUserId) ? model.PurchaserUserId : (User.GetUserId() ?? string.Empty);
 
             // اگر فاکتور خرید مرجع انتخاب شده، کنترل عدم برگشت بیش از تعداد خریداری‌شده
             if (model.PurchaseInvoiceId.HasValue && model.PurchaseInvoiceId.Value > 0)
@@ -232,18 +333,18 @@ namespace HSCrm.WebApi.Controllers
             {
                 var returnInvoice = new PurchaseReturnInvoice
                 {
-                    Number = model.InvoiceNumber.CleanName(),
+                    Number = resolvedNumber,
                     PurchaseInvoiceId = model.PurchaseInvoiceId,
                     SupplierId = model.SupplierId,
                     WarehouseId = model.WarehouseId,
-                    TenantId = model.TenantId,
+                    TenantId = tenantId.Value,
                     FiscalYearId = fiscalYearId.Value,
-                    IssueDate = ConvertDate.ConvertShamsiToMiladi(model.IssueDate),
-                    PurchaserUserId = model.PurchaserUserId,
+                    IssueDate = issueDate,
+                    PurchaserUserId = purchaserUserId,
                     Status = model.Status,
-                    CreatedById = model.PurchaserUserId,
+                    CreatedById = purchaserUserId,
                     CreatedAt = DateTime.UtcNow,
-                    Description = model.Description ?? $"فاکتور برگشت از خرید شماره {model.InvoiceNumber}",
+                    Description = model.Description ?? $"فاکتور برگشت از خرید شماره {resolvedNumber}",
                     Items = new List<PurchaseReturnInvoiceItem>()
                 };
 
@@ -267,8 +368,8 @@ namespace HSCrm.WebApi.Controllers
                         Discount = itemDto.Discount,
                         Tax = itemDto.Tax,
                         LineTotal = lineTotal,
-                        TenantId = model.TenantId,
-                        CreatedById = model.PurchaserUserId,
+                        TenantId = tenantId.Value,
+                        CreatedById = purchaserUserId,
                         CreatedAt = DateTime.UtcNow
                     });
 
@@ -287,11 +388,9 @@ namespace HSCrm.WebApi.Controllers
 
                 if (returnInvoice.Status == InvoiceStatus.Final)
                 {
-                    // ۱. خروج کالا از انبار و اصلاح میانگین موزون / لایه‌های FIFO
                     await _inventory.ApplyInventoryForPurchaseReturnAsync(returnInvoice, ct);
                     await _context.SaveAsync();
 
-                    // ۲. صدور خودکار سند حسابداری دوبل (کاهش بدهی تأمین‌کننده 2101 و کاهش موجودی انبار 1105)
                     await _accountingService.CreateVoucherForPurchaseReturnAsync(returnInvoice, ct);
                 }
 
@@ -330,6 +429,10 @@ namespace HSCrm.WebApi.Controllers
 
             if (returnInvoice == null)
                 return NotFound("فاکتور برگشت از خرید یافت نشد.");
+
+            var tenant = _context.tenantUW?.GetById(returnInvoice.TenantId);
+            if (tenant?.DocumentLockDate != null && returnInvoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date)
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "تأیید فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست." });
 
             if (returnInvoice.Status != InvoiceStatus.Proforma)
                 return BadRequest("فقط پیش‌فاکتور برگشتی قابل تأیید نهایی است.");
@@ -382,6 +485,10 @@ namespace HSCrm.WebApi.Controllers
 
             if (returnInvoice == null)
                 return NotFound("فاکتور برگشت از خرید یافت نشد.");
+
+            var tenant = _context.tenantUW?.GetById(returnInvoice.TenantId);
+            if (tenant?.DocumentLockDate != null && returnInvoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date)
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "ابطال فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست." });
 
             if (returnInvoice.Status == InvoiceStatus.Cancelled)
                 return BadRequest("این فاکتور برگشتی قبلاً باطل شده است.");

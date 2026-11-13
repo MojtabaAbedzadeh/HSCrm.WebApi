@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace HSCrm.Entities.Models
 {
@@ -9,6 +9,7 @@ namespace HSCrm.Entities.Models
         public required string UserNameC { get; set; }
         public required string PhoneNumberC { get; set; }
         public string? EmailC { get; set; }
+        public string? Password { get; set; }
         public string? UserImageUrlC { get; set; }       
         public bool UserGenderC { get; set; }
         public int TenantId { get; set; }

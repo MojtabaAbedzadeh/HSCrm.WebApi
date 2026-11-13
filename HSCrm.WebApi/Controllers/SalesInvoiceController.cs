@@ -55,11 +55,14 @@ namespace HSCrm.WebApi.Controllers
             };
 
             var fyId = fiscalYearId ?? _currentFiscalYearService?.FiscalYearId;
-            var nextNumber = _invoiceNumberGenerator != null
-                ? await _invoiceNumberGenerator.GenerateNextSalesInvoiceNumberAsync(tenantId.Value, fyId)
-                : $"INV-{DateTime.UtcNow.Year}-0001";
+            var tenant = _context.tenantUW?.GetById(tenantId.Value);
+            var mode = string.IsNullOrWhiteSpace(tenant?.InvoiceNumberingMode) ? "Hybrid" : tenant.InvoiceNumberingMode;
 
-            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            var nextNumber = string.Equals(mode, "Manual", StringComparison.OrdinalIgnoreCase)
+                ? string.Empty
+                : (_invoiceNumberGenerator != null
+                    ? await _invoiceNumberGenerator.GenerateNextSalesInvoiceNumberAsync(tenantId.Value, fyId)
+                    : $"INV-{DateTime.UtcNow.Year}-0001");
 
             return new ApiResponse<object>
             {
@@ -69,7 +72,16 @@ namespace HSCrm.WebApi.Controllers
                 Data = new
                 {
                     nextInvoiceNumber = nextNumber,
-                    pattern = tenant?.SalesInvoicePattern ?? "INV-{YEAR}-{SEQ:4}"
+                    pattern = tenant?.SalesInvoicePattern ?? "INV-{YEAR}-{SEQ:4}",
+                    numberingMode = mode,
+                    defaultVatPercent = tenant?.DefaultVatPercent ?? 0m,
+                    defaultCostingMethod = tenant?.DefaultCostingMethod ?? InventoryCostingMethod.WeightedAverage,
+                    invoiceFooterText = tenant?.InvoiceFooterText,
+                    companyTitle = tenant?.TenantTitle,
+                    logoUrl = tenant?.LogoUrl,
+                    companyPhone = tenant?.CompanyPhone,
+                    address = tenant?.Address,
+                    taxId = tenant?.TaxId
                 }
             };
         }
@@ -107,9 +119,21 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(typeof(SalesInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.SalesInvoices.View)]
-        public ApiResponse GetById(int invoiceId)
+        public ApiResponse GetById(int? invoiceId = null, int? id = null)
         {
-            var invoice = _context.salesInvoiceUW.GetById(invoiceId);
+            var targetId = invoiceId ?? id ?? 0;
+            var tenantId = User?.GetTenantId();
+
+            var invoice = _context.salesInvoiceUW
+                .Query()
+                .AsNoTracking()
+                .Include(x => x.Items)
+                    .ThenInclude(i => i.Product)
+                .Include(x => x.Project)
+                    .ThenInclude(p => p.Customer)
+                .Include(x => x.Warehouse)
+                .Include(x => x.Tenant)
+                .FirstOrDefault(x => x.Id == targetId && (!tenantId.HasValue || x.TenantId == tenantId.Value));
 
             if (invoice == null) return new ApiResponse<SalesInvoice>
             {
@@ -118,6 +142,14 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
                 Data = invoice
             };
+
+            if (invoice.Items != null)
+            {
+                foreach (var item in invoice.Items)
+                {
+                    item.SalesInvoice = null!;
+                }
+            }
 
             return new ApiResponse<SalesInvoice>
             {
@@ -130,7 +162,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPost("CreateSalesInvoice")]
         [Permission(Permissions.SalesInvoices.Create)]
-        public async Task<ApiResponse> CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model, [FromQuery] InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage)
+        public async Task<ApiResponse> CreateSalesInvoice([FromBody] SalesInvoiceCreateModel model, [FromQuery] InventoryCostingMethod? costingMethod = null)
         {
             if (model == null)
             {
@@ -160,6 +192,10 @@ namespace HSCrm.WebApi.Controllers
                 };
             }
 
+            var tenant = _context.tenantUW?.GetById(tenantId.Value);
+            var effectiveCostingMethod = costingMethod ?? tenant?.DefaultCostingMethod ?? InventoryCostingMethod.WeightedAverage;
+            var numberingMode = tenant?.InvoiceNumberingMode ?? "Hybrid";
+
             int fiscalYearId = _currentFiscalYearService?.FiscalYearId
                 ?? _context.fiscalYearUW?.Get(f => f.TenantId == tenantId.Value && f.IsCurrent && !f.IsClosed)
                                        .Select(f => (int?)f.Id)
@@ -179,7 +215,31 @@ namespace HSCrm.WebApi.Controllers
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
+            if (tenant?.DocumentLockDate != null && issueDate.Date <= tenant.DocumentLockDate.Value.Date)
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "ثبت فاکتور فروش در تاریخ‌های قفل‌شده امکان‌پذیر نیست."
+                };
+            }
+
+            if (string.Equals(numberingMode, "Manual", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(model.InvoiceNumber))
+            {
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "در حالت شماره‌گذاری دستی، وارد کردن شماره فاکتور الزامی است."
+                };
+            }
+
+            if (string.Equals(numberingMode, "Auto", StringComparison.OrdinalIgnoreCase) && _invoiceNumberGenerator != null)
+            {
+                model.InvoiceNumber = await _invoiceNumberGenerator.GenerateNextSalesInvoiceNumberAsync(tenantId.Value, fiscalYearId, issueDate);
+            }
+            else if (string.IsNullOrWhiteSpace(model.InvoiceNumber))
             {
                 if (_invoiceNumberGenerator != null)
                 {
@@ -271,8 +331,8 @@ namespace HSCrm.WebApi.Controllers
 
                 if (invoice.Status == InvoiceStatus.Final)
                 {
-                    _inventory.ApplyInventoryForSalesInvoice(invoice, costingMethod);
-                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice, costingMethod);
+                    _inventory.ApplyInventoryForSalesInvoice(invoice, effectiveCostingMethod);
+                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice, effectiveCostingMethod);
                     await _context.SaveAsync();
                 }
 
@@ -373,7 +433,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPut("UpdateInvoice")]
         [Permission(Permissions.SalesInvoices.Edit)]
-        public async Task<ApiResponse> Update([FromBody] SalesInvoiceEditModel model, [FromQuery] InventoryCostingMethod costingMethod = InventoryCostingMethod.WeightedAverage)
+        public async Task<ApiResponse> Update([FromBody] SalesInvoiceEditModel model, [FromQuery] InventoryCostingMethod? costingMethod = null)
         {
             using var tr = _context.BeginTransaction();
             try
@@ -389,6 +449,19 @@ namespace HSCrm.WebApi.Controllers
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
                 };
 
+                var tenant = _context.tenantUW?.GetById(invoice.TenantId);
+                if (tenant?.DocumentLockDate != null && (model.IssueDate.Date <= tenant.DocumentLockDate.Value.Date || invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date))
+                {
+                    tr.Rollback();
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.BadRequest,
+                        Message = "ویرایش فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست."
+                    };
+                }
+
+                var effectiveCostingMethod = costingMethod ?? tenant?.DefaultCostingMethod ?? InventoryCostingMethod.WeightedAverage;
                 var oldStatus = invoice.Status;
                 var newStatus = (InvoiceStatus)model.Status;
 
@@ -429,8 +502,8 @@ namespace HSCrm.WebApi.Controllers
 
                 if (newStatus == InvoiceStatus.Final)
                 {
-                    _inventory.ApplyInventoryForSalesInvoice(invoice, costingMethod);
-                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice, costingMethod);
+                    _inventory.ApplyInventoryForSalesInvoice(invoice, effectiveCostingMethod);
+                    await _accountingService.CreateVoucherForSalesInvoiceAsync(invoice, effectiveCostingMethod);
                     await _context.SaveAsync();
                 }
 
@@ -477,6 +550,10 @@ namespace HSCrm.WebApi.Controllers
 
                 if (invoice == null)
                     return NotFound("فاکتور یافت نشد");
+
+                var tenant = _context.tenantUW?.GetById(tenantId);
+                if (tenant?.DocumentLockDate != null && invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date)
+                    return BadRequest("تأیید فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست.");
 
                 if (invoice.Status == InvoiceStatus.Final)
                     return BadRequest("قبلاً تأیید شده");
