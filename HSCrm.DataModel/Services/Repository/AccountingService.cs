@@ -2436,16 +2436,21 @@ namespace HSCrm.DataModel.Services.Repository
             }
 
             // ۱. محاسبه مانده اول دوره (قبل از fromDate)
+            var baseAccountCode = partyType == AccountingPartyType.Customer ? ACC_RECEIVABLE : ACC_PAYABLE;
             decimal openingBalance = 0m;
+            decimal baseOpeningBalance = 0m;
             if (fromDate.HasValue)
             {
                 var startDay = fromDate.Value.Date;
                 var priorItems = await baseQuery
                     .Where(x => x.JournalVoucher.VoucherDate < startDay)
-                    .Select(x => new { x.Debit, x.Credit })
+                    .Select(x => new { x.Debit, x.Credit, Code = x.Account.Code })
                     .ToListAsync(ct);
 
                 openingBalance = priorItems.Sum(x => x.Debit - x.Credit);
+                baseOpeningBalance = priorItems
+                    .Where(x => x.Code == baseAccountCode)
+                    .Sum(x => x.Debit - x.Credit);
             }
 
             // ۲. واکشی آرتیکل‌های دوره
@@ -2535,21 +2540,28 @@ namespace HSCrm.DataModel.Services.Repository
                     .Sum(x => x.Debit);
             }
 
-            // ۴. بررسی چک‌های در جریان و برگشتی این طرف‌حساب
+            // ۴. بررسی چک‌ها و فاکتورهای تفکیکی این طرف‌حساب (مشتری یا تأمین‌کننده)
             var chequesQuery = _context.Cheques
                 .AsNoTracking()
+                .Include(c => c.Project)
                 .Where(c => c.TenantId == tenantId && !c.IsDeleted);
 
             if (partyType == AccountingPartyType.Customer)
             {
-                chequesQuery = chequesQuery.Where(c => c.CustomerId == partyId && c.Type == ChequeType.Receivable);
+                chequesQuery = chequesQuery.Where(c =>
+                    c.Type == ChequeType.Receivable &&
+                    (c.CustomerId == partyId || (c.Project != null && c.Project.CustomerId == partyId)));
             }
             else
             {
                 chequesQuery = chequesQuery.Where(c => c.SupplierId == partyId && c.Type == ChequeType.Payable);
             }
 
-            var partyCheques = await chequesQuery.ToListAsync(ct);
+            var partyCheques = await chequesQuery
+                .OrderBy(c => c.DueDate)
+                .ThenByDescending(c => c.Id)
+                .ToListAsync(ct);
+
             var pendingCheques = partyCheques
                 .Where(c => c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.InBankForCollection)
                 .ToList();
@@ -2560,9 +2572,200 @@ namespace HSCrm.DataModel.Services.Repository
 
             var pendingChequesAmount = pendingCheques.Sum(c => c.Amount);
 
+            var invoiceDtos = new List<PartyInvoiceSummaryDto>();
+            var chequeNumberLookup = new Dictionary<int, string>();
+            var purchaseNumberLookup = new Dictionary<int, string>();
+
+            if (partyType == AccountingPartyType.Customer)
+            {
+                var custInvoices = await _context.SalesInvoices
+                    .AsNoTracking()
+                    .Include(x => x.Project)
+                    .Where(x => x.TenantId == tenantId
+                             && !x.IsDeleted
+                             && (!fiscalYearId.HasValue || x.FiscalYearId == fiscalYearId.Value)
+                             && x.Project != null
+                             && x.Project.CustomerId == partyId)
+                    .OrderByDescending(x => x.IssueDate)
+                    .ThenByDescending(x => x.Id)
+                    .ToListAsync(ct);
+
+                var invIds = custInvoices.Select(x => x.Id).ToList();
+                foreach (var inv in custInvoices)
+                    chequeNumberLookup[inv.Id] = inv.Number;
+
+                var invReceipts = invIds.Count > 0
+                    ? await _context.Receipts
+                        .AsNoTracking()
+                        .Where(r => r.TenantId == tenantId && !r.IsDeleted && r.SalesInvoiceId.HasValue && invIds.Contains(r.SalesInvoiceId.Value))
+                        .ToListAsync(ct)
+                    : new List<Receipt>();
+
+                foreach (var inv in custInvoices)
+                {
+                    var cashPaid = invReceipts.Where(r => r.SalesInvoiceId == inv.Id).Sum(r => r.Amount);
+                    var linkedCheques = partyCheques
+                        .Where(c => c.SalesInvoiceId == inv.Id)
+                        .Select(c => new PartyChequeSummaryDto
+                        {
+                            ChequeId = c.Id,
+                            ChequeNumber = c.ChequeNumber,
+                            SayadiId = c.SayadiId,
+                            Amount = c.Amount,
+                            BankName = c.BankName,
+                            BranchName = c.BranchName,
+                            IssueDateShamsi = ConvertDate.ConvertMiladiToShamsi(c.IssueDate, "yyyy/MM/dd"),
+                            DueDateShamsi = ConvertDate.ConvertMiladiToShamsi(c.DueDate, "yyyy/MM/dd"),
+                            Status = c.Status,
+                            StatusTitle = c.Status.DisplayNameAttribute(),
+                            SalesInvoiceId = c.SalesInvoiceId,
+                            SalesInvoiceNumber = inv.Number,
+                            Description = c.Description
+                        })
+                        .ToList();
+
+                    var inProgChq = linkedCheques.Where(c => c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.InBankForCollection).Sum(c => c.Amount);
+                    var clearedChq = linkedCheques.Where(c => c.Status == ChequeStatus.Cleared || c.Status == ChequeStatus.EndorsedToSupplier).Sum(c => c.Amount);
+                    var bouncedChq = linkedCheques.Where(c => c.Status == ChequeStatus.Bounced || c.Status == ChequeStatus.Returned).Sum(c => c.Amount);
+                    var paidAmt = cashPaid + inProgChq + clearedChq;
+                    var remainingAmt = Math.Max(0m, inv.Total - paidAmt);
+                    var settStatus = inv.Status == InvoiceStatus.Proforma
+                        ? SettlementStatus.Unpaid
+                        : remainingAmt <= 0
+                            ? SettlementStatus.Paid
+                            : paidAmt > 0
+                                ? SettlementStatus.Partial
+                                : SettlementStatus.Unpaid;
+
+                    invoiceDtos.Add(new PartyInvoiceSummaryDto
+                    {
+                        InvoiceId = inv.Id,
+                        InvoiceNumber = inv.Number,
+                        IssueDateShamsi = ConvertDate.ConvertMiladiToShamsi(inv.IssueDate, "yyyy/MM/dd"),
+                        ProjectTitle = inv.Project?.ProjectTitle,
+                        Status = inv.Status,
+                        StatusTitle = inv.Status == InvoiceStatus.Final ? "فاکتور نهایی" : "پیش‌فاکتور",
+                        TotalAmount = inv.Total,
+                        CashPaidAmount = cashPaid,
+                        InProgressChequesAmount = inProgChq,
+                        ClearedChequesAmount = clearedChq,
+                        BouncedChequesAmount = bouncedChq,
+                        PaidAmount = paidAmt,
+                        RemainingAmount = remainingAmt,
+                        SettlementStatus = settStatus,
+                        SettlementStatusTitle = settStatus == SettlementStatus.Paid ? "تسویه کامل" : settStatus == SettlementStatus.Partial ? "تسویه جزئی" : "پرداخت‌نشده",
+                        Cheques = linkedCheques
+                    });
+                }
+            }
+            else
+            {
+                var suppInvoices = await _context.PurchaseInvoices
+                    .AsNoTracking()
+                    .Where(x => x.TenantId == tenantId
+                             && !x.IsDeleted
+                             && (!fiscalYearId.HasValue || x.FiscalYearId == fiscalYearId.Value)
+                             && x.SupplierId == partyId)
+                    .OrderByDescending(x => x.IssueDate)
+                    .ThenByDescending(x => x.Id)
+                    .ToListAsync(ct);
+
+                var invIds = suppInvoices.Select(x => x.Id).ToList();
+                foreach (var inv in suppInvoices)
+                    purchaseNumberLookup[inv.Id] = inv.Number;
+
+                var invPayments = invIds.Count > 0
+                    ? await _context.Payments
+                        .AsNoTracking()
+                        .Where(p => p.TenantId == tenantId && !p.IsDeleted && p.PurchaseInvoiceId.HasValue && invIds.Contains(p.PurchaseInvoiceId.Value))
+                        .ToListAsync(ct)
+                    : new List<Payment>();
+
+                foreach (var inv in suppInvoices)
+                {
+                    var cashPaid = invPayments.Where(p => p.PurchaseInvoiceId == inv.Id).Sum(p => p.Amount);
+                    var linkedCheques = partyCheques
+                        .Where(c => c.PurchaseInvoiceId == inv.Id)
+                        .Select(c => new PartyChequeSummaryDto
+                        {
+                            ChequeId = c.Id,
+                            ChequeNumber = c.ChequeNumber,
+                            SayadiId = c.SayadiId,
+                            Amount = c.Amount,
+                            BankName = c.BankName,
+                            BranchName = c.BranchName,
+                            IssueDateShamsi = ConvertDate.ConvertMiladiToShamsi(c.IssueDate, "yyyy/MM/dd"),
+                            DueDateShamsi = ConvertDate.ConvertMiladiToShamsi(c.DueDate, "yyyy/MM/dd"),
+                            Status = c.Status,
+                            StatusTitle = c.Status.DisplayNameAttribute(),
+                            PurchaseInvoiceId = c.PurchaseInvoiceId,
+                            PurchaseInvoiceNumber = inv.Number,
+                            Description = c.Description
+                        })
+                        .ToList();
+
+                    var inProgChq = linkedCheques.Where(c => c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.InBankForCollection).Sum(c => c.Amount);
+                    var clearedChq = linkedCheques.Where(c => c.Status == ChequeStatus.Cleared).Sum(c => c.Amount);
+                    var bouncedChq = linkedCheques.Where(c => c.Status == ChequeStatus.Bounced || c.Status == ChequeStatus.Returned).Sum(c => c.Amount);
+                    var paidAmt = cashPaid + inProgChq + clearedChq;
+                    var remainingAmt = Math.Max(0m, inv.Total - paidAmt);
+                    var settStatus = inv.Status == InvoiceStatus.Proforma
+                        ? SettlementStatus.Unpaid
+                        : remainingAmt <= 0
+                            ? SettlementStatus.Paid
+                            : paidAmt > 0
+                                ? SettlementStatus.Partial
+                                : SettlementStatus.Unpaid;
+
+                    invoiceDtos.Add(new PartyInvoiceSummaryDto
+                    {
+                        InvoiceId = inv.Id,
+                        InvoiceNumber = inv.Number,
+                        IssueDateShamsi = ConvertDate.ConvertMiladiToShamsi(inv.IssueDate, "yyyy/MM/dd"),
+                        Status = inv.Status,
+                        StatusTitle = inv.Status == InvoiceStatus.Final ? "فاکتور نهایی" : "پیش‌فاکتور",
+                        TotalAmount = inv.Total,
+                        CashPaidAmount = cashPaid,
+                        InProgressChequesAmount = inProgChq,
+                        ClearedChequesAmount = clearedChq,
+                        BouncedChequesAmount = bouncedChq,
+                        PaidAmount = paidAmt,
+                        RemainingAmount = remainingAmt,
+                        SettlementStatus = settStatus,
+                        SettlementStatusTitle = settStatus == SettlementStatus.Paid ? "تسویه کامل" : settStatus == SettlementStatus.Partial ? "تسویه جزئی" : "پرداخت‌نشده",
+                        Cheques = linkedCheques
+                    });
+                }
+            }
+
+            var chequeDtos = partyCheques.Select(c => new PartyChequeSummaryDto
+            {
+                ChequeId = c.Id,
+                ChequeNumber = c.ChequeNumber,
+                SayadiId = c.SayadiId,
+                Amount = c.Amount,
+                BankName = c.BankName,
+                BranchName = c.BranchName,
+                IssueDateShamsi = ConvertDate.ConvertMiladiToShamsi(c.IssueDate, "yyyy/MM/dd"),
+                DueDateShamsi = ConvertDate.ConvertMiladiToShamsi(c.DueDate, "yyyy/MM/dd"),
+                Status = c.Status,
+                StatusTitle = c.Status.DisplayNameAttribute(),
+                SalesInvoiceId = c.SalesInvoiceId,
+                SalesInvoiceNumber = c.SalesInvoiceId.HasValue && chequeNumberLookup.TryGetValue(c.SalesInvoiceId.Value, out var sNum) ? sNum : null,
+                PurchaseInvoiceId = c.PurchaseInvoiceId,
+                PurchaseInvoiceNumber = c.PurchaseInvoiceId.HasValue && purchaseNumberLookup.TryGetValue(c.PurchaseInvoiceId.Value, out var pNum) ? pNum : null,
+                ExpenseId = c.ExpenseId,
+                Description = c.Description
+            }).ToList();
+
+            var basePeriodNet = periodItems
+                .Where(x => x.Account.Code == baseAccountCode)
+                .Sum(x => x.Debit - x.Credit);
+            var baseRunning = baseOpeningBalance + basePeriodNet;
+
             decimal effectiveExposure = partyType == AccountingPartyType.Customer
-                ? (running > 0 ? running : 0m) + pendingChequesAmount
-                : (running < 0 ? Math.Abs(running) : 0m) + pendingChequesAmount;
+                ? Math.Max(0m, baseRunning + pendingChequesAmount)
+                : Math.Max(0m, (-baseRunning) + pendingChequesAmount);
 
             return new PartyStatementReportDto
             {
@@ -2585,22 +2788,34 @@ namespace HSCrm.DataModel.Services.Repository
                 TotalPeriodCredit = periodItems.Sum(x => x.Credit),
                 FinalBookBalance = running,
                 EffectiveExposureAmount = effectiveExposure,
-                Transactions = lines
+                Transactions = lines,
+                Invoices = invoiceDtos,
+                Cheques = chequeDtos
             };
         }
 
         /// <summary>
         /// گزارش تحلیل سنی مطالبات مشتریان (Receivables Aging) و بدهی به تأمین‌کنندگان (Payables Aging) به روش FIFO در ۵ بازه سنی
         /// </summary>
-        public async Task<AgingReportSummaryDto> GetAgingReportAsync(
+        public Task<AgingReportSummaryDto> GetAgingReportAsync(
             AccountingPartyType partyType = AccountingPartyType.Customer,
             DateTime? asOfDate = null,
+            CancellationToken ct = default)
+        {
+            return GetAgingReportAsync(partyType, asOfDate, false, ct);
+        }
+
+        public async Task<AgingReportSummaryDto> GetAgingReportAsync(
+            AccountingPartyType partyType,
+            DateTime? asOfDate,
+            bool includeChequeAccounts,
             CancellationToken ct = default)
         {
             var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
             await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
 
             var baseDate = (asOfDate ?? DateTime.UtcNow).Date;
+            var cutoffEnd = baseDate.AddDays(1).AddTicks(-1);
             var targetAccountCode = partyType == AccountingPartyType.Customer ? ACC_RECEIVABLE : ACC_PAYABLE;
 
             var fiscalYearId = _currentFiscalYear.FiscalYearId;
@@ -2619,13 +2834,17 @@ namespace HSCrm.DataModel.Services.Repository
                          && !x.JournalVoucher.IsDeleted
                          && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value)
                          && x.Account.Code == targetAccountCode
-                         && x.JournalVoucher.VoucherDate <= baseDate.AddDays(1).AddTicks(-1))
+                         && (!asOfDate.HasValue || x.JournalVoucher.VoucherDate <= cutoffEnd))
                 .OrderBy(x => x.JournalVoucher.VoucherDate)
                 .ThenBy(x => x.JournalVoucher.VoucherNumber)
                 .ToListAsync(ct);
 
             var pendingChequesByParty = await _context.Cheques
                 .AsNoTracking()
+                .Include(c => c.Customer)
+                .Include(c => c.Supplier)
+                .Include(c => c.Project)
+                .ThenInclude(p => p!.Customer)
                 .Where(c => c.TenantId == tenantId
                          && !c.IsDeleted
                          && (c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.InBankForCollection))
@@ -2644,21 +2863,29 @@ namespace HSCrm.DataModel.Services.Repository
                         EffectiveCustomerPhone = x.Customer?.Phone ?? x.Project?.Customer?.Phone
                     })
                     .Where(x => x.EffectiveCustomerId.HasValue)
-                    .GroupBy(x => new
-                    {
-                        CustomerId = x.EffectiveCustomerId!.Value,
-                        CustomerName = x.EffectiveCustomerName ?? $"مشتری #{x.EffectiveCustomerId}",
-                        CustomerPhone = x.EffectiveCustomerPhone
-                    });
+                    .GroupBy(x => x.EffectiveCustomerId!.Value);
+
+                var includedCustomerIds = new HashSet<int>();
 
                 foreach (var group in groupedByCustomer)
                 {
+                    var customerId = group.Key;
+                    var customerName = group.Select(g => g.EffectiveCustomerName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? $"مشتری #{customerId}";
+                    var customerPhone = group.Select(g => g.EffectiveCustomerPhone).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+
                     var totalDebit = group.Sum(g => g.Item.Debit);
                     var totalCredit = group.Sum(g => g.Item.Credit);
                     var netReceivable = totalDebit - totalCredit;
 
-                    // فقط مشتریانی که مانده بدهکار باز دارند در گزارش سنی مطالبات می‌آیند
-                    if (netReceivable <= 0) continue;
+                    var pendingChq = pendingChequesByParty
+                        .Where(c => c.Type == ChequeType.Receivable && (c.CustomerId ?? c.Project?.CustomerId) == customerId)
+                        .Sum(c => c.Amount);
+
+                    if (netReceivable <= 0 && (!includeChequeAccounts || pendingChq <= 0))
+                        continue;
+
+                    includedCustomerIds.Add(customerId);
+                    var openBalance = Math.Max(0m, netReceivable);
 
                     // تخصیص FIFO: کسر کل پرداخت‌ها/بستانکاری‌ها از قدیمی‌ترین بدهکاری‌ها
                     decimal remainingCreditsToApply = totalCredit;
@@ -2702,25 +2929,24 @@ namespace HSCrm.DataModel.Services.Repository
                         else bOver180 += charge.OpenAmount;
                     }
 
-                    var avgAge = netReceivable > 0 ? Math.Round(weightedAgeSum / netReceivable, 1) : 0m;
-                    var pendingChq = pendingChequesByParty
-                        .Where(c => c.Type == ChequeType.Receivable && c.CustomerId == group.Key.CustomerId)
-                        .Sum(c => c.Amount);
+                    var avgAge = openBalance > 0 ? Math.Round(weightedAgeSum / openBalance, 1) : 0m;
 
-                    string riskStatus = bOver180 > 0
-                        ? "پرریسک / مشکوک‌الوصول (+۱۸۰ روز)"
-                        : b91_180 > 0
-                            ? "معوق (۹۱ تا ۱۸۰ روز)"
-                            : (b31_60 > 0 || b61_90 > 0)
-                                ? "نیاز به پیگیری (۳۱ تا ۹۰ روز)"
-                                : "خوش‌حساب (جاری ۰ تا ۳۰ روز)";
+                    string riskStatus = openBalance <= 0 && pendingChq > 0
+                        ? "چک در جریان وصول"
+                        : bOver180 > 0
+                            ? "پرریسک / مشکوک‌الوصول (+۱۸۰ روز)"
+                            : b91_180 > 0
+                                ? "معوق (۹۱ تا ۱۸۰ روز)"
+                                : (b31_60 > 0 || b61_90 > 0)
+                                    ? "نیاز به پیگیری (۳۱ تا ۹۰ روز)"
+                                    : "خوش‌حساب (جاری ۰ تا ۳۰ روز)";
 
                     rows.Add(new PartyAgingRowDto
                     {
-                        PartyId = group.Key.CustomerId,
-                        PartyName = group.Key.CustomerName,
-                        Phone = group.Key.CustomerPhone,
-                        TotalOpenBalance = netReceivable,
+                        PartyId = customerId,
+                        PartyName = customerName,
+                        Phone = customerPhone,
+                        TotalOpenBalance = openBalance,
                         Bucket0To30 = b0_30,
                         Bucket31To60 = b31_60,
                         Bucket61To90 = b61_90,
@@ -2735,26 +2961,66 @@ namespace HSCrm.DataModel.Services.Repository
                         CreditRiskStatus = riskStatus
                     });
                 }
+
+                if (includeChequeAccounts)
+                {
+                    var chequeOnlyGroups = pendingChequesByParty
+                        .Where(c => c.Type == ChequeType.Receivable)
+                        .Select(c => new
+                        {
+                            Cheque = c,
+                            CustomerId = c.CustomerId ?? c.Project?.CustomerId,
+                            CustomerName = c.Customer?.Name ?? c.Project?.Customer?.Name,
+                            CustomerPhone = c.Customer?.Phone ?? c.Project?.Customer?.Phone
+                        })
+                        .Where(x => x.CustomerId.HasValue && !includedCustomerIds.Contains(x.CustomerId.Value))
+                        .GroupBy(x => x.CustomerId!.Value);
+
+                    foreach (var cg in chequeOnlyGroups)
+                    {
+                        var pendingChq = cg.Sum(x => x.Cheque.Amount);
+                        if (pendingChq <= 0) continue;
+                        var first = cg.First();
+                        rows.Add(new PartyAgingRowDto
+                        {
+                            PartyId = cg.Key,
+                            PartyName = first.CustomerName ?? $"مشتری #{cg.Key}",
+                            Phone = first.CustomerPhone,
+                            TotalOpenBalance = 0m,
+                            PendingChequesAmount = pendingChq,
+                            CreditRiskStatus = "چک در جریان وصول"
+                        });
+                    }
+                }
             }
             else
             {
                 // تحلیل سنی بدهی به تأمین‌کنندگان (حساب 2101)
                 var groupedBySupplier = items
                     .Where(x => x.SupplierId.HasValue)
-                    .GroupBy(x => new
-                    {
-                        SupplierId = x.SupplierId!.Value,
-                        SupplierName = x.Supplier?.SupplierFullName ?? $"تأمین‌کننده #{x.SupplierId}",
-                        SupplierPhone = x.Supplier?.SupplierPhone
-                    });
+                    .GroupBy(x => x.SupplierId!.Value);
+
+                var includedSupplierIds = new HashSet<int>();
 
                 foreach (var group in groupedBySupplier)
                 {
+                    var supplierId = group.Key;
+                    var supplierName = group.Select(g => g.Supplier?.SupplierFullName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? $"تأمین‌کننده #{supplierId}";
+                    var supplierPhone = group.Select(g => g.Supplier?.SupplierPhone).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+
                     var totalCredit = group.Sum(g => g.Credit);
                     var totalDebit = group.Sum(g => g.Debit);
                     var netPayable = totalCredit - totalDebit;
 
-                    if (netPayable <= 0) continue;
+                    var pendingChq = pendingChequesByParty
+                        .Where(c => c.Type == ChequeType.Payable && c.SupplierId == supplierId)
+                        .Sum(c => c.Amount);
+
+                    if (netPayable <= 0 && (!includeChequeAccounts || pendingChq <= 0))
+                        continue;
+
+                    includedSupplierIds.Add(supplierId);
+                    var openPayableBalance = Math.Max(0m, netPayable);
 
                     decimal remainingDebitsToApply = totalDebit;
                     var openPayables = new List<(DateTime Date, decimal OpenAmount)>();
@@ -2797,25 +3063,24 @@ namespace HSCrm.DataModel.Services.Repository
                         else bOver180 += payable.OpenAmount;
                     }
 
-                    var avgAge = netPayable > 0 ? Math.Round(weightedAgeSum / netPayable, 1) : 0m;
-                    var pendingChq = pendingChequesByParty
-                        .Where(c => c.Type == ChequeType.Payable && c.SupplierId == group.Key.SupplierId)
-                        .Sum(c => c.Amount);
+                    var avgAge = openPayableBalance > 0 ? Math.Round(weightedAgeSum / openPayableBalance, 1) : 0m;
 
-                    string riskStatus = bOver180 > 0
-                        ? "بدهی دیرکرد بیش از ۱۸۰ روز"
-                        : b91_180 > 0
-                            ? "بدهی معوق (۹۱ تا ۱۸۰ روز)"
-                            : (b31_60 > 0 || b61_90 > 0)
-                                ? "سررسید میان‌مدت (۳۱ تا ۹۰ روز)"
-                                : "بدهی جاری (۰ تا ۳۰ روز)";
+                    string riskStatus = openPayableBalance <= 0 && pendingChq > 0
+                        ? "چک پرداختنی در جریان"
+                        : bOver180 > 0
+                            ? "بدهی دیرکرد بیش از ۱۸۰ روز"
+                            : b91_180 > 0
+                                ? "بدهی معوق (۹۱ تا ۱۸۰ روز)"
+                                : (b31_60 > 0 || b61_90 > 0)
+                                    ? "سررسید میان‌مدت (۳۱ تا ۹۰ روز)"
+                                    : "بدهی جاری (۰ تا ۳۰ روز)";
 
                     rows.Add(new PartyAgingRowDto
                     {
-                        PartyId = group.Key.SupplierId,
-                        PartyName = group.Key.SupplierName,
-                        Phone = group.Key.SupplierPhone,
-                        TotalOpenBalance = netPayable,
+                        PartyId = supplierId,
+                        PartyName = supplierName,
+                        Phone = supplierPhone,
+                        TotalOpenBalance = openPayableBalance,
                         Bucket0To30 = b0_30,
                         Bucket31To60 = b31_60,
                         Bucket61To90 = b61_90,
@@ -2830,9 +3095,32 @@ namespace HSCrm.DataModel.Services.Repository
                         CreditRiskStatus = riskStatus
                     });
                 }
+
+                if (includeChequeAccounts)
+                {
+                    var suppChequeOnlyGroups = pendingChequesByParty
+                        .Where(c => c.Type == ChequeType.Payable && c.SupplierId.HasValue && !includedSupplierIds.Contains(c.SupplierId.Value))
+                        .GroupBy(c => c.SupplierId!.Value);
+
+                    foreach (var cg in suppChequeOnlyGroups)
+                    {
+                        var pendingChq = cg.Sum(c => c.Amount);
+                        if (pendingChq <= 0) continue;
+                        var first = cg.First();
+                        rows.Add(new PartyAgingRowDto
+                        {
+                            PartyId = cg.Key,
+                            PartyName = first.Supplier?.SupplierFullName ?? $"تأمین‌کننده #{cg.Key}",
+                            Phone = first.Supplier?.SupplierPhone,
+                            TotalOpenBalance = 0m,
+                            PendingChequesAmount = pendingChq,
+                            CreditRiskStatus = "چک پرداختنی در جریان"
+                        });
+                    }
+                }
             }
 
-            rows = rows.OrderByDescending(r => r.TotalOpenBalance).ToList();
+            rows = rows.OrderByDescending(r => r.TotalOpenBalance + r.PendingChequesAmount).ToList();
 
             return new AgingReportSummaryDto
             {
@@ -2849,6 +3137,97 @@ namespace HSCrm.DataModel.Services.Repository
                 TotalBucketOver180 = rows.Sum(r => r.BucketOver180),
                 Rows = rows
             };
+        }
+
+        public async Task<List<CustomerBalanceSummaryDto>> GetCustomerBalancesSummaryAsync(CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
+
+            var customers = await _context.Customers
+                .AsNoTracking()
+                .Where(c => c.TenantId == tenantId && !c.IsDeleted)
+                .OrderBy(c => c.Name)
+                .ToListAsync(ct);
+
+            var arItems = await _context.JournalVoucherItems
+                .AsNoTracking()
+                .Include(x => x.Account)
+                .Include(x => x.Project)
+                .Include(x => x.JournalVoucher)
+                .Where(x => x.TenantId == tenantId
+                         && !x.IsDeleted
+                         && x.JournalVoucher.Status == JournalVoucherStatus.Posted
+                         && x.JournalVoucher.ReferenceType != AccountingReferenceType.ClosingBalance
+                         && !x.JournalVoucher.IsDeleted
+                         && (!fiscalYearId.HasValue || x.JournalVoucher.FiscalYearId == fiscalYearId.Value)
+                         && x.Account.Code == ACC_RECEIVABLE)
+                .ToListAsync(ct);
+
+            var salesInvoices = await _context.SalesInvoices
+                .AsNoTracking()
+                .Include(s => s.Project)
+                .Where(s => s.TenantId == tenantId
+                         && !s.IsDeleted
+                         && s.Status == InvoiceStatus.Final
+                         && (!fiscalYearId.HasValue || s.FiscalYearId == fiscalYearId.Value))
+                .ToListAsync(ct);
+
+            var receipts = await _context.Receipts
+                .AsNoTracking()
+                .Include(r => r.SalesInvoice)
+                .ThenInclude(si => si!.Project)
+                .Where(r => r.TenantId == tenantId
+                         && !r.IsDeleted
+                         && (!fiscalYearId.HasValue || r.FiscalYearId == fiscalYearId.Value))
+                .ToListAsync(ct);
+
+            var cheques = await _context.Cheques
+                .AsNoTracking()
+                .Include(c => c.Project)
+                .Where(c => c.TenantId == tenantId
+                         && !c.IsDeleted
+                         && c.Type == ChequeType.Receivable)
+                .ToListAsync(ct);
+
+            var arByCustomer = arItems
+                .Where(x => (x.CustomerId ?? x.Project?.CustomerId).HasValue)
+                .GroupBy(x => (x.CustomerId ?? x.Project?.CustomerId)!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+
+            var result = customers.Select(c =>
+            {
+                var custInvoices = salesInvoices.Where(s => s.Project?.CustomerId == c.Id).ToList();
+                var custReceipts = receipts.Where(r => (r.CustomerId ?? r.SalesInvoice?.Project?.CustomerId) == c.Id).ToList();
+                var custCheques = cheques.Where(ch => (ch.CustomerId ?? ch.Project?.CustomerId) == c.Id).ToList();
+
+                var openBal = arByCustomer.TryGetValue(c.Id, out var bal) ? bal : 0m;
+                var pendingChq = custCheques
+                    .Where(ch => ch.Status == ChequeStatus.InSafe || ch.Status == ChequeStatus.InBankForCollection)
+                    .Sum(ch => ch.Amount);
+                var clearedChq = custCheques
+                    .Where(ch => ch.Status == ChequeStatus.Cleared || ch.Status == ChequeStatus.EndorsedToSupplier)
+                    .Sum(ch => ch.Amount);
+
+                return new CustomerBalanceSummaryDto
+                {
+                    CustomerId = c.Id,
+                    CustomerName = c.Name,
+                    Phone = c.Phone,
+                    FinalInvoicesCount = custInvoices.Count,
+                    TotalInvoicesAmount = custInvoices.Sum(i => i.Total),
+                    TotalCashPaidAmount = custReceipts.Sum(r => r.Amount),
+                    PendingChequesAmount = pendingChq,
+                    ClearedChequesAmount = clearedChq,
+                    OpenReceivableBalance = openBal,
+                    EffectiveExposureAmount = Math.Max(0m, openBal + pendingChq)
+                };
+            })
+            .OrderByDescending(x => x.EffectiveExposureAmount)
+            .ThenByDescending(x => x.TotalInvoicesAmount)
+            .ToList();
+
+            return result;
         }
     }
 }

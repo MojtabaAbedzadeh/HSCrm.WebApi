@@ -1,4 +1,4 @@
-﻿using static HSCrm.Common.PublicTools.Enums;
+using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Entities.Models.Dto
 {
@@ -11,6 +11,10 @@ namespace HSCrm.Entities.Models.Dto
         public decimal TotalAmount { get; set; }
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount { get; set; }
+        public decimal CashPaidAmount { get; set; }
+        public decimal PendingChequesAmount { get; set; }
+        public decimal ClearedChequesAmount { get; set; }
+        public decimal BouncedChequesAmount { get; set; }
         public SettlementStatus SettlementStatus { get; set; }
 
         public List<PaymentItemDto> Payments { get; set; } = new();

@@ -28,7 +28,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Projects.View)]
         public ApiResponse<IEnumerable<Project>> Get()
         {
-            var projects = _context.projectUW.Get(includes: p => p.Customer).ToList();
+            var projects = _context.projectUW.Get(includes: p => p.Customer).OrderByDescending(x => x.Id).ToList();
 
             return new ApiResponse<IEnumerable<Project>>
             {

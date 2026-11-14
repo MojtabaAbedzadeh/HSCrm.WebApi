@@ -850,5 +850,266 @@ namespace HSCrm.UnitTests
             Assert.Equal(10_000_000m, summary.RemainingAmount);
             Assert.Equal(SettlementStatus.Partial, summary.SettlementStatus);
         }
+
+        [Fact(DisplayName = "14. گزارش سنی و مانده مشتریان: دو مشتری دارای مانده یا چک در جریان هر دو نمایش داده می‌شوند")]
+        public async Task GetAgingReport_MultipleCustomersIncludingPendingChequeAndLiveDate_ReturnsBothCustomers()
+        {
+            var env = CreateEnvironment("AgingTwoCustomers");
+            var svc = new AccountingService(env.Context, env.Uow, env.CurrentUser, env.CurrentFiscalYear);
+            await svc.EnsureDefaultChartOfAccountsAsync(1);
+            var accAr = await env.Context.AccountingAccounts.FirstAsync(a => a.TenantId == 1 && a.Code == "1103");
+
+            env.Context.Customers.AddRange(
+                new Customer { Id = 101, TenantId = 1, Name = "مشتری اول" },
+                new Customer { Id = 102, TenantId = 1, Name = "مشتری دوم" });
+
+            env.Context.JournalVouchers.AddRange(
+                new JournalVoucher
+                {
+                    TenantId = 1,
+                    FiscalYearId = 1,
+                    VoucherNumber = 1,
+                    VoucherDate = DateTime.UtcNow.Date,
+                    Description = "بدهی مشتری اول",
+                    Status = JournalVoucherStatus.Posted,
+                    ReferenceType = AccountingReferenceType.SalesInvoice,
+                    TotalDebit = 25_000_000m,
+                    TotalCredit = 25_000_000m,
+                    CreatedAt = DateTime.UtcNow,
+                    Items = new List<JournalVoucherItem>
+                    {
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 101, Debit = 25_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
+                    }
+                },
+                new JournalVoucher
+                {
+                    TenantId = 1,
+                    FiscalYearId = 1,
+                    VoucherNumber = 2,
+                    VoucherDate = DateTime.UtcNow.Date.AddDays(2),
+                    Description = "بدهی مشتری دوم با تاریخ جلوتر",
+                    Status = JournalVoucherStatus.Posted,
+                    ReferenceType = AccountingReferenceType.SalesInvoice,
+                    TotalDebit = 15_000_000m,
+                    TotalCredit = 15_000_000m,
+                    CreatedAt = DateTime.UtcNow,
+                    Items = new List<JournalVoucherItem>
+                    {
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 102, Debit = 15_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
+                    }
+                });
+            await env.Context.SaveChangesAsync();
+
+            var aging = await svc.GetAgingReportAsync(AccountingPartyType.Customer, asOfDate: null, includeChequeAccounts: true);
+            Assert.Equal(2, aging.Rows.Count);
+            Assert.Contains(aging.Rows, r => r.PartyId == 101 && r.TotalOpenBalance == 25_000_000m);
+            Assert.Contains(aging.Rows, r => r.PartyId == 102 && r.TotalOpenBalance == 15_000_000m);
+        }
+
+        [Fact(DisplayName = "15. صورت‌حساب ۳۶۰ مشتری: لیست فاکتورها با مبلغ پرداختی، مانده و وضعیت چک‌ها برگردانده می‌شود")]
+        public async Task GetPartyStatement_Customer_IncludesInvoicesAndChequesDetails()
+        {
+            var env = CreateEnvironment("Customer360Details");
+            var svc = new AccountingService(env.Context, env.Uow, env.CurrentUser, env.CurrentFiscalYear);
+            await svc.EnsureDefaultChartOfAccountsAsync(1);
+
+            env.Context.Customers.Add(new Customer { Id = 201, TenantId = 1, Name = "مشتری آلفا" });
+            env.Context.Projects.Add(new Project { Id = 301, TenantId = 1, ProjectTitle = "پروژه آلفا", CustomerId = 201 });
+            env.Context.Warehouses.Add(new Warehouse { Id = 1, TenantId = 1, Title = "انبار", IsActive = true });
+            env.Context.SalesInvoices.Add(new SalesInvoice
+            {
+                Id = 401,
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProjectId = 301,
+                Number = "SINV-401",
+                SellerUserId = "user-admin",
+                Description = "فروش تست",
+                IssueDate = DateTime.UtcNow.Date,
+                Status = InvoiceStatus.Final,
+                Total = 60_000_000m,
+                CreatedAt = DateTime.UtcNow
+            });
+            env.Context.Receipts.Add(new Receipt
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                SalesInvoiceId = 401,
+                CustomerId = 201,
+                Amount = 10_000_000m,
+                ReceiptDate = DateTime.UtcNow.Date,
+                Method = "BankTransfer",
+                CreatedAt = DateTime.UtcNow
+            });
+            env.Context.Cheques.AddRange(
+                new Cheque
+                {
+                    TenantId = 1,
+                    FiscalYearId = 1,
+                    Type = ChequeType.Receivable,
+                    Status = ChequeStatus.InBankForCollection,
+                    ChequeNumber = "CHQ-11",
+                    BankName = "ملت",
+                    CustomerId = 201,
+                    SalesInvoiceId = 401,
+                    Amount = 20_000_000m,
+                    IssueDate = DateTime.UtcNow.Date,
+                    DueDate = DateTime.UtcNow.Date.AddDays(30),
+                    CreatedAt = DateTime.UtcNow
+                },
+                new Cheque
+                {
+                    TenantId = 1,
+                    FiscalYearId = 1,
+                    Type = ChequeType.Receivable,
+                    Status = ChequeStatus.Cleared,
+                    ChequeNumber = "CHQ-12",
+                    BankName = "سامان",
+                    CustomerId = 201,
+                    SalesInvoiceId = 401,
+                    Amount = 15_000_000m,
+                    IssueDate = DateTime.UtcNow.Date,
+                    DueDate = DateTime.UtcNow.Date.AddDays(5),
+                    CreatedAt = DateTime.UtcNow
+                });
+            await env.Context.SaveChangesAsync();
+
+            var stmt = await svc.GetPartyStatementAsync(AccountingPartyType.Customer, 201, includeChequeAccounts: true);
+
+            Assert.Single(stmt.Invoices);
+            var inv = stmt.Invoices[0];
+            Assert.Equal("SINV-401", inv.InvoiceNumber);
+            Assert.Equal(10_000_000m, inv.CashPaidAmount);
+            Assert.Equal(20_000_000m, inv.InProgressChequesAmount);
+            Assert.Equal(15_000_000m, inv.ClearedChequesAmount);
+            Assert.Equal(45_000_000m, inv.PaidAmount);
+            Assert.Equal(15_000_000m, inv.RemainingAmount);
+            Assert.Equal(SettlementStatus.Partial, inv.SettlementStatus);
+
+            Assert.Equal(2, stmt.Cheques.Count);
+            Assert.Contains(stmt.Cheques, c => c.ChequeNumber == "CHQ-11" && c.Status == ChequeStatus.InBankForCollection);
+            Assert.Contains(stmt.Cheques, c => c.ChequeNumber == "CHQ-12" && c.Status == ChequeStatus.Cleared);
+        }
+
+        [Fact(DisplayName = "16. لیست مانده مشتریان: مانده بدهی و چک در جریان هر مشتری به تفکیک برگردانده می‌شود")]
+        public async Task GetCustomerBalancesSummary_ReturnsPerCustomerBalancesAndCheques()
+        {
+            var env = CreateEnvironment("CustomerBalancesSummary");
+            var svc = new AccountingService(env.Context, env.Uow, env.CurrentUser, env.CurrentFiscalYear);
+            await svc.EnsureDefaultChartOfAccountsAsync(1);
+            var accAr = await env.Context.AccountingAccounts.FirstAsync(a => a.TenantId == 1 && a.Code == "1103");
+
+            env.Context.Customers.AddRange(
+                new Customer { Id = 1, TenantId = 1, Name = "الف" },
+                new Customer { Id = 2, TenantId = 1, Name = "ب" });
+            env.Context.JournalVouchers.Add(new JournalVoucher
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                VoucherNumber = 1,
+                VoucherDate = DateTime.UtcNow.Date,
+                Description = "بدهی",
+                Status = JournalVoucherStatus.Posted,
+                ReferenceType = AccountingReferenceType.SalesInvoice,
+                TotalDebit = 30_000_000m,
+                TotalCredit = 30_000_000m,
+                CreatedAt = DateTime.UtcNow,
+                Items = new List<JournalVoucherItem>
+                {
+                    new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 1, Debit = 30_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
+                }
+            });
+            env.Context.Cheques.Add(new Cheque
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                Type = ChequeType.Receivable,
+                Status = ChequeStatus.InSafe,
+                ChequeNumber = "C-2",
+                BankName = "ملی",
+                CustomerId = 2,
+                Amount = 12_000_000m,
+                IssueDate = DateTime.UtcNow.Date,
+                DueDate = DateTime.UtcNow.Date.AddDays(20),
+                CreatedAt = DateTime.UtcNow
+            });
+            await env.Context.SaveChangesAsync();
+
+            var balances = await svc.GetCustomerBalancesSummaryAsync();
+            Assert.Equal(2, balances.Count);
+            Assert.Equal(30_000_000m, balances.First(x => x.CustomerId == 1).OpenReceivableBalance);
+            Assert.Equal(12_000_000m, balances.First(x => x.CustomerId == 2).PendingChequesAmount);
+        }
+        [Fact(DisplayName = "17. صورت‌حساب ۳۶۰ با لحاظ چک (includeChequeAccounts): مبلغ چک دو بار در ریسک کل شمارش نمی‌شود")]
+        public async Task GetPartyStatement_IncludeChequeAccountsTrue_DoesNotDoubleCountPendingChequesInExposure()
+        {
+            var env = CreateEnvironment("NoDoubleCountExposure");
+            var svc = new AccountingService(env.Context, env.Uow, env.CurrentUser, env.CurrentFiscalYear);
+            await svc.EnsureDefaultChartOfAccountsAsync(1);
+
+            var accAr = await env.Context.AccountingAccounts.FirstAsync(a => a.TenantId == 1 && a.Code == "1103");
+            var accChq = await env.Context.AccountingAccounts.FirstAsync(a => a.TenantId == 1 && a.Code == "1102");
+            var accRev = await env.Context.AccountingAccounts.FirstAsync(a => a.TenantId == 1 && a.Code == "4101");
+            var accCash = await env.Context.AccountingAccounts.FirstAsync(a => a.TenantId == 1 && a.Code == "1101");
+
+            env.Context.Customers.Add(new Customer { Id = 77, TenantId = 1, Name = "هادی حقیقی" });
+
+            var baseDate = DateTime.UtcNow.Date;
+            env.Context.JournalVouchers.AddRange(
+                new JournalVoucher
+                {
+                    TenantId = 1, FiscalYearId = 1, VoucherNumber = 8, VoucherDate = baseDate,
+                    Description = "دریافت نقدی", Status = JournalVoucherStatus.Posted,
+                    ReferenceType = AccountingReferenceType.Receipt, TotalDebit = 8_800_000m, TotalCredit = 8_800_000m,
+                    CreatedAt = DateTime.UtcNow,
+                    Items = new List<JournalVoucherItem>
+                    {
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accCash.Id, Debit = 8_800_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
+                        new() { TenantId = 1, RowNumber = 2, AccountId = accAr.Id, CustomerId = 77, Debit = 0m, Credit = 8_800_000m, CreatedAt = DateTime.UtcNow }
+                    }
+                },
+                new JournalVoucher
+                {
+                    TenantId = 1, FiscalYearId = 1, VoucherNumber = 10, VoucherDate = baseDate,
+                    Description = "چک دریافتی", Status = JournalVoucherStatus.Posted,
+                    ReferenceType = AccountingReferenceType.ChequeOperation, TotalDebit = 10_000_000m, TotalCredit = 10_000_000m,
+                    CreatedAt = DateTime.UtcNow,
+                    Items = new List<JournalVoucherItem>
+                    {
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accChq.Id, CustomerId = 77, Debit = 10_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
+                        new() { TenantId = 1, RowNumber = 2, AccountId = accAr.Id, CustomerId = 77, Debit = 0m, Credit = 10_000_000m, CreatedAt = DateTime.UtcNow }
+                    }
+                },
+                new JournalVoucher
+                {
+                    TenantId = 1, FiscalYearId = 1, VoucherNumber = 14, VoucherDate = baseDate,
+                    Description = "فاکتور نهایی", Status = JournalVoucherStatus.Posted,
+                    ReferenceType = AccountingReferenceType.SalesInvoice, TotalDebit = 11_920_000m, TotalCredit = 11_920_000m,
+                    CreatedAt = DateTime.UtcNow,
+                    Items = new List<JournalVoucherItem>
+                    {
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 77, Debit = 11_920_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
+                        new() { TenantId = 1, RowNumber = 2, AccountId = accRev.Id, Debit = 0m, Credit = 11_920_000m, CreatedAt = DateTime.UtcNow }
+                    }
+                });
+
+            env.Context.Cheques.Add(new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "123321", BankName = "تجارت", CustomerId = 77, Amount = 10_000_000m,
+                IssueDate = baseDate, DueDate = baseDate.AddDays(7), CreatedAt = DateTime.UtcNow
+            });
+            await env.Context.SaveChangesAsync();
+
+            var withCheques = await svc.GetPartyStatementAsync(AccountingPartyType.Customer, 77, includeChequeAccounts: true);
+            var arOnly = await svc.GetPartyStatementAsync(AccountingPartyType.Customer, 77, includeChequeAccounts: false);
+
+            Assert.Equal(3_120_000m, withCheques.FinalBookBalance);
+            Assert.Equal(3_120_000m, withCheques.EffectiveExposureAmount);
+            Assert.Equal(-6_880_000m, arOnly.FinalBookBalance);
+            Assert.Equal(3_120_000m, arOnly.EffectiveExposureAmount);
+        }
     }
 }
+

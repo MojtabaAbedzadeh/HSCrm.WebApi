@@ -114,6 +114,7 @@ namespace HSCrm.WebApi.Controllers
                         : "پرداخت بدون مرجع"
             })
             .OrderByDescending(x => x.PaymentDate)
+            .ThenByDescending(x => x.Id)
             .ToList();
 
             return new ApiResponse<IEnumerable<PaymentDto>>

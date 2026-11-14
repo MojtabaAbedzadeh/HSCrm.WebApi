@@ -30,29 +30,44 @@ namespace HSCrm.DataModel.Services.Repository
                 })
                 .ToList();
 
-            var cheques = _db.Cheques
+            var allCheques = _db.Cheques
                 .AsNoTracking()
                 .Where(x => x.SalesInvoiceId == salesInvoiceId
                             && x.Type == ChequeType.Receivable
-                            && !x.IsDeleted
-                            && x.Status != ChequeStatus.Bounced
-                            && x.Status != ChequeStatus.Returned)
+                            && !x.IsDeleted)
+                .ToList();
+
+            var activeCheques = allCheques
+                .Where(x => x.Status != ChequeStatus.Bounced && x.Status != ChequeStatus.Returned)
                 .Select(x => new PaymentItemDto
                 {
                     PaymentId = x.Id,
                     Amount = x.Amount,
-                    Method = "چک دریافتنی",
+                    Method = x.Status == ChequeStatus.Cleared || x.Status == ChequeStatus.EndorsedToSupplier
+                        ? "چک (وصول/خرج شده)"
+                        : "چک دریافتنی (در جریان)",
                     ReferenceNo = x.ChequeNumber,
                     PaymentDate = x.IssueDate
                 })
                 .ToList();
 
+            var cashPaid = receipts.Sum(x => x.Amount);
+            var pendingCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.InSafe || x.Status == ChequeStatus.InBankForCollection)
+                .Sum(x => x.Amount);
+            var clearedCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.Cleared || x.Status == ChequeStatus.EndorsedToSupplier)
+                .Sum(x => x.Amount);
+            var bouncedCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.Bounced || x.Status == ChequeStatus.Returned)
+                .Sum(x => x.Amount);
+
             var allItems = receipts
-                .Concat(cheques)
+                .Concat(activeCheques)
                 .OrderByDescending(x => x.PaymentDate)
                 .ToList();
 
-            return BuildSummary(totalAmount, allItems, salesInvoiceId: salesInvoiceId);
+            return BuildSummary(totalAmount, allItems, cashPaid, pendingCheques, clearedCheques, bouncedCheques, salesInvoiceId: salesInvoiceId);
         }
 
         public SettlementSummaryDto BuildPurchaseInvoiceSummary(int purchaseInvoiceId, decimal totalAmount)
@@ -70,29 +85,42 @@ namespace HSCrm.DataModel.Services.Repository
                 })
                 .ToList();
 
-            var cheques = _db.Cheques
+            var allCheques = _db.Cheques
                 .AsNoTracking()
                 .Where(x => x.PurchaseInvoiceId == purchaseInvoiceId
                             && x.Type == ChequeType.Payable
-                            && !x.IsDeleted
-                            && x.Status != ChequeStatus.Bounced
-                            && x.Status != ChequeStatus.Returned)
+                            && !x.IsDeleted)
+                .ToList();
+
+            var activeCheques = allCheques
+                .Where(x => x.Status != ChequeStatus.Bounced && x.Status != ChequeStatus.Returned)
                 .Select(x => new PaymentItemDto
                 {
                     PaymentId = x.Id,
                     Amount = x.Amount,
-                    Method = "چک پرداختنی",
+                    Method = x.Status == ChequeStatus.Cleared ? "چک (پاس شده)" : "چک پرداختنی (در جریان)",
                     ReferenceNo = x.ChequeNumber,
                     PaymentDate = x.IssueDate
                 })
                 .ToList();
 
+            var cashPaid = payments.Sum(x => x.Amount);
+            var pendingCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.InSafe || x.Status == ChequeStatus.InBankForCollection)
+                .Sum(x => x.Amount);
+            var clearedCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.Cleared)
+                .Sum(x => x.Amount);
+            var bouncedCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.Bounced || x.Status == ChequeStatus.Returned)
+                .Sum(x => x.Amount);
+
             var allItems = payments
-                .Concat(cheques)
+                .Concat(activeCheques)
                 .OrderByDescending(x => x.PaymentDate)
                 .ToList();
 
-            return BuildSummary(totalAmount, allItems, purchaseInvoiceId: purchaseInvoiceId);
+            return BuildSummary(totalAmount, allItems, cashPaid, pendingCheques, clearedCheques, bouncedCheques, purchaseInvoiceId: purchaseInvoiceId);
         }
 
         public SettlementSummaryDto BuildExpenseSummary(int expenseId, decimal totalAmount)
@@ -110,34 +138,51 @@ namespace HSCrm.DataModel.Services.Repository
                 })
                 .ToList();
 
-            var cheques = _db.Cheques
+            var allCheques = _db.Cheques
                 .AsNoTracking()
                 .Where(x => x.ExpenseId == expenseId
                             && x.Type == ChequeType.Payable
-                            && !x.IsDeleted
-                            && x.Status != ChequeStatus.Bounced
-                            && x.Status != ChequeStatus.Returned)
+                            && !x.IsDeleted)
+                .ToList();
+
+            var activeCheques = allCheques
+                .Where(x => x.Status != ChequeStatus.Bounced && x.Status != ChequeStatus.Returned)
                 .Select(x => new PaymentItemDto
                 {
                     PaymentId = x.Id,
                     Amount = x.Amount,
-                    Method = "چک پرداختنی",
+                    Method = x.Status == ChequeStatus.Cleared ? "چک (پاس شده)" : "چک پرداختنی (در جریان)",
                     ReferenceNo = x.ChequeNumber,
                     PaymentDate = x.IssueDate
                 })
                 .ToList();
 
+            var cashPaid = payments.Sum(x => x.Amount);
+            var pendingCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.InSafe || x.Status == ChequeStatus.InBankForCollection)
+                .Sum(x => x.Amount);
+            var clearedCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.Cleared)
+                .Sum(x => x.Amount);
+            var bouncedCheques = allCheques
+                .Where(x => x.Status == ChequeStatus.Bounced || x.Status == ChequeStatus.Returned)
+                .Sum(x => x.Amount);
+
             var allItems = payments
-                .Concat(cheques)
+                .Concat(activeCheques)
                 .OrderByDescending(x => x.PaymentDate)
                 .ToList();
 
-            return BuildSummary(totalAmount, allItems, expenseId: expenseId);
+            return BuildSummary(totalAmount, allItems, cashPaid, pendingCheques, clearedCheques, bouncedCheques, expenseId: expenseId);
         }
 
         private static SettlementSummaryDto BuildSummary(
             decimal totalAmount,
             List<PaymentItemDto> payments,
+            decimal cashPaidAmount,
+            decimal pendingChequesAmount,
+            decimal clearedChequesAmount,
+            decimal bouncedChequesAmount,
             int? salesInvoiceId = null,
             int? purchaseInvoiceId = null,
             int? expenseId = null)
@@ -162,6 +207,10 @@ namespace HSCrm.DataModel.Services.Repository
                 TotalAmount = totalAmount,
                 PaidAmount = paidAmount,
                 RemainingAmount = remainingAmount,
+                CashPaidAmount = cashPaidAmount,
+                PendingChequesAmount = pendingChequesAmount,
+                ClearedChequesAmount = clearedChequesAmount,
+                BouncedChequesAmount = bouncedChequesAmount,
                 SettlementStatus = status,
                 Payments = payments
             };

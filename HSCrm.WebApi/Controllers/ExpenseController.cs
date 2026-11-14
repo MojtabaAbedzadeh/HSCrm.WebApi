@@ -70,6 +70,8 @@ namespace HSCrm.WebApi.Controllers
             var expenses = _context.expenseUW
                 .Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value,
                      true, x => x.Project, x => x.Tenant, x => x.CreatedBy)
+                .OrderByDescending(x => x.ExpenseDate)
+                .ThenByDescending(x => x.Id)
                 .ToList();
 
             return new ApiResponse<IEnumerable<Expense>>

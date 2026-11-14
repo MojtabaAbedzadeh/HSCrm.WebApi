@@ -135,7 +135,8 @@ namespace HSCrm.WebApi.Controllers
             }
 
             var invoices = query
-                .OrderByDescending(x => x.CreatedAt)
+                .OrderByDescending(x => x.IssueDate)
+                .ThenByDescending(x => x.CreatedAt)
                 .ThenByDescending(x => x.Id)
                 .ToList();
 

@@ -447,6 +447,62 @@ namespace HSCrm.Entities.Models
         public decimal EffectiveExposureAmount { get; set; }
 
         public List<PartyStatementLineDto> Transactions { get; set; } = new();
+        public List<PartyInvoiceSummaryDto> Invoices { get; set; } = new();
+        public List<PartyChequeSummaryDto> Cheques { get; set; } = new();
+    }
+
+    public class PartyChequeSummaryDto
+    {
+        public int ChequeId { get; set; }
+        public string ChequeNumber { get; set; } = string.Empty;
+        public string? SayadiId { get; set; }
+        public decimal Amount { get; set; }
+        public string BankName { get; set; } = string.Empty;
+        public string? BranchName { get; set; }
+        public string IssueDateShamsi { get; set; } = string.Empty;
+        public string DueDateShamsi { get; set; } = string.Empty;
+        public ChequeStatus Status { get; set; }
+        public string StatusTitle { get; set; } = string.Empty;
+        public int? SalesInvoiceId { get; set; }
+        public string? SalesInvoiceNumber { get; set; }
+        public int? PurchaseInvoiceId { get; set; }
+        public string? PurchaseInvoiceNumber { get; set; }
+        public int? ExpenseId { get; set; }
+        public string? Description { get; set; }
+    }
+
+    public class PartyInvoiceSummaryDto
+    {
+        public int InvoiceId { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public string IssueDateShamsi { get; set; } = string.Empty;
+        public string? ProjectTitle { get; set; }
+        public InvoiceStatus Status { get; set; }
+        public string StatusTitle { get; set; } = string.Empty;
+        public decimal TotalAmount { get; set; }
+        public decimal CashPaidAmount { get; set; }
+        public decimal InProgressChequesAmount { get; set; }
+        public decimal ClearedChequesAmount { get; set; }
+        public decimal BouncedChequesAmount { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
+        public SettlementStatus SettlementStatus { get; set; }
+        public string SettlementStatusTitle { get; set; } = string.Empty;
+        public List<PartyChequeSummaryDto> Cheques { get; set; } = new();
+    }
+
+    public class CustomerBalanceSummaryDto
+    {
+        public int CustomerId { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string? Phone { get; set; }
+        public int FinalInvoicesCount { get; set; }
+        public decimal TotalInvoicesAmount { get; set; }
+        public decimal TotalCashPaidAmount { get; set; }
+        public decimal PendingChequesAmount { get; set; }
+        public decimal ClearedChequesAmount { get; set; }
+        public decimal OpenReceivableBalance { get; set; }
+        public decimal EffectiveExposureAmount { get; set; }
     }
 
     /// <summary>

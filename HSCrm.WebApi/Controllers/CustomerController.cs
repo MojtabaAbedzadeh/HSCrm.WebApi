@@ -27,17 +27,44 @@ namespace HSCrm.WebApi.Controllers
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<ApplicationRole> _roleManager;
         private readonly ILogger<CustomerController> _logger;
+        private readonly IAccountingService? _accountingService;
 
         public CustomerController(
             IUnitOfWork context,
             UserManager<ApplicationUser> userManager,
             RoleManager<ApplicationRole> roleManager,
-            ILogger<CustomerController> logger)
+            ILogger<CustomerController> logger,
+            IAccountingService? accountingService = null)
         {
             _context = context;
             _userManager = userManager;
             _roleManager = roleManager;
             _logger = logger;
+            _accountingService = accountingService;
+        }
+
+        [HttpGet("GetBalances")]
+        [Permission(Permissions.Customers.View)]
+        public async Task<ActionResult<ApiResponse<List<CustomerBalanceSummaryDto>>>> GetBalances(CancellationToken ct = default)
+        {
+            if (_accountingService == null)
+            {
+                return Ok(new ApiResponse<List<CustomerBalanceSummaryDto>>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Data = new List<CustomerBalanceSummaryDto>()
+                });
+            }
+
+            var data = await _accountingService.GetCustomerBalancesSummaryAsync(ct);
+            return Ok(new ApiResponse<List<CustomerBalanceSummaryDto>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "موفق",
+                Data = data
+            });
         }
 
         [HttpGet("GetCustomer")]
@@ -45,7 +72,7 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Customers.View)]
         public ApiResponse<IEnumerable<Customer>> Get()
         {
-            var customers = _context.customerUW.Get().ToList();
+            var customers = _context.customerUW.Get().OrderByDescending(x => x.Id).ToList();
 
             return new ApiResponse<IEnumerable<Customer>>
             {

@@ -329,6 +329,7 @@ namespace HSCrm.WebApi.Controllers
         public async Task<ActionResult<ApiResponse<AgingReportSummaryDto>>> GetAgingReport(
             [FromQuery] AccountingPartyType partyType = AccountingPartyType.Customer,
             [FromQuery] string? asOfDateShamsi = null,
+            [FromQuery] bool includeChequeAccounts = false,
             CancellationToken ct = default)
         {
             try
@@ -339,13 +340,39 @@ namespace HSCrm.WebApi.Controllers
                     asOfDate = ConvertDate.ConvertShamsiToMiladi(asOfDateShamsi);
                 }
 
-                var report = await _accountingService.GetAgingReportAsync(partyType, asOfDate, ct);
+                var report = await _accountingService.GetAgingReportAsync(partyType, asOfDate, includeChequeAccounts, ct);
                 return Ok(new ApiResponse<AgingReportSummaryDto>
                 {
                     Status = true,
                     StatusCode = ApiResultStatusCode.Success,
                     Message = "گزارش تحلیل سنی مطالبات/بدهی‌ها با موفقیت محاسبه شد.",
                     Data = report
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+            }
+        }
+
+        [HttpGet("CustomerBalances")]
+        [Permission(Permissions.AccountingReports.View)]
+        public async Task<ActionResult<ApiResponse<List<CustomerBalanceSummaryDto>>>> GetCustomerBalances(CancellationToken ct = default)
+        {
+            try
+            {
+                var data = await _accountingService.GetCustomerBalancesSummaryAsync(ct);
+                return Ok(new ApiResponse<List<CustomerBalanceSummaryDto>>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = "مانده حساب مشتریان با موفقیت محاسبه شد.",
+                    Data = data
                 });
             }
             catch (Exception ex)

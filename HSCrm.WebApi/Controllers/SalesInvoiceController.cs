@@ -99,11 +99,33 @@ namespace HSCrm.WebApi.Controllers
             return Ok(result);
         }
 
+        [HttpGet("SettlementSummaries")]
+        [Permission(Permissions.SalesInvoices.View)]
+        public ApiResponse<List<HSCrm.Entities.Models.Dto.SettlementSummaryDto>> GetSettlementSummaries()
+        {
+            var invoices = _context.salesInvoiceUW.Get(x => !x.IsDeleted, true).ToList();
+            var summaries = invoices
+                .Select(inv => _paymentSettlementService.BuildSalesInvoiceSummary(inv.Id, inv.Total))
+                .ToList();
+
+            return new ApiResponse<List<HSCrm.Entities.Models.Dto.SettlementSummaryDto>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "موفق",
+                Data = summaries
+            };
+        }
+
         [HttpGet("GetSalesInvoices")]
         [Permission(Permissions.SalesInvoices.View)]
         public ApiResponse<IEnumerable<SalesInvoice>> Get()
         {
-            var invoices = _context.salesInvoiceUW.Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant).ToList();
+            var invoices = _context.salesInvoiceUW
+                .Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant)
+                .OrderByDescending(x => x.IssueDate)
+                .ThenByDescending(x => x.Id)
+                .ToList();
 
             return new ApiResponse<IEnumerable<SalesInvoice>>
             {

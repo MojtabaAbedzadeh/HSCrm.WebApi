@@ -1,4 +1,4 @@
-﻿using HSCrm.Entities.Entities;
+using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using static HSCrm.Common.PublicTools.Enums;
 
@@ -142,5 +142,13 @@ namespace HSCrm.DataModel.Services.Interface
             AccountingPartyType partyType = AccountingPartyType.Customer,
             DateTime? asOfDate = null,
             CancellationToken ct = default);
+
+        Task<AgingReportSummaryDto> GetAgingReportAsync(
+            AccountingPartyType partyType,
+            DateTime? asOfDate,
+            bool includeChequeAccounts,
+            CancellationToken ct = default);
+
+        Task<List<CustomerBalanceSummaryDto>> GetCustomerBalancesSummaryAsync(CancellationToken ct = default);
     }
 }
