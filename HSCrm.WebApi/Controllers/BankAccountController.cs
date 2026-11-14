@@ -2,6 +2,7 @@ using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Services.Interface;
+using HSCrm.Entities;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
 using HSCrm.Framework.Extensions;
