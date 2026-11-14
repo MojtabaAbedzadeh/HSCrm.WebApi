@@ -474,6 +474,15 @@ namespace HSCrm.UnitTests
         {
             var env = CreateEnvironment("Phase2PermissionsSeed");
             await PermissionSeeder.SeedAsync(env.Context);
+
+            // شبیه‌سازی سناریویی که نقش User از قبل دسترسی دیگری (مثلاً customers.view) داشته است
+            var existingOtherPerm = await env.Context.Permissions.FirstOrDefaultAsync(p => p.Name == "customers.view");
+            if (existingOtherPerm != null)
+            {
+                env.Context.RolePermissions.Add(new RolePermission { RoleId = "role-user", PermissionId = existingOtherPerm.Id });
+                await env.Context.SaveChangesAsync();
+            }
+
             await RoleSeeder.AssignPermissionsToRoles(env.Context);
             await env.Context.SaveChangesAsync();
 

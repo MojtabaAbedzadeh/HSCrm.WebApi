@@ -1,4 +1,4 @@
-﻿using HSCrm.DataModel.Context;
+using HSCrm.DataModel.Context;
 using HSCrm.Entities.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,7 +58,7 @@ namespace HSCrm.DataModel.Services
             var existingRolePermissions = await context.RolePermissions.ToListAsync();
 
             var userRoles = await context.Roles
-                .Where(r => r.Name == "User")
+                .Where(r => r.Name == "User" || r.NormalizedName == "USER")
                 .ToListAsync();
             var baselineEmployeePermNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -68,17 +68,28 @@ namespace HSCrm.DataModel.Services
                 "workLogs.edit",
                 "workLogs.delete"
             };
+            var workLogPermissionIds = permissions
+                .Where(p => p.Name.StartsWith("workLogs.", StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.Id)
+                .ToHashSet();
+
             foreach (var uRole in userRoles)
             {
-                if (!existingRolePermissions.Any(rp => rp.RoleId == uRole.Id))
+                var hasAnyWorkLogPerm = existingRolePermissions.Any(rp =>
+                    rp.RoleId == uRole.Id && workLogPermissionIds.Contains(rp.PermissionId));
+                if (!hasAnyWorkLogPerm)
                 {
                     foreach (var permission in permissions.Where(p => baselineEmployeePermNames.Contains(p.Name)))
                     {
-                        context.RolePermissions.Add(new RolePermission
+                        var exists = existingRolePermissions.Any(rp => rp.RoleId == uRole.Id && rp.PermissionId == permission.Id);
+                        if (!exists)
                         {
-                            RoleId = uRole.Id,
-                            PermissionId = permission.Id
-                        });
+                            context.RolePermissions.Add(new RolePermission
+                            {
+                                RoleId = uRole.Id,
+                                PermissionId = permission.Id
+                            });
+                        }
                     }
                 }
             }
