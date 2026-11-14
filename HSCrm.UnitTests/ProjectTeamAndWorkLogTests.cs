@@ -1,5 +1,6 @@
 using HSCrm.Common.PublicTools;
 using HSCrm.DataModel.Context;
+using HSCrm.DataModel.Seeders;
 using HSCrm.DataModel.Services;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
@@ -268,7 +269,7 @@ namespace HSCrm.UnitTests
             {
                 ExpenseTitle = "هزینه غیرمجاز",
                 ProjectId = 2,
-                Type = ExpenseType.ProjectOperational,
+                Type = ExpenseType.Transport,
                 ExpenseDate = "1405/08/20",
                 Amount = 1_000_000m
             });
@@ -279,7 +280,7 @@ namespace HSCrm.UnitTests
             {
                 ExpenseTitle = "کرایه حمل تجهیزات",
                 ProjectId = 1,
-                Type = ExpenseType.ProjectOperational,
+                Type = ExpenseType.Transport,
                 ExpenseDate = "1405/08/20",
                 Amount = 1_500_000m
             });
