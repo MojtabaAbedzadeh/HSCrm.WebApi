@@ -5,6 +5,7 @@ using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Mvc;
 
@@ -40,16 +41,25 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Receipt.View)]
         public async Task<ActionResult<ApiResponse<IEnumerable<ReceiptModel>>>> GetAll(CancellationToken cancellationToken)
         {
+            var tenantId = _currentUserService.TenantId ?? User.GetTenantId();
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId;
+
             var receipts = await _context.receiptUW.GetAsync(
-                x => x.TenantId == _currentUserService.TenantId
-                     && x.FiscalYearId == _currentFiscalYearService.FiscalYearId,
+                x => (!tenantId.HasValue || x.TenantId == tenantId.Value)
+                     && (!fiscalYearId.HasValue || x.FiscalYearId == fiscalYearId.Value),
                 true,
                 cancellationToken,
                 x => x.BankAccount!,
                 x => x.SalesInvoice!,
+                x => x.SalesInvoice!.Project.Customer,
                 x => x.Customer!);
 
-            var result = _mapper.Map<IEnumerable<ReceiptModel>>(receipts);
+            var orderedReceipts = receipts
+                .OrderByDescending(x => x.ReceiptDate)
+                .ThenByDescending(x => x.Id)
+                .ToList();
+
+            var result = _mapper.Map<IEnumerable<ReceiptModel>>(orderedReceipts);
 
             return Ok(new ApiResponse<IEnumerable<ReceiptModel>>
             {
@@ -87,12 +97,57 @@ namespace HSCrm.WebApi.Controllers
         [Permission(Permissions.Receipt.Create)]
         public async Task<ActionResult<ApiResponse<ReceiptModel>>> Create([FromBody] ReceiptCreateModel model, CancellationToken cancellationToken)
         {
-            var receipt = _mapper.Map<Receipt>(model);
+            if (model == null || model.Amount <= 0)
+            {
+                return BadRequest(new ApiResponse<ReceiptModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "مبلغ دریافتی باید بزرگ‌تر از صفر باشد."
+                });
+            }
 
-            receipt.TenantId = _currentUserService.TenantId ?? model.TenantId;
-            receipt.FiscalYearId = (int)_currentFiscalYearService.FiscalYearId;
+            var tenantId = _currentUserService.TenantId ?? User.GetTenantId() ?? (model.TenantId > 0 ? model.TenantId : (int?)null);
+            var fiscalYearId = _currentFiscalYearService.FiscalYearId ?? 0;
+
+            if (!tenantId.HasValue || tenantId.Value <= 0 || fiscalYearId <= 0)
+            {
+                return BadRequest(new ApiResponse<ReceiptModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "اطلاعات شرکت یا سال مالی فعال معتبر نیست."
+                });
+            }
+
+            var tenant = await _context.tenantUW.GetByIdAsync(tenantId.Value, cancellationToken);
+            if (tenant?.DocumentLockDate != null && model.ReceiptDate.Date <= tenant.DocumentLockDate.Value.Date)
+            {
+                return BadRequest(new ApiResponse<ReceiptModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "ثبت دریافت در تاریخ‌های قفل‌شده امکان‌پذیر نیست."
+                });
+            }
+
+            var receipt = _mapper.Map<Receipt>(model);
+            receipt.Tenant = null!;
+            receipt.TenantId = tenantId.Value;
+            receipt.FiscalYearId = fiscalYearId;
             receipt.CreatedAt = DateTime.UtcNow;
-            receipt.CreatedById = model.UserId;
+            receipt.CreatedById = User.GetUserId() ?? _currentUserService.UserId ?? model.UserId;
+
+            if (receipt.SalesInvoiceId.HasValue && !receipt.CustomerId.HasValue)
+            {
+                var salesInvoice = _context.salesInvoiceUW
+                    .Get(x => x.Id == receipt.SalesInvoiceId.Value, true, x => x.Project)
+                    .FirstOrDefault();
+                if (salesInvoice?.Project?.CustomerId != null)
+                {
+                    receipt.CustomerId = salesInvoice.Project.CustomerId;
+                }
+            }
 
             using var transaction = _context.BeginTransaction();
             try
@@ -104,10 +159,15 @@ namespace HSCrm.WebApi.Controllers
 
                 transaction.Commit();
             }
-            catch
+            catch (Exception ex)
             {
                 transaction.Rollback();
-                throw;
+                return BadRequest(new ApiResponse<ReceiptModel>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "خطا در ثبت دریافت: " + ex.Message
+                });
             }
 
             var result = _mapper.Map<ReceiptModel>(receipt);
@@ -115,8 +175,9 @@ namespace HSCrm.WebApi.Controllers
             return Ok(new ApiResponse<ReceiptModel>
             {
                 Status = true,
+                StatusCode = ApiResultStatusCode.Success,
                 Data = result,
-                Message = "Receipt created successfully"
+                Message = "دریافت با موفقیت ثبت شد و سند حسابداری صادر گردید."
             });
         }
 

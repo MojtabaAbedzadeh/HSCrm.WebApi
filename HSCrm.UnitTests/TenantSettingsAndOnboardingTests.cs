@@ -670,5 +670,185 @@ namespace HSCrm.UnitTests
             var json = JsonSerializer.Serialize(payload, opts);
             Assert.Contains("SINV-1", json);
         }
+
+        [Fact(DisplayName = "11. دریافت وجه: مدل بدون UserId/Tenant پذیرفته شده و CustomerId از فاکتور فروش بازیابی می‌شود")]
+        public async Task ReceiptController_CreateWithoutUserIdOrTenant_SucceedsAndResolvesCustomer()
+        {
+            var env = CreateEnvironment("ReceiptCreateAutoCustomer");
+            env.Context.Customers.Add(new Customer { Id = 7, TenantId = 1, Name = "مشتری تستی" });
+            env.Context.Projects.Add(new Project { Id = 8, TenantId = 1, ProjectTitle = "پروژه تستی", CustomerId = 7 });
+            env.Context.Warehouses.Add(new Warehouse { Id = 1, TenantId = 1, Title = "انبار", IsActive = true });
+            env.Context.SalesInvoices.Add(new SalesInvoice
+            {
+                Id = 9,
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProjectId = 8,
+                Number = "SINV-9",
+                SellerUserId = "user-admin",
+                Description = "تست",
+                IssueDate = DateTime.UtcNow,
+                Status = InvoiceStatus.Final,
+                Total = 10_000_000m
+            });
+            env.Context.SaveChanges();
+
+            var mapperConfig = new MapperConfiguration(cfg => cfg.AddProfile(new Automation.WebApi.AutoMapperProfile.AutoMapping()));
+            var mapper = mapperConfig.CreateMapper();
+            var accMock = new Mock<IAccountingService>();
+            accMock.Setup(x => x.CreateVoucherForReceiptAsync(It.IsAny<Receipt>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(new JournalVoucher { VoucherNumber = 1, Description = "سند" });
+
+            var controller = new ReceiptController(
+                env.Uow,
+                mapper,
+                env.CurrentFiscalYear,
+                env.CurrentUser,
+                accMock.Object)
+            {
+                ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = CreatePrincipal() } }
+            };
+
+            var actionRes = await controller.Create(new ReceiptCreateModel
+            {
+                SalesInvoiceId = 9,
+                Amount = 4_000_000m,
+                ReceiptDate = DateTime.UtcNow.Date,
+                Method = "BankTransfer"
+            }, CancellationToken.None);
+
+            var ok = Assert.IsType<OkObjectResult>(actionRes.Result);
+            var payload = Assert.IsType<ApiResponse<ReceiptModel>>(ok.Value);
+            Assert.True(payload.Status);
+            Assert.NotNull(payload.Data);
+            Assert.Equal(7, payload.Data!.CustomerId);
+            var saved = await env.Context.Receipts.FirstAsync();
+            Assert.Equal(7, saved.CustomerId);
+            Assert.Equal("user-admin", saved.CreatedById);
+        }
+
+        [Fact(DisplayName = "12. تسویه فاکتور فروش: دریافت نقدی + چک دریافتنی معتبر در PaidAmount و RemainingAmount لحاظ می‌شوند")]
+        public async Task PaymentSettlement_SalesInvoice_IncludesReceiptsAndActiveReceivableCheques()
+        {
+            var env = CreateEnvironment("SalesSettlementWithCheque");
+            env.Context.Customers.Add(new Customer { Id = 1, TenantId = 1, Name = "مشتری" });
+            env.Context.Projects.Add(new Project { Id = 1, TenantId = 1, ProjectTitle = "پروژه", CustomerId = 1 });
+            env.Context.Warehouses.Add(new Warehouse { Id = 1, TenantId = 1, Title = "انبار", IsActive = true });
+            env.Context.SalesInvoices.Add(new SalesInvoice
+            {
+                Id = 10,
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProjectId = 1,
+                Number = "SINV-10",
+                SellerUserId = "user-admin",
+                Description = "تست",
+                IssueDate = DateTime.UtcNow,
+                Status = InvoiceStatus.Final,
+                Total = 50_000_000m
+            });
+            env.Context.SaveChanges();
+
+            var accMock = new Mock<IAccountingService>();
+            accMock.Setup(x => x.CreateVoucherForChequeRegistrationAsync(It.IsAny<Cheque>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(new JournalVoucher { VoucherNumber = 2, Description = "سند چک" });
+
+            var chequeController = new ChequeController(env.Uow, accMock.Object, env.CurrentFiscalYear)
+            {
+                ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = CreatePrincipal() } }
+            };
+
+            var res = await chequeController.Create(new ChequeCreateModel
+            {
+                Type = ChequeType.Receivable,
+                ChequeNumber = "CHQ-101",
+                Amount = 20_000_000m,
+                IssueDateShamsi = "1404/02/10",
+                DueDateShamsi = "1404/04/10",
+                BankName = "ملت",
+                SalesInvoiceId = 10
+            }, CancellationToken.None);
+
+            var ok = Assert.IsType<OkObjectResult>(res.Result);
+            var apiRes = Assert.IsType<ApiResponse<Cheque>>(ok.Value);
+            Assert.True(apiRes.Status);
+            Assert.Equal(1, apiRes.Data!.CustomerId);
+            Assert.Equal(10, apiRes.Data.SalesInvoiceId);
+
+            env.Context.Receipts.Add(new Receipt
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                SalesInvoiceId = 10,
+                CustomerId = 1,
+                Amount = 10_000_000m,
+                ReceiptDate = DateTime.UtcNow,
+                Method = "Cash",
+                CreatedAt = DateTime.UtcNow
+            });
+            await env.Context.SaveChangesAsync();
+
+            var settlementSvc = new PaymentSettlementService(env.Context);
+            var summary = settlementSvc.BuildSalesInvoiceSummary(10, 50_000_000m);
+
+            Assert.Equal(30_000_000m, summary.PaidAmount);
+            Assert.Equal(20_000_000m, summary.RemainingAmount);
+            Assert.Equal(SettlementStatus.Partial, summary.SettlementStatus);
+        }
+
+        [Fact(DisplayName = "13. تسویه فاکتور خرید: چک پرداختنی معتبر لحاظ می‌شود و چک برگشتی/باطل‌شده کسر می‌گردد")]
+        public void PaymentSettlement_PurchaseInvoice_IncludesActiveChequesAndExcludesBounced()
+        {
+            var env = CreateEnvironment("PurchaseSettlementWithCheque");
+            env.Context.Payments.Add(new Payment
+            {
+                TenantId = 1,
+                FiscalYearId = 1,
+                PurchaseInvoiceId = 20,
+                Amount = 15_000_000m,
+                PaymentDate = DateTime.UtcNow,
+                Method = "Transfer",
+                CreatedAt = DateTime.UtcNow
+            });
+            env.Context.Cheques.AddRange(
+                new Cheque
+                {
+                    TenantId = 1,
+                    FiscalYearId = 1,
+                    Type = ChequeType.Payable,
+                    Status = ChequeStatus.InSafe,
+                    ChequeNumber = "P-1",
+                    BankName = "تجارت",
+                    PurchaseInvoiceId = 20,
+                    Amount = 25_000_000m,
+                    IssueDate = DateTime.UtcNow,
+                    DueDate = DateTime.UtcNow.AddDays(30),
+                    CreatedAt = DateTime.UtcNow
+                },
+                new Cheque
+                {
+                    TenantId = 1,
+                    FiscalYearId = 1,
+                    Type = ChequeType.Payable,
+                    Status = ChequeStatus.Bounced,
+                    ChequeNumber = "P-2",
+                    BankName = "تجارت",
+                    PurchaseInvoiceId = 20,
+                    Amount = 10_000_000m,
+                    IssueDate = DateTime.UtcNow,
+                    DueDate = DateTime.UtcNow.AddDays(45),
+                    CreatedAt = DateTime.UtcNow
+                });
+            env.Context.SaveChanges();
+
+            var settlementSvc = new PaymentSettlementService(env.Context);
+            var summary = settlementSvc.BuildPurchaseInvoiceSummary(20, 50_000_000m);
+
+            Assert.Equal(40_000_000m, summary.PaidAmount);
+            Assert.Equal(10_000_000m, summary.RemainingAmount);
+            Assert.Equal(SettlementStatus.Partial, summary.SettlementStatus);
+        }
     }
 }

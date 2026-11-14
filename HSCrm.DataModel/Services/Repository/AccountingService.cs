@@ -1948,6 +1948,57 @@ namespace HSCrm.DataModel.Services.Repository
             await _unitOfWork.journalVoucherUW.CreateAsync(voucher, ct);
             await _unitOfWork.SaveAsync();
 
+            if (cheque.PurchaseInvoiceId.HasValue)
+            {
+                var invoice = await _context.PurchaseInvoices.FirstOrDefaultAsync(x => x.Id == cheque.PurchaseInvoiceId.Value, ct);
+                if (invoice != null)
+                {
+                    var cashPaid = await _context.Payments
+                        .Where(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
+                        .SumAsync(x => (decimal?)x.Amount, ct) ?? 0m;
+                    var chequePaid = await _context.Cheques
+                        .Where(x => x.PurchaseInvoiceId == invoice.Id
+                                    && x.Type == ChequeType.Payable
+                                    && !x.IsDeleted
+                                    && x.Status != ChequeStatus.Bounced
+                                    && x.Status != ChequeStatus.Returned)
+                        .SumAsync(x => (decimal?)x.Amount, ct) ?? 0m;
+                    var totalPaid = cashPaid + chequePaid;
+                    invoice.PaidAmount = totalPaid;
+                    invoice.PayStatus = totalPaid <= 0
+                        ? SettlementStatus.Unpaid
+                        : totalPaid < invoice.Total
+                            ? SettlementStatus.Partial
+                            : SettlementStatus.Paid;
+                    await _context.SaveChangesAsync(ct);
+                }
+            }
+            else if (cheque.ExpenseId.HasValue)
+            {
+                var expense = await _context.Expenses.FirstOrDefaultAsync(x => x.Id == cheque.ExpenseId.Value, ct);
+                if (expense != null)
+                {
+                    var cashPaid = await _context.Payments
+                        .Where(x => x.ExpenseId == expense.Id && !x.IsDeleted)
+                        .SumAsync(x => (decimal?)x.Amount, ct) ?? 0m;
+                    var chequePaid = await _context.Cheques
+                        .Where(x => x.ExpenseId == expense.Id
+                                    && x.Type == ChequeType.Payable
+                                    && !x.IsDeleted
+                                    && x.Status != ChequeStatus.Bounced
+                                    && x.Status != ChequeStatus.Returned)
+                        .SumAsync(x => (decimal?)x.Amount, ct) ?? 0m;
+                    var totalPaid = cashPaid + chequePaid;
+                    expense.PaidAmount = totalPaid;
+                    expense.PaymentStatus = totalPaid <= 0
+                        ? (int)SettlementStatus.Unpaid
+                        : totalPaid < expense.Amount
+                            ? (int)SettlementStatus.Partial
+                            : (int)SettlementStatus.Paid;
+                    await _context.SaveChangesAsync(ct);
+                }
+            }
+
             return voucher;
         }
 

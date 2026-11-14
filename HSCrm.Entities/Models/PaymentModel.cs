@@ -1,4 +1,4 @@
-﻿using HSCrm.Entities.Entities;
+using HSCrm.Entities.Entities;
 
 namespace HSCrm.Entities.Models
 {
@@ -13,9 +13,9 @@ namespace HSCrm.Entities.Models
         public string Method { get; set; } = "Cash";
         public int? BankAccountId { get; set; }
         public string? ReferenceNo { get; set; }
-        public required string UserId { get; set; }
+        public string? UserId { get; set; }
         public int TenantId { get; set; }
-        public Tenant Tenant { get; set; }
+        public Tenant? Tenant { get; set; }
     }
     public class PaymentEditModel
     {
@@ -29,10 +29,10 @@ namespace HSCrm.Entities.Models
         public string Method { get; set; } = "Cash";
         public int? BankAccountId { get; set; }
         public string? ReferenceNo { get; set; }
-        public string Description { get; set; }
-        public required string UserId { get; set; }
+        public string? Description { get; set; }
+        public string? UserId { get; set; }
         public int TenantId { get; set; }
-        public Tenant Tenant { get; set; }
+        public Tenant? Tenant { get; set; }
     }
 
     public class RegisterPurchasePaymentModel

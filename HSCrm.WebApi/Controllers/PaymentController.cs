@@ -168,7 +168,8 @@ namespace HSCrm.WebApi.Controllers
                     Type = "purchaseInvoice",
                     Title = $"{x.Number} - {x.Supplier?.SupplierFullName ?? "-"}",
                     Amount = x.Total,
-                    Date = x.IssueDate
+                    Date = x.IssueDate,
+                    SupplierId = x.SupplierId
                 }));
             }
 
@@ -192,7 +193,8 @@ namespace HSCrm.WebApi.Controllers
                     Type = "expense",
                     Title = $"{x.ExpenseTitle} - {x.Project?.ProjectTitle ?? "-"}",
                     Amount = x.Amount,
-                    Date = x.ExpenseDate
+                    Date = x.ExpenseDate,
+                    ProjectId = x.ProjectId
                 }));
             }
 
@@ -313,9 +315,16 @@ namespace HSCrm.WebApi.Controllers
             var invoice = _context.purchaseInvoiceUW.GetById(invoiceId);
             if (invoice == null) return;
 
-            // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این فاکتور
-            var totalPaid = _context.paymentUW.Get(p => p.PurchaseInvoiceId == invoiceId && !p.IsDeleted)
+            // محاسبه مجموع تمامی پرداخت‌های غیرحذفی + چک‌های پرداختنی معتبر برای این فاکتور
+            var cashPaid = _context.paymentUW.Get(p => p.PurchaseInvoiceId == invoiceId && !p.IsDeleted)
                                              .Sum(p => p.Amount);
+            var chequePaid = _context.chequeUW.Get(c => c.PurchaseInvoiceId == invoiceId
+                                                     && c.Type == ChequeType.Payable
+                                                     && !c.IsDeleted
+                                                     && c.Status != ChequeStatus.Bounced
+                                                     && c.Status != ChequeStatus.Returned)
+                                             .Sum(c => c.Amount);
+            var totalPaid = cashPaid + chequePaid;
 
             invoice.PaidAmount = totalPaid;
             // محاسبه وضعیت تسویه
@@ -336,9 +345,16 @@ namespace HSCrm.WebApi.Controllers
             var expense = _context.expenseUW.GetById(expenseId);
             if (expense == null) return;
 
-            // محاسبه مجموع تمامی پرداخت‌های غیرحذفی برای این هزینه
-            var totalPaid = _context.paymentUW.Get(p => p.ExpenseId == expenseId && !p.IsDeleted)
+            // محاسبه مجموع تمامی پرداخت‌های غیرحذفی + چک‌های پرداختنی معتبر برای این هزینه
+            var cashPaid = _context.paymentUW.Get(p => p.ExpenseId == expenseId && !p.IsDeleted)
                                              .Sum(p => p.Amount);
+            var chequePaid = _context.chequeUW.Get(c => c.ExpenseId == expenseId
+                                                     && c.Type == ChequeType.Payable
+                                                     && !c.IsDeleted
+                                                     && c.Status != ChequeStatus.Bounced
+                                                     && c.Status != ChequeStatus.Returned)
+                                             .Sum(c => c.Amount);
+            var totalPaid = cashPaid + chequePaid;
 
             expense.PaidAmount = totalPaid;
             // فرض بر این است که برای هزینه هم فیلد Amount مبلغ کل است
@@ -408,7 +424,14 @@ namespace HSCrm.WebApi.Controllers
 
                 var alreadyPaid = _context.paymentUW
                     .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
-                    .Sum(x => x.Amount);
+                    .Sum(x => x.Amount)
+                    + _context.chequeUW
+                    .Get(c => c.PurchaseInvoiceId == invoice.Id
+                           && c.Type == ChequeType.Payable
+                           && !c.IsDeleted
+                           && c.Status != ChequeStatus.Bounced
+                           && c.Status != ChequeStatus.Returned)
+                    .Sum(c => c.Amount);
 
                 var remaining = invoice.Total - alreadyPaid;
                 if (model.Amount > remaining) return new ApiResponse
@@ -439,7 +462,14 @@ namespace HSCrm.WebApi.Controllers
 
                 var totalPaid = _context.paymentUW
                     .Get(x => x.PurchaseInvoiceId == invoice.Id && !x.IsDeleted)
-                    .Sum(x => x.Amount);
+                    .Sum(x => x.Amount)
+                    + _context.chequeUW
+                    .Get(c => c.PurchaseInvoiceId == invoice.Id
+                           && c.Type == ChequeType.Payable
+                           && !c.IsDeleted
+                           && c.Status != ChequeStatus.Bounced
+                           && c.Status != ChequeStatus.Returned)
+                    .Sum(c => c.Amount);
 
                 invoice.PaidAmount = totalPaid;
                 invoice.PayStatus = totalPaid <= 0

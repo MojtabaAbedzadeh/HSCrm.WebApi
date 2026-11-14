@@ -1,4 +1,4 @@
-﻿using Common.Permissions;
+using Common.Permissions;
 using Framework.Authorization;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
@@ -96,6 +96,40 @@ namespace HSCrm.WebApi.Controllers
             if (model.Amount <= 0)
                 return BadRequest(new ApiResponse { Status = false, Message = "مبلغ چک باید بزرگتر از صفر باشد." });
 
+            var customerId = model.CustomerId;
+            var supplierId = model.SupplierId;
+            var projectId = model.ProjectId;
+
+            if (model.SalesInvoiceId.HasValue && (!customerId.HasValue || !projectId.HasValue))
+            {
+                var salesInv = _unitOfWork.salesInvoiceUW
+                    .Get(x => x.Id == model.SalesInvoiceId.Value, true, x => x.Project)
+                    .FirstOrDefault();
+                if (salesInv != null)
+                {
+                    projectId ??= salesInv.ProjectId;
+                    customerId ??= salesInv.Project?.CustomerId;
+                }
+            }
+
+            if (model.PurchaseInvoiceId.HasValue && !supplierId.HasValue)
+            {
+                var purchaseInv = await _unitOfWork.purchaseInvoiceUW.GetByIdAsync(model.PurchaseInvoiceId.Value, ct);
+                if (purchaseInv != null)
+                {
+                    supplierId = purchaseInv.SupplierId;
+                }
+            }
+
+            if (model.ExpenseId.HasValue && !projectId.HasValue)
+            {
+                var expense = await _unitOfWork.expenseUW.GetByIdAsync(model.ExpenseId.Value, ct);
+                if (expense != null)
+                {
+                    projectId = expense.ProjectId;
+                }
+            }
+
             using var transaction = await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
@@ -113,10 +147,13 @@ namespace HSCrm.WebApi.Controllers
                     BankName = model.BankName.Trim(),
                     BranchName = model.BranchName?.Trim(),
                     DrawerName = model.DrawerName?.Trim(),
-                    CustomerId = model.CustomerId,
-                    SupplierId = model.SupplierId,
-                    ProjectId = model.ProjectId,
+                    CustomerId = customerId,
+                    SupplierId = supplierId,
+                    ProjectId = projectId,
                     BankAccountId = model.BankAccountId,
+                    SalesInvoiceId = model.SalesInvoiceId,
+                    PurchaseInvoiceId = model.PurchaseInvoiceId,
+                    ExpenseId = model.ExpenseId,
                     Description = model.Description?.Trim(),
                     CreatedAt = DateTime.UtcNow,
                     CreatedById = User.GetUserId()
@@ -126,6 +163,57 @@ namespace HSCrm.WebApi.Controllers
                 await _unitOfWork.SaveAsync();
 
                 await _accountingService.CreateVoucherForChequeRegistrationAsync(cheque, ct);
+
+                if (cheque.Type == ChequeType.Payable && cheque.PurchaseInvoiceId.HasValue)
+                {
+                    var invoice = await _unitOfWork.purchaseInvoiceUW.GetByIdAsync(cheque.PurchaseInvoiceId.Value, ct);
+                    if (invoice != null)
+                    {
+                        var cashPaid = _unitOfWork.paymentUW
+                            .Get(p => p.PurchaseInvoiceId == invoice.Id && !p.IsDeleted)
+                            .Sum(p => p.Amount);
+                        var chequePaid = _unitOfWork.chequeUW
+                            .Get(c => c.PurchaseInvoiceId == invoice.Id
+                                   && c.Type == ChequeType.Payable
+                                   && !c.IsDeleted
+                                   && c.Status != ChequeStatus.Bounced
+                                   && c.Status != ChequeStatus.Returned)
+                            .Sum(c => c.Amount);
+                        invoice.PaidAmount = cashPaid + chequePaid;
+                        invoice.PayStatus = invoice.PaidAmount <= 0
+                            ? SettlementStatus.Unpaid
+                            : invoice.PaidAmount < invoice.Total
+                                ? SettlementStatus.Partial
+                                : SettlementStatus.Paid;
+                        _unitOfWork.purchaseInvoiceUW.Update(invoice);
+                        await _unitOfWork.SaveAsync();
+                    }
+                }
+                else if (cheque.Type == ChequeType.Payable && cheque.ExpenseId.HasValue)
+                {
+                    var expense = await _unitOfWork.expenseUW.GetByIdAsync(cheque.ExpenseId.Value, ct);
+                    if (expense != null)
+                    {
+                        var cashPaid = _unitOfWork.paymentUW
+                            .Get(p => p.ExpenseId == expense.Id && !p.IsDeleted)
+                            .Sum(p => p.Amount);
+                        var chequePaid = _unitOfWork.chequeUW
+                            .Get(c => c.ExpenseId == expense.Id
+                                   && c.Type == ChequeType.Payable
+                                   && !c.IsDeleted
+                                   && c.Status != ChequeStatus.Bounced
+                                   && c.Status != ChequeStatus.Returned)
+                            .Sum(c => c.Amount);
+                        expense.PaidAmount = cashPaid + chequePaid;
+                        expense.PaymentStatus = expense.PaidAmount <= 0
+                            ? (int)SettlementStatus.Unpaid
+                            : expense.PaidAmount < expense.Amount
+                                ? (int)SettlementStatus.Partial
+                                : (int)SettlementStatus.Paid;
+                        _unitOfWork.expenseUW.Update(expense);
+                        await _unitOfWork.SaveAsync();
+                    }
+                }
 
                 await transaction.CommitAsync(ct);
 

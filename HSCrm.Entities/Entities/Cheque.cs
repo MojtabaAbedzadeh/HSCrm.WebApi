@@ -1,4 +1,4 @@
-﻿using static HSCrm.Common.PublicTools.Enums;
+using static HSCrm.Common.PublicTools.Enums;
 
 namespace HSCrm.Entities.Entities
 {
@@ -92,6 +92,10 @@ namespace HSCrm.Entities.Entities
         /// </summary>
         public int? EndorsedToSupplierId { get; set; }
         public Supplier? EndorsedToSupplier { get; set; }
+
+        public int? SalesInvoiceId { get; set; }
+        public int? PurchaseInvoiceId { get; set; }
+        public int? ExpenseId { get; set; }
 
         public DateTime? StatusChangedAt { get; set; }
         public string? Description { get; set; }

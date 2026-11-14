@@ -516,6 +516,9 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<int?>("EndorsedToSupplierId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ExpenseId")
+                        .HasColumnType("int");
+
                     b.Property<int>("FiscalYearId")
                         .HasColumnType("int");
 
@@ -534,6 +537,9 @@ namespace HSCrm.DataModel.Migrations
                     b.Property<int?>("ProjectId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PurchaseInvoiceId")
+                        .HasColumnType("int");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -549,6 +555,9 @@ namespace HSCrm.DataModel.Migrations
 
                     b.Property<DateTime?>("StatusChangedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int?>("SalesInvoiceId")
+                        .HasColumnType("int");
 
                     b.Property<int?>("SupplierId")
                         .HasColumnType("int");
