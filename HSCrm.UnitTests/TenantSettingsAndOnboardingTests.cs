@@ -878,7 +878,7 @@ namespace HSCrm.UnitTests
                     CreatedAt = DateTime.UtcNow,
                     Items = new List<JournalVoucherItem>
                     {
-                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 101, Debit = 25_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 101, Description = "بدهی مشتری اول", Debit = 25_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
                     }
                 },
                 new JournalVoucher
@@ -895,7 +895,7 @@ namespace HSCrm.UnitTests
                     CreatedAt = DateTime.UtcNow,
                     Items = new List<JournalVoucherItem>
                     {
-                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 102, Debit = 15_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 102, Description = "بدهی مشتری دوم", Debit = 15_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
                     }
                 });
             await env.Context.SaveChangesAsync();
@@ -1017,7 +1017,7 @@ namespace HSCrm.UnitTests
                 CreatedAt = DateTime.UtcNow,
                 Items = new List<JournalVoucherItem>
                 {
-                    new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 1, Debit = 30_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
+                    new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 1, Description = "بدهی مشتری الف", Debit = 30_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow }
                 }
             });
             env.Context.Cheques.Add(new Cheque
@@ -1065,8 +1065,8 @@ namespace HSCrm.UnitTests
                     CreatedAt = DateTime.UtcNow,
                     Items = new List<JournalVoucherItem>
                     {
-                        new() { TenantId = 1, RowNumber = 1, AccountId = accCash.Id, Debit = 8_800_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
-                        new() { TenantId = 1, RowNumber = 2, AccountId = accAr.Id, CustomerId = 77, Debit = 0m, Credit = 8_800_000m, CreatedAt = DateTime.UtcNow }
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accCash.Id, Description = "دریافت نقدی در صندوق", Debit = 8_800_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
+                        new() { TenantId = 1, RowNumber = 2, AccountId = accAr.Id, CustomerId = 77, Description = "تصفیه حساب دریافتنی مشتری بابت دریافت نقدی", Debit = 0m, Credit = 8_800_000m, CreatedAt = DateTime.UtcNow }
                     }
                 },
                 new JournalVoucher
@@ -1077,8 +1077,8 @@ namespace HSCrm.UnitTests
                     CreatedAt = DateTime.UtcNow,
                     Items = new List<JournalVoucherItem>
                     {
-                        new() { TenantId = 1, RowNumber = 1, AccountId = accChq.Id, CustomerId = 77, Debit = 10_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
-                        new() { TenantId = 1, RowNumber = 2, AccountId = accAr.Id, CustomerId = 77, Debit = 0m, Credit = 10_000_000m, CreatedAt = DateTime.UtcNow }
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accChq.Id, CustomerId = 77, Description = "دریافت چک شماره 123321", Debit = 10_000_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
+                        new() { TenantId = 1, RowNumber = 2, AccountId = accAr.Id, CustomerId = 77, Description = "بابت دریافت چک شماره 123321 از مشتری", Debit = 0m, Credit = 10_000_000m, CreatedAt = DateTime.UtcNow }
                     }
                 },
                 new JournalVoucher
@@ -1089,8 +1089,8 @@ namespace HSCrm.UnitTests
                     CreatedAt = DateTime.UtcNow,
                     Items = new List<JournalVoucherItem>
                     {
-                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 77, Debit = 11_920_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
-                        new() { TenantId = 1, RowNumber = 2, AccountId = accRev.Id, Debit = 0m, Credit = 11_920_000m, CreatedAt = DateTime.UtcNow }
+                        new() { TenantId = 1, RowNumber = 1, AccountId = accAr.Id, CustomerId = 77, Description = "بابت فاکتور فروش نهایی", Debit = 11_920_000m, Credit = 0m, CreatedAt = DateTime.UtcNow },
+                        new() { TenantId = 1, RowNumber = 2, AccountId = accRev.Id, Description = "درآمد فروش کالا و خدمات پروژه", Debit = 0m, Credit = 11_920_000m, CreatedAt = DateTime.UtcNow }
                     }
                 });
 
