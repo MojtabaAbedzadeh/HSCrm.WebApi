@@ -265,6 +265,10 @@ namespace HSCrm.DataModel.Services.Repository
                 });
             }
 
+            var salesRevenueAmount = invoice.Subtotal > 0
+                ? invoice.Subtotal
+                : Math.Max(0m, invoice.Total - invoice.Tax + invoice.Discount);
+
             items.Add(new JournalVoucherItem
             {
                 TenantId = invoice.TenantId,
@@ -272,7 +276,7 @@ namespace HSCrm.DataModel.Services.Repository
                 AccountId = accSales.Id,
                 Description = $"درآمد حاصل از فاکتور فروش شماره {invoice.Number}",
                 Debit = 0,
-                Credit = invoice.Subtotal,
+                Credit = salesRevenueAmount,
                 CreatedAt = DateTime.UtcNow,
                 ProjectId = invoice.ProjectId,
                 WarehouseId = invoice.WarehouseId
@@ -387,6 +391,10 @@ namespace HSCrm.DataModel.Services.Repository
             var items = new List<JournalVoucherItem>();
             int row = 1;
 
+            var purchaseBaseAmount = invoice.Subtotal > 0
+                ? invoice.Subtotal
+                : Math.Max(0m, invoice.Total - invoice.Tax + invoice.Discount);
+
             items.Add(new JournalVoucherItem
             {
                 CreatedAt = DateTime.UtcNow,
@@ -394,7 +402,7 @@ namespace HSCrm.DataModel.Services.Repository
                 RowNumber = row++,
                 AccountId = accInventory.Id,
                 Description = $"خرید کالا طبق فاکتور خرید شماره {invoice.Number}",
-                Debit = invoice.Subtotal,
+                Debit = purchaseBaseAmount,
                 Credit = 0,
                 SupplierId = invoice.SupplierId,
                 WarehouseId = invoice.WarehouseId
@@ -2767,6 +2775,33 @@ namespace HSCrm.DataModel.Services.Repository
                 ? Math.Max(0m, baseRunning + pendingChequesAmount)
                 : Math.Max(0m, (-baseRunning) + pendingChequesAmount);
 
+            var targetInvRefType = partyType == AccountingPartyType.Customer
+                ? AccountingReferenceType.SalesInvoice
+                : AccountingReferenceType.PurchaseInvoice;
+
+            var finalInvIds = invoiceDtos
+                .Where(i => i.Status == InvoiceStatus.Final)
+                .Select(i => i.InvoiceId)
+                .ToList();
+
+            var voucheredInvIds = finalInvIds.Count > 0
+                ? (await _context.JournalVouchers
+                    .AsNoTracking()
+                    .Where(v => v.TenantId == tenantId
+                             && !v.IsDeleted
+                             && v.Status == JournalVoucherStatus.Posted
+                             && v.ReferenceType == targetInvRefType
+                             && v.ReferenceId.HasValue
+                             && finalInvIds.Contains(v.ReferenceId.Value))
+                    .Select(v => v.ReferenceId!.Value)
+                    .ToListAsync(ct))
+                    .ToHashSet()
+                : new HashSet<int>();
+
+            var missingVoucherFinalInvoices = invoiceDtos
+                .Where(i => i.Status == InvoiceStatus.Final && !voucheredInvIds.Contains(i.InvoiceId))
+                .ToList();
+
             return new PartyStatementReportDto
             {
                 PartyType = partyType,
@@ -2788,6 +2823,8 @@ namespace HSCrm.DataModel.Services.Repository
                 TotalPeriodCredit = periodItems.Sum(x => x.Credit),
                 FinalBookBalance = running,
                 EffectiveExposureAmount = effectiveExposure,
+                MissingVoucherFinalInvoicesCount = missingVoucherFinalInvoices.Count,
+                MissingVoucherFinalInvoicesAmount = missingVoucherFinalInvoices.Sum(i => i.TotalAmount),
                 Transactions = lines,
                 Invoices = invoiceDtos,
                 Cheques = chequeDtos
@@ -3226,6 +3263,140 @@ namespace HSCrm.DataModel.Services.Repository
             .OrderByDescending(x => x.EffectiveExposureAmount)
             .ThenByDescending(x => x.TotalInvoicesAmount)
             .ToList();
+
+            return result;
+        }
+        public async Task<MissingVouchersSyncResultDto> SyncMissingVouchersAsync(CancellationToken ct = default)
+        {
+            var tenantId = _currentUser.TenantId ?? throw new UnauthorizedAccessException("شناسه شرکت یافت نشد.");
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
+            await EnsureDefaultChartOfAccountsAsync(tenantId, ct);
+
+            var existingVouchers = await _context.JournalVouchers
+                .AsNoTracking()
+                .Where(v => v.TenantId == tenantId
+                         && !v.IsDeleted
+                         && v.Status == JournalVoucherStatus.Posted
+                         && v.ReferenceId.HasValue)
+                .Select(v => new { v.ReferenceType, ReferenceId = v.ReferenceId!.Value })
+                .ToListAsync(ct);
+
+            var existingSet = existingVouchers
+                .Select(v => (v.ReferenceType, v.ReferenceId))
+                .ToHashSet();
+
+            var result = new MissingVouchersSyncResultDto();
+            var defaultFyId = fiscalYearId ?? await _context.FiscalYears
+                .AsNoTracking()
+                .Where(f => f.TenantId == tenantId && !f.IsDeleted && f.IsCurrent)
+                .Select(f => (int?)f.Id)
+                .FirstOrDefaultAsync(ct) ?? 1;
+
+            var missingSales = await _context.SalesInvoices
+                .Include(s => s.Items)
+                .Where(s => s.TenantId == tenantId
+                         && !s.IsDeleted
+                         && s.Status == InvoiceStatus.Final
+                         && (!fiscalYearId.HasValue || s.FiscalYearId == fiscalYearId.Value))
+                .OrderBy(s => s.IssueDate)
+                .ThenBy(s => s.Id)
+                .ToListAsync(ct);
+
+            foreach (var inv in missingSales)
+            {
+                if (existingSet.Contains((AccountingReferenceType.SalesInvoice, inv.Id))) continue;
+                if (inv.FiscalYearId <= 0) inv.FiscalYearId = defaultFyId;
+                await CreateVoucherForSalesInvoiceAsync(inv, InventoryCostingMethod.WeightedAverage, ct);
+                existingSet.Add((AccountingReferenceType.SalesInvoice, inv.Id));
+                result.SyncedSalesInvoicesCount++;
+            }
+
+            var missingPurchases = await _context.PurchaseInvoices
+                .Where(p => p.TenantId == tenantId
+                         && !p.IsDeleted
+                         && p.Status == InvoiceStatus.Final
+                         && (!fiscalYearId.HasValue || p.FiscalYearId == fiscalYearId.Value))
+                .OrderBy(p => p.IssueDate)
+                .ThenBy(p => p.Id)
+                .ToListAsync(ct);
+
+            foreach (var pinv in missingPurchases)
+            {
+                if (existingSet.Contains((AccountingReferenceType.PurchaseInvoice, pinv.Id))) continue;
+                if (pinv.FiscalYearId <= 0) pinv.FiscalYearId = defaultFyId;
+                await CreateVoucherForPurchaseInvoiceAsync(pinv, ct);
+                existingSet.Add((AccountingReferenceType.PurchaseInvoice, pinv.Id));
+                result.SyncedPurchaseInvoicesCount++;
+            }
+
+            var missingReceipts = await _context.Receipts
+                .Where(r => r.TenantId == tenantId
+                         && !r.IsDeleted
+                         && (!fiscalYearId.HasValue || r.FiscalYearId == fiscalYearId.Value))
+                .OrderBy(r => r.ReceiptDate)
+                .ThenBy(r => r.Id)
+                .ToListAsync(ct);
+
+            foreach (var rec in missingReceipts)
+            {
+                if (existingSet.Contains((AccountingReferenceType.Receipt, rec.Id))) continue;
+                if (rec.FiscalYearId <= 0) rec.FiscalYearId = defaultFyId;
+                await CreateVoucherForReceiptAsync(rec, ct);
+                existingSet.Add((AccountingReferenceType.Receipt, rec.Id));
+                result.SyncedReceiptsCount++;
+            }
+
+            var missingPayments = await _context.Payments
+                .Where(p => p.TenantId == tenantId
+                         && !p.IsDeleted
+                         && (!fiscalYearId.HasValue || p.FiscalYearId == fiscalYearId.Value))
+                .OrderBy(p => p.PaymentDate)
+                .ThenBy(p => p.Id)
+                .ToListAsync(ct);
+
+            foreach (var pay in missingPayments)
+            {
+                if (existingSet.Contains((AccountingReferenceType.Payment, pay.Id))) continue;
+                if (pay.FiscalYearId <= 0) pay.FiscalYearId = defaultFyId;
+                await CreateVoucherForPaymentAsync(pay, ct);
+                existingSet.Add((AccountingReferenceType.Payment, pay.Id));
+                result.SyncedPaymentsCount++;
+            }
+
+            var missingExpenses = await _context.Expenses
+                .Where(e => e.TenantId == tenantId
+                         && !e.IsDeleted
+                         && (!fiscalYearId.HasValue || e.FiscalYearId == fiscalYearId.Value))
+                .OrderBy(e => e.ExpenseDate)
+                .ThenBy(e => e.Id)
+                .ToListAsync(ct);
+
+            foreach (var exp in missingExpenses)
+            {
+                if (existingSet.Contains((AccountingReferenceType.Expense, exp.Id))) continue;
+                if (exp.FiscalYearId <= 0) exp.FiscalYearId = defaultFyId;
+                await CreateVoucherForExpenseAsync(exp, ct);
+                existingSet.Add((AccountingReferenceType.Expense, exp.Id));
+                result.SyncedExpensesCount++;
+            }
+
+            var missingCheques = await _context.Cheques
+                .Where(c => c.TenantId == tenantId
+                         && !c.IsDeleted
+                         && c.Status != ChequeStatus.Returned
+                         && (!fiscalYearId.HasValue || c.FiscalYearId == fiscalYearId.Value))
+                .OrderBy(c => c.IssueDate)
+                .ThenBy(c => c.Id)
+                .ToListAsync(ct);
+
+            foreach (var chq in missingCheques)
+            {
+                if (existingSet.Contains((AccountingReferenceType.ChequeOperation, chq.Id))) continue;
+                if (chq.FiscalYearId <= 0) chq.FiscalYearId = defaultFyId;
+                await CreateVoucherForChequeRegistrationAsync(chq, ct);
+                existingSet.Add((AccountingReferenceType.ChequeOperation, chq.Id));
+                result.SyncedChequesCount++;
+            }
 
             return result;
         }

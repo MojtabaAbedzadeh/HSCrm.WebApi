@@ -1110,6 +1110,94 @@ namespace HSCrm.UnitTests
             Assert.Equal(-6_880_000m, arOnly.FinalBookBalance);
             Assert.Equal(3_120_000m, arOnly.EffectiveExposureAmount);
         }
+
+        [Fact(DisplayName = "18. همگام‌سازی فاکتور نهاییِ فاقد سند حسابداری (مانند فاکتور قدیمی): تشخیص و صدور یک‌باره سند")]
+        public async Task SyncMissingVouchers_GeneratesVoucherForLegacyFinalSalesInvoice_AndFixesCustomer360()
+        {
+            var env = CreateEnvironment("SyncLegacyFinalInvoice");
+            var svc = new AccountingService(env.Context, env.Uow, env.CurrentUser, env.CurrentFiscalYear);
+            await svc.EnsureDefaultChartOfAccountsAsync(1);
+
+            env.Context.Customers.Add(new Customer { Id = 88, TenantId = 1, Name = "هادی حقیقی" });
+            env.Context.Projects.Add(new Project { Id = 88, TenantId = 1, ProjectTitle = "پدیده", CustomerId = 88 });
+            env.Context.Warehouses.Add(new Warehouse { Id = 1, TenantId = 1, Title = "اصلی", IsActive = true });
+
+            var invOld = new SalesInvoice
+            {
+                Id = 1,
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProjectId = 88,
+                Number = "1",
+                SellerUserId = "u1",
+                Description = "فاکتور قدیمی بدون سند",
+                IssueDate = DateTime.UtcNow.Date.AddDays(-60),
+                Status = InvoiceStatus.Final,
+                Subtotal = 18_800_000m,
+                Total = 18_800_000m,
+                CreatedAt = DateTime.UtcNow.AddDays(-60)
+            };
+            var invNew = new SalesInvoice
+            {
+                Id = 3,
+                TenantId = 1,
+                FiscalYearId = 1,
+                WarehouseId = 1,
+                ProjectId = 88,
+                Number = "INV-1405-0003",
+                SellerUserId = "u1",
+                Description = "فاکتور جدید",
+                IssueDate = DateTime.UtcNow.Date,
+                Status = InvoiceStatus.Final,
+                Subtotal = 11_920_000m,
+                Total = 11_920_000m,
+                CreatedAt = DateTime.UtcNow
+            };
+            env.Context.SalesInvoices.AddRange(invOld, invNew);
+            await env.Context.SaveChangesAsync();
+
+            // فقط برای فاکتور دوم سند صادر شده، و دریافت نقدی ۸.۸M + چک ۱۰M ثبت شده‌اند
+            await svc.CreateVoucherForSalesInvoiceAsync(invNew);
+            var rec = new Receipt
+            {
+                TenantId = 1, FiscalYearId = 1, SalesInvoiceId = 1, CustomerId = 88,
+                Amount = 8_800_000m, ReceiptDate = DateTime.UtcNow.Date, Method = "Cash", CreatedAt = DateTime.UtcNow
+            };
+            env.Context.Receipts.Add(rec);
+            await env.Context.SaveChangesAsync();
+            await svc.CreateVoucherForReceiptAsync(rec);
+
+            var chq = new Cheque
+            {
+                TenantId = 1, FiscalYearId = 1, Type = ChequeType.Receivable, Status = ChequeStatus.InSafe,
+                ChequeNumber = "123321", BankName = "تجارت", CustomerId = 88, ProjectId = 88, SalesInvoiceId = 1,
+                Amount = 10_000_000m, IssueDate = DateTime.UtcNow.Date, DueDate = DateTime.UtcNow.Date.AddDays(7), CreatedAt = DateTime.UtcNow
+            };
+            env.Context.Cheques.Add(chq);
+            await env.Context.SaveChangesAsync();
+            await svc.CreateVoucherForChequeRegistrationAsync(chq);
+
+            var beforeSync = await svc.GetPartyStatementAsync(AccountingPartyType.Customer, 88, includeChequeAccounts: true);
+            Assert.Equal(1, beforeSync.MissingVoucherFinalInvoicesCount);
+            Assert.Equal(18_800_000m, beforeSync.MissingVoucherFinalInvoicesAmount);
+            Assert.Equal(3_120_000m, beforeSync.FinalBookBalance);
+
+            var sync1 = await svc.SyncMissingVouchersAsync();
+            Assert.Equal(1, sync1.SyncedSalesInvoicesCount);
+
+            var sync2 = await svc.SyncMissingVouchersAsync();
+            Assert.Equal(0, sync2.TotalSyncedCount);
+
+            var afterWithCheques = await svc.GetPartyStatementAsync(AccountingPartyType.Customer, 88, includeChequeAccounts: true);
+            var afterArOnly = await svc.GetPartyStatementAsync(AccountingPartyType.Customer, 88, includeChequeAccounts: false);
+
+            Assert.Equal(0, afterWithCheques.MissingVoucherFinalInvoicesCount);
+            Assert.Equal(30_720_000m, afterWithCheques.TotalInvoicesAmount);
+            Assert.Equal(21_920_000m, afterWithCheques.FinalBookBalance); // 11.92M باز + 10M چک در جریان
+            Assert.Equal(11_920_000m, afterArOnly.FinalBookBalance);     // 11.92M مانده واقعی ۱۱۰۳
+            Assert.Equal(21_920_000m, afterArOnly.EffectiveExposureAmount);
+        }
     }
 }
 

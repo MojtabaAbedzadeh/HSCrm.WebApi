@@ -447,8 +447,27 @@ namespace HSCrm.Entities.Models
         public decimal EffectiveExposureAmount { get; set; }
 
         public List<PartyStatementLineDto> Transactions { get; set; } = new();
+        public int MissingVoucherFinalInvoicesCount { get; set; }
+        public decimal MissingVoucherFinalInvoicesAmount { get; set; }
         public List<PartyInvoiceSummaryDto> Invoices { get; set; } = new();
         public List<PartyChequeSummaryDto> Cheques { get; set; } = new();
+    }
+
+    public class MissingVouchersSyncResultDto
+    {
+        public int SyncedSalesInvoicesCount { get; set; }
+        public int SyncedPurchaseInvoicesCount { get; set; }
+        public int SyncedReceiptsCount { get; set; }
+        public int SyncedPaymentsCount { get; set; }
+        public int SyncedExpensesCount { get; set; }
+        public int SyncedChequesCount { get; set; }
+        public int TotalSyncedCount =>
+            SyncedSalesInvoicesCount +
+            SyncedPurchaseInvoicesCount +
+            SyncedReceiptsCount +
+            SyncedPaymentsCount +
+            SyncedExpensesCount +
+            SyncedChequesCount;
     }
 
     public class PartyChequeSummaryDto

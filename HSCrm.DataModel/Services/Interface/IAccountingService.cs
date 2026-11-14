@@ -150,5 +150,6 @@ namespace HSCrm.DataModel.Services.Interface
             CancellationToken ct = default);
 
         Task<List<CustomerBalanceSummaryDto>> GetCustomerBalancesSummaryAsync(CancellationToken ct = default);
+        Task<MissingVouchersSyncResultDto> SyncMissingVouchersAsync(CancellationToken ct = default);
     }
 }

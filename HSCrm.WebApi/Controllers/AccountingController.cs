@@ -386,6 +386,35 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
+        [HttpPost("SyncMissingVouchers")]
+        [Permission(Permissions.JournalVouchers.Create)]
+        public async Task<ActionResult<ApiResponse<MissingVouchersSyncResultDto>>> SyncMissingVouchers(CancellationToken ct = default)
+        {
+            try
+            {
+                var res = await _accountingService.SyncMissingVouchersAsync(ct);
+                var msg = res.TotalSyncedCount > 0
+                    ? $"{res.TotalSyncedCount} سند حسابداری جاافتاده (از جمله {res.SyncedSalesInvoicesCount} فاکتور فروش) با موفقیت صادر شد."
+                    : "تمامی اسناد حسابداری فاکتورها و تراکنش‌ها هم‌اکنون به‌روز است و سند جاافتاده‌ای وجود ندارد.";
+                return Ok(new ApiResponse<MissingVouchersSyncResultDto>
+                {
+                    Status = true,
+                    StatusCode = ApiResultStatusCode.Success,
+                    Message = msg,
+                    Data = res
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+            }
+        }
+
         [HttpPost("CloseFiscalYear")]
         [Permission(Permissions.JournalVouchers.Approve)]
         public async Task<ActionResult<ApiResponse<CloseFiscalYearResultDto>>> CloseFiscalYear(
