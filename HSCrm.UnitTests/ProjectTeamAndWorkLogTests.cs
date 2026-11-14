@@ -500,5 +500,71 @@ namespace HSCrm.UnitTests
             Assert.False(await permSvc.HasPermissionAsync("emp-1", "workLogs.approve"));
             Assert.False(await permSvc.HasPermissionAsync("emp-1", "purchaseInvoices.create"));
         }
+
+        [Fact(DisplayName = "7. اسناد حسابداری: شرح دقیق هزینه/پروژه و برگرداندن کد و عنوان حساب معین در GetByReference")]
+        public async Task PaymentAndExpenseVoucher_GeneratesContextualDescription_AndReturnsAccountCodes()
+        {
+            var env = CreateEnvironment("VoucherDetailTest");
+            var accSvc = new AccountingService(env.Context, env.Uow, env.CurrentUser, env.CurrentFiscalYear);
+            await accSvc.EnsureDefaultChartOfAccountsAsync(1);
+
+            var bank = new BankAccount
+            {
+                Id = 15,
+                TenantId = 1,
+                Title = "جاری ملت",
+                BankName = "بانک ملی",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            var expense = new Expense
+            {
+                Id = 25,
+                TenantId = 1,
+                FiscalYearId = 1,
+                ProjectId = 10,
+                ExpenseTitle = "ایاب و ذهاب کارگاه",
+                Amount = 1_750_000m,
+                ExpenseDate = DateTime.UtcNow,
+                Type = ExpenseType.Transport,
+                CreatedAt = DateTime.UtcNow
+            };
+            var payment = new Payment
+            {
+                Id = 35,
+                TenantId = 1,
+                FiscalYearId = 1,
+                ExpenseId = 25,
+                BankAccountId = 15,
+                Amount = 1_750_000m,
+                PaymentDate = DateTime.UtcNow,
+                Method = "Transfer",
+                ReferenceNo = "32",
+                CreatedAt = DateTime.UtcNow
+            };
+            env.Context.BankAccounts.Add(bank);
+            env.Context.Expenses.Add(expense);
+            env.Context.Payments.Add(payment);
+            await env.Context.SaveChangesAsync();
+
+            var voucher = await accSvc.CreateVoucherForPaymentAsync(payment);
+            Assert.Contains("ایاب و ذهاب کارگاه", voucher.Description);
+            Assert.Contains("برج مسکونی آفتاب", voucher.Description);
+            Assert.All(voucher.Items, i => Assert.Contains("ایاب و ذهاب کارگاه", i.Description));
+
+            var byRef = await accSvc.GetVoucherByReferenceAsync(AccountingReferenceType.Payment, 35);
+            Assert.NotNull(byRef);
+            Assert.Equal(2, byRef!.Items.Count);
+            Assert.All(byRef.Items, i =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(i.AccountCode));
+                Assert.False(string.IsNullOrWhiteSpace(i.AccountTitle));
+            });
+            Assert.Contains(byRef.Items, i => i.AccountCode == "2101" && i.ProjectTitle == "برج مسکونی آفتاب");
+            Assert.Contains(byRef.Items, i => i.AccountCode == "1101" && i.BankAccountTitle != null);
+
+            var vouchersList = await accSvc.GetVouchersDetailedAsync();
+            Assert.Contains(vouchersList, v => v.Id == voucher.Id && v.Items.Count == 2);
+        }
     }
 }

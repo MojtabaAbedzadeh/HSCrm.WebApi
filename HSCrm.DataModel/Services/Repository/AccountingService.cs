@@ -230,9 +230,18 @@ namespace HSCrm.DataModel.Services.Repository
 
             var project = await _context.Set<Project>()
                 .AsNoTracking()
+                .Include(p => p.Customer)
                 .FirstOrDefaultAsync(p => p.Id == invoice.ProjectId, ct);
 
             int? customerId = project?.CustomerId;
+            var customerName = project?.Customer?.Name;
+            var projectTitle = project?.ProjectTitle;
+            var saleTargetLabel = string.Join(" - ", new[]
+            {
+                !string.IsNullOrWhiteSpace(customerName) ? $"به {customerName}" : null,
+                !string.IsNullOrWhiteSpace(projectTitle) ? $"پروژه {projectTitle}" : null
+            }.Where(x => x != null));
+            var saleSuffix = string.IsNullOrWhiteSpace(saleTargetLabel) ? "" : $" ({saleTargetLabel})";
 
             var items = new List<JournalVoucherItem>();
             int row = 1;
@@ -243,7 +252,7 @@ namespace HSCrm.DataModel.Services.Repository
                 RowNumber = row++,
                 CreatedAt = DateTime.UtcNow,
                 AccountId = accReceivable.Id,
-                Description = $"بابت فاکتور فروش شماره {invoice.Number}",
+                Description = $"بابت فاکتور فروش شماره {invoice.Number}{saleSuffix}",
                 Debit = invoice.Total,
                 Credit = 0,
                 CustomerId = customerId,
@@ -274,7 +283,7 @@ namespace HSCrm.DataModel.Services.Repository
                 TenantId = invoice.TenantId,
                 RowNumber = row++,
                 AccountId = accSales.Id,
-                Description = $"درآمد حاصل از فاکتور فروش شماره {invoice.Number}",
+                Description = $"درآمد فاکتور فروش شماره {invoice.Number}{saleSuffix}",
                 Debit = 0,
                 Credit = salesRevenueAmount,
                 CreatedAt = DateTime.UtcNow,
@@ -366,7 +375,7 @@ namespace HSCrm.DataModel.Services.Repository
                 CreatedAt = DateTime.UtcNow,
                 VoucherNumber = nextNumber,
                 VoucherDate = invoice.IssueDate,
-                Description = $"سند خودکار فاکتور فروش و بهای تمام‌شده (COGS) شماره {invoice.Number}",
+                Description = $"فاکتور فروش شماره {invoice.Number}{saleSuffix}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.SalesInvoice,
                 ReferenceId = invoice.Id,
@@ -388,6 +397,13 @@ namespace HSCrm.DataModel.Services.Repository
             var accPayable = await GetSystemAccountAsync(invoice.TenantId, ACC_PAYABLE, ct);
             var accDiscount = await GetSystemAccountAsync(invoice.TenantId, ACC_PURCHASE_DISCOUNT, ct);
 
+            var supplierName = await _context.Set<Supplier>()
+                .AsNoTracking()
+                .Where(s => s.Id == invoice.SupplierId)
+                .Select(s => s.SupplierFullName)
+                .FirstOrDefaultAsync(ct);
+            var suppSuffix = !string.IsNullOrWhiteSpace(supplierName) ? $" از {supplierName}" : "";
+
             var items = new List<JournalVoucherItem>();
             int row = 1;
 
@@ -401,7 +417,7 @@ namespace HSCrm.DataModel.Services.Repository
                 TenantId = invoice.TenantId,
                 RowNumber = row++,
                 AccountId = accInventory.Id,
-                Description = $"خرید کالا طبق فاکتور خرید شماره {invoice.Number}",
+                Description = $"خرید کالا طبق فاکتور شماره {invoice.Number}{suppSuffix}",
                 Debit = purchaseBaseAmount,
                 Credit = 0,
                 SupplierId = invoice.SupplierId,
@@ -429,7 +445,7 @@ namespace HSCrm.DataModel.Services.Repository
                 CreatedAt = DateTime.UtcNow,
                 RowNumber = row++,
                 AccountId = accPayable.Id,
-                Description = $"بدهی به تأمین‌کننده بابت فاکتور خرید شماره {invoice.Number}",
+                Description = $"بدهی فاکتور خرید شماره {invoice.Number}{suppSuffix}",
                 Debit = 0,
                 Credit = invoice.Total,
                 SupplierId = invoice.SupplierId
@@ -459,7 +475,7 @@ namespace HSCrm.DataModel.Services.Repository
                 VoucherNumber = nextNumber,
                 CreatedAt = DateTime.UtcNow,
                 VoucherDate = invoice.IssueDate,
-                Description = $"سند خودکار فاکتور خرید شماره {invoice.Number}",
+                Description = $"فاکتور خرید شماره {invoice.Number}{suppSuffix}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.PurchaseInvoice,
                 ReferenceId = invoice.Id,
@@ -480,8 +496,39 @@ namespace HSCrm.DataModel.Services.Repository
             var bankAcc = await ResolveBankAccountAsync(receipt.TenantId, receipt.BankAccountId, ct);
             var bankTitle = bankAcc != null ? $"{bankAcc.Title} - {bankAcc.BankName}" : "خزانه/بانک";
 
+            var recCustomerName = await _context.Set<Customer>()
+                .AsNoTracking()
+                .Where(c => c.Id == receipt.CustomerId)
+                .Select(c => c.Name)
+                .FirstOrDefaultAsync(ct);
+
+            string? recInvoiceNumber = null;
+            string? recProjectTitle = null;
+            int? recProjectId = null;
+            if (receipt.SalesInvoiceId.HasValue)
+            {
+                var sInv = await _context.Set<SalesInvoice>()
+                    .AsNoTracking()
+                    .Include(x => x.Project)
+                    .FirstOrDefaultAsync(x => x.Id == receipt.SalesInvoiceId.Value, ct);
+                recInvoiceNumber = sInv?.Number;
+                recProjectId = sInv?.ProjectId;
+                recProjectTitle = sInv?.Project?.ProjectTitle;
+            }
+
+            var recTargetParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(recInvoiceNumber))
+                recTargetParts.Add($"فاکتور فروش شماره {recInvoiceNumber}");
+            if (!string.IsNullOrWhiteSpace(recProjectTitle))
+                recTargetParts.Add($"پروژه {recProjectTitle}");
+            if (!string.IsNullOrWhiteSpace(recCustomerName))
+                recTargetParts.Add($"از {recCustomerName}");
+            if (recTargetParts.Count == 0 && !string.IsNullOrWhiteSpace(receipt.Description))
+                recTargetParts.Add(receipt.Description.Trim());
+            var recContext = recTargetParts.Count > 0 ? string.Join(" - ", recTargetParts) : $"دریافت شماره {receipt.Id}";
+
             var nextNumber = await GetNextVoucherNumberAsync(receipt.TenantId, receipt.FiscalYearId, ct);
-            var refDesc = !string.IsNullOrWhiteSpace(receipt.ReferenceNo) ? $" (شماره پیگیری: {receipt.ReferenceNo})" : "";
+            var refDesc = !string.IsNullOrWhiteSpace(receipt.ReferenceNo) ? $" (پیگیری: {receipt.ReferenceNo})" : "";
 
             var voucher = new JournalVoucher
             {
@@ -490,7 +537,7 @@ namespace HSCrm.DataModel.Services.Repository
                 CreatedAt = DateTime.UtcNow,
                 VoucherNumber = nextNumber,
                 VoucherDate = receipt.ReceiptDate,
-                Description = $"سند دریافت وجه به {bankTitle} ({receipt.Method}){refDesc}",
+                Description = $"دریافت وجه بابت {recContext} به {bankTitle}{refDesc}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.Receipt,
                 ReferenceId = receipt.Id,
@@ -503,11 +550,12 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = receipt.TenantId,
                         RowNumber = 1,
                         AccountId = accCashBank.Id,
-                        Description = $"افزایش موجودی {bankTitle} بابت دریافت شماره {receipt.Id}{refDesc}",
+                        Description = $"واریز به {bankTitle} بابت {recContext}{refDesc}",
                         Debit = receipt.Amount,
                         Credit = 0,
                         CreatedAt = DateTime.UtcNow,
                         CustomerId = receipt.CustomerId,
+                        ProjectId = recProjectId,
                         BankAccountId = bankAcc?.Id ?? receipt.BankAccountId
                     },
                     new()
@@ -515,10 +563,12 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = receipt.TenantId,
                         RowNumber = 2,
                         AccountId = accReceivable.Id,
-                        Description = $"تصفیه حساب دریافتنی مشتری بابت دریافت شماره {receipt.Id}",
-                        Debit = 0,CreatedAt = DateTime.UtcNow,
+                        Description = $"دریافت از مشتری بابت {recContext}",
+                        Debit = 0,
+                        CreatedAt = DateTime.UtcNow,
                         Credit = receipt.Amount,
-                        CustomerId = receipt.CustomerId
+                        CustomerId = receipt.CustomerId,
+                        ProjectId = recProjectId
                     }
                 }
             };
@@ -535,20 +585,40 @@ namespace HSCrm.DataModel.Services.Repository
 
             int? supplierId = null;
             int? projectId = null;
+            string? payContext = null;
 
             if (payment.PurchaseInvoiceId.HasValue)
             {
                 var pInv = await _context.Set<PurchaseInvoice>()
                     .AsNoTracking()
+                    .Include(x => x.Supplier)
                     .FirstOrDefaultAsync(x => x.Id == payment.PurchaseInvoiceId.Value, ct);
                 supplierId = pInv?.SupplierId;
+                if (pInv != null)
+                {
+                    var supName = pInv.Supplier?.SupplierFullName;
+                    payContext = $"فاکتور خرید شماره {pInv.Number}" + (!string.IsNullOrWhiteSpace(supName) ? $" از {supName}" : "");
+                }
             }
             else if (payment.ExpenseId.HasValue)
             {
                 var exp = await _context.Set<Expense>()
                     .AsNoTracking()
+                    .Include(x => x.Project)
                     .FirstOrDefaultAsync(x => x.Id == payment.ExpenseId.Value, ct);
                 projectId = exp?.ProjectId;
+                if (exp != null)
+                {
+                    var prjTitle = exp.Project?.ProjectTitle;
+                    payContext = $"هزینه «{exp.ExpenseTitle}»" + (!string.IsNullOrWhiteSpace(prjTitle) ? $" (پروژه {prjTitle})" : "");
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(payContext))
+            {
+                payContext = !string.IsNullOrWhiteSpace(payment.Description)
+                    ? payment.Description.Trim()
+                    : $"پرداخت وجه شماره {payment.Id}";
             }
 
             var bankAcc = await ResolveBankAccountAsync(payment.TenantId, payment.BankAccountId, ct);
@@ -564,7 +634,7 @@ namespace HSCrm.DataModel.Services.Repository
                 VoucherNumber = nextNumber,
                 CreatedAt = DateTime.UtcNow,
                 VoucherDate = payment.PaymentDate,
-                Description = $"سند پرداخت وجه از {bankTitle} ({payment.Method}){refDesc}",
+                Description = $"پرداخت وجه بابت {payContext} از {bankTitle}{refDesc}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.Payment,
                 ReferenceId = payment.Id,
@@ -577,7 +647,7 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = payment.TenantId,
                         RowNumber = 1,
                         AccountId = accPayable.Id,
-                        Description = $"تسویه بدهی بابت سند پرداخت شماره {payment.Id}",
+                        Description = $"تسویه حساب بابت {payContext}",
                         Debit = payment.Amount,
                         Credit = 0,
                         CreatedAt = DateTime.UtcNow,
@@ -589,7 +659,7 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = payment.TenantId,
                         RowNumber = 2,
                         AccountId = accCashBank.Id,
-                        Description = $"کسر از {bankTitle} بابت پرداخت شماره {payment.Id}{refDesc}",
+                        Description = $"برداشت از {bankTitle} بابت {payContext}{refDesc}",
                         Debit = 0,
                         Credit = payment.Amount,
                         CreatedAt = DateTime.UtcNow,
@@ -610,6 +680,15 @@ namespace HSCrm.DataModel.Services.Repository
             var accExpense = await GetSystemAccountAsync(expense.TenantId, ACC_PROJECT_EXPENSE, ct);
             var accPayable = await GetSystemAccountAsync(expense.TenantId, ACC_PAYABLE, ct);
 
+            var expProjectTitle = expense.ProjectId > 0
+                ? await _context.Set<Project>()
+                    .AsNoTracking()
+                    .Where(p => p.Id == expense.ProjectId)
+                    .Select(p => p.ProjectTitle)
+                    .FirstOrDefaultAsync(ct)
+                : null;
+            var expProjSuffix = !string.IsNullOrWhiteSpace(expProjectTitle) ? $" - پروژه {expProjectTitle}" : "";
+
             var nextNumber = await GetNextVoucherNumberAsync(expense.TenantId, expense.FiscalYearId, ct);
 
             var voucher = new JournalVoucher
@@ -619,7 +698,7 @@ namespace HSCrm.DataModel.Services.Repository
                 CreatedAt = DateTime.UtcNow,
                 VoucherNumber = nextNumber,
                 VoucherDate = expense.ExpenseDate,
-                Description = $"شناسایی هزینه: {expense.ExpenseTitle}",
+                Description = $"شناسایی هزینه «{expense.ExpenseTitle}»{expProjSuffix}",
                 Status = JournalVoucherStatus.Posted,
                 ReferenceType = AccountingReferenceType.Expense,
                 ReferenceId = expense.Id,
@@ -632,9 +711,10 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = expense.TenantId,
                         RowNumber = 1,
                         AccountId = accExpense.Id,
-                        Description = $"ثبت هزینه پروژه: {expense.ExpenseTitle}",
+                        Description = $"ثبت هزینه «{expense.ExpenseTitle}»{expProjSuffix}",
                         Debit = expense.Amount,
-                        Credit = 0,CreatedAt = DateTime.UtcNow,
+                        Credit = 0,
+                        CreatedAt = DateTime.UtcNow,
                         ProjectId = expense.ProjectId
                     },
                     new()
@@ -642,9 +722,10 @@ namespace HSCrm.DataModel.Services.Repository
                         TenantId = expense.TenantId,
                         RowNumber = 2,
                         AccountId = accPayable.Id,
-                        Description = $"ایجاد تعهد پرداخت بابت هزینه: {expense.ExpenseTitle}",
+                        Description = $"بستانکاری بابت هزینه «{expense.ExpenseTitle}»{expProjSuffix}",
                         Debit = 0,
-                        Credit = expense.Amount,CreatedAt = DateTime.UtcNow,
+                        Credit = expense.Amount,
+                        CreatedAt = DateTime.UtcNow,
                         ProjectId = expense.ProjectId
                     }
                 }
@@ -723,6 +804,9 @@ namespace HSCrm.DataModel.Services.Repository
                 .AsNoTracking()
                 .Include(x => x.Account)
                 .Include(x => x.BankAccount)
+                .Include(x => x.Customer)
+                .Include(x => x.Supplier)
+                .Include(x => x.Project)
                 .Include(x => x.JournalVoucher)
                 .Where(x => x.JournalVoucher.Status == JournalVoucherStatus.Posted
                          && !x.JournalVoucher.IsDeleted
@@ -757,13 +841,18 @@ namespace HSCrm.DataModel.Services.Repository
                     VoucherId = item.JournalVoucherId,
                     VoucherNumber = item.JournalVoucher.VoucherNumber,
                     VoucherDate = item.JournalVoucher.VoucherDate,
-                    AccountCode = item.Account.Code,
-                    AccountTitle = item.Account.Title,
+                    AccountCode = item.Account?.Code ?? string.Empty,
+                    AccountTitle = item.Account?.Title ?? "حساب نامشخص",
                     Description = item.Description,
+                    VoucherDescription = item.JournalVoucher.Description,
+                    ReferenceType = (int)item.JournalVoucher.ReferenceType,
                     ReferenceTypeTitle = item.JournalVoucher.ReferenceType.ToString(),
                     ReferenceId = item.JournalVoucher.ReferenceId,
                     BankAccountId = item.BankAccountId,
                     BankAccountTitle = item.BankAccount != null ? $"{item.BankAccount.Title} ({item.BankAccount.BankName})" : null,
+                    CustomerName = item.Customer?.Name,
+                    SupplierName = item.Supplier?.SupplierFullName,
+                    ProjectTitle = item.Project?.ProjectTitle,
                     Debit = item.Debit,
                     Credit = item.Credit,
                     RunningBalance = running
@@ -771,6 +860,89 @@ namespace HSCrm.DataModel.Services.Repository
             }
 
             return result;
+        }
+
+        public async Task<List<JournalVoucherDetailDto>> GetVouchersDetailedAsync(CancellationToken ct = default)
+        {
+            var fiscalYearId = _currentFiscalYear.FiscalYearId;
+            var vouchers = await _context.JournalVouchers
+                .AsNoTracking()
+                .Include(v => v.Items).ThenInclude(i => i.Account)
+                .Include(v => v.Items).ThenInclude(i => i.BankAccount)
+                .Include(v => v.Items).ThenInclude(i => i.Customer)
+                .Include(v => v.Items).ThenInclude(i => i.Supplier)
+                .Include(v => v.Items).ThenInclude(i => i.Project)
+                .Where(v => !v.IsDeleted
+                         && v.Status != JournalVoucherStatus.Cancelled
+                         && (!fiscalYearId.HasValue || v.FiscalYearId == fiscalYearId.Value))
+                .OrderByDescending(v => v.VoucherDate.Date)
+                .ThenByDescending(v => v.VoucherNumber)
+                .ThenByDescending(v => v.Id)
+                .ToListAsync(ct);
+
+            return vouchers.Select(MapToVoucherDetailDto).ToList();
+        }
+
+        public async Task<JournalVoucherDetailDto?> GetVoucherByReferenceAsync(
+            AccountingReferenceType referenceType,
+            int referenceId,
+            CancellationToken ct = default)
+        {
+            var voucher = await _context.JournalVouchers
+                .AsNoTracking()
+                .Include(v => v.Items).ThenInclude(i => i.Account)
+                .Include(v => v.Items).ThenInclude(i => i.BankAccount)
+                .Include(v => v.Items).ThenInclude(i => i.Customer)
+                .Include(v => v.Items).ThenInclude(i => i.Supplier)
+                .Include(v => v.Items).ThenInclude(i => i.Project)
+                .Where(v => !v.IsDeleted
+                         && v.Status != JournalVoucherStatus.Cancelled
+                         && v.ReferenceType == referenceType
+                         && v.ReferenceId == referenceId)
+                .OrderByDescending(v => v.Id)
+                .FirstOrDefaultAsync(ct);
+
+            return voucher != null ? MapToVoucherDetailDto(voucher) : null;
+        }
+
+        private static JournalVoucherDetailDto MapToVoucherDetailDto(JournalVoucher v)
+        {
+            return new JournalVoucherDetailDto
+            {
+                Id = v.Id,
+                VoucherNumber = v.VoucherNumber,
+                VoucherDate = v.VoucherDate,
+                Description = v.Description,
+                ReferenceType = (int)v.ReferenceType,
+                ReferenceTypeTitle = v.ReferenceType.ToString(),
+                ReferenceId = v.ReferenceId,
+                TotalDebit = v.TotalDebit,
+                TotalCredit = v.TotalCredit,
+                Items = v.Items
+                    .Where(i => !i.IsDeleted)
+                    .OrderBy(i => i.RowNumber)
+                    .ThenBy(i => i.Id)
+                    .Select(i => new JournalVoucherItemDetailDto
+                    {
+                        Id = i.Id,
+                        RowNumber = i.RowNumber,
+                        AccountId = i.AccountId,
+                        AccountCode = i.Account?.Code ?? string.Empty,
+                        AccountTitle = i.Account?.Title ?? "حساب نامشخص",
+                        Description = i.Description,
+                        Debit = i.Debit,
+                        Credit = i.Credit,
+                        BankAccountId = i.BankAccountId,
+                        BankAccountTitle = i.BankAccount != null ? $"{i.BankAccount.Title} ({i.BankAccount.BankName})" : null,
+                        CustomerId = i.CustomerId,
+                        CustomerName = i.Customer?.Name,
+                        SupplierId = i.SupplierId,
+                        SupplierName = i.Supplier?.SupplierFullName,
+                        ProjectId = i.ProjectId,
+                        ProjectTitle = i.Project?.ProjectTitle
+                    })
+                    .ToList()
+            };
         }
 
         public async Task<JournalVoucher?> CreateOpeningVoucherForBankAccountAsync(BankAccount bankAccount, CancellationToken ct = default)

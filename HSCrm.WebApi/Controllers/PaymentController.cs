@@ -371,6 +371,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("RegisterPurchasePayment")]
+        [Permission(Permissions.Payments.Create)]
         public async Task<ApiResponse> RegisterPurchasePayment([FromBody] RegisterPurchasePaymentModel model)
         {
             try

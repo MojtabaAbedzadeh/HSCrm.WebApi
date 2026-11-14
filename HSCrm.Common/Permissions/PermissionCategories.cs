@@ -1,4 +1,4 @@
-﻿namespace HSCrm.Common.Permissions
+namespace HSCrm.Common.Permissions
 {
     public static class PermissionCategories
     {
@@ -15,6 +15,7 @@
             new() { Key="Projects", TitleFa="پروژه‌ها", Icon="mdi mdi-briefcase", Order=9 },
             new() { Key="Expenses", TitleFa="هزینه‌ها", Icon="mdi mdi-cash-minus", Order=10 },
             new() { Key="Payments", TitleFa="پرداخت‌ها", Icon="mdi mdi-cash-check", Order=11 },
+            new() { Key="Receipt", TitleFa="دریافت‌ها و واریزی‌ها", Icon="mdi mdi-cash-plus", Order=12 },
             new() { Key="PurchaseInvoices", TitleFa="فاکتورهای خرید", Icon="mdi mdi-file-document", Order=12 },
             new() { Key="SalesInvoices", TitleFa="فاکتورهای فروش", Icon="mdi mdi-file-document-outline", Order=13 },
             new() { Key="FiscalYears", TitleFa="سال‌های مالی", Icon="mdi mdi-calendar", Order=14 },

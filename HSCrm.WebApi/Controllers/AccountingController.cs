@@ -115,16 +115,10 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("Vouchers")]
         [Permission(Permissions.JournalVouchers.View)]
-        public async Task<ActionResult<ApiResponse<IEnumerable<JournalVoucher>>>> GetVouchers(CancellationToken ct)
+        public async Task<ActionResult<ApiResponse<List<JournalVoucherDetailDto>>>> GetVouchers(CancellationToken ct)
         {
-            var vouchers = await _unitOfWork.journalVoucherUW
-                .Get(x => !x.IsDeleted, asNoTracking: true, x => x.Items)
-                .OrderByDescending(x => x.VoucherDate.Date)
-                .ThenByDescending(x => x.VoucherNumber)
-                .ThenByDescending(x => x.Id)
-                .ToListAsync(ct);
-
-            return Ok(new ApiResponse<IEnumerable<JournalVoucher>>
+            var vouchers = await _accountingService.GetVouchersDetailedAsync(ct);
+            return Ok(new ApiResponse<List<JournalVoucherDetailDto>>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,
@@ -135,19 +129,13 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetByReference")]
         [Permission(Permissions.JournalVouchers.View)]
-        public async Task<ActionResult<ApiResponse<JournalVoucher?>>> GetByReference(
+        public async Task<ActionResult<ApiResponse<JournalVoucherDetailDto?>>> GetByReference(
             [FromQuery] AccountingReferenceType referenceType,
             [FromQuery] int referenceId,
             CancellationToken ct)
         {
-            var voucher = await _unitOfWork.journalVoucherUW
-                .Get(x => !x.IsDeleted && x.ReferenceType == referenceType && x.ReferenceId == referenceId,
-                     asNoTracking: true,
-                     x => x.Items)
-                .OrderByDescending(x => x.Id)
-                .FirstOrDefaultAsync(ct);
-
-            return Ok(new ApiResponse<JournalVoucher?>
+            var voucher = await _accountingService.GetVoucherByReferenceAsync(referenceType, referenceId, ct);
+            return Ok(new ApiResponse<JournalVoucherDetailDto?>
             {
                 Status = true,
                 StatusCode = ApiResultStatusCode.Success,

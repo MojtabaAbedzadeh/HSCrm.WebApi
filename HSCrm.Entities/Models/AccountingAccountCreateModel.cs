@@ -66,13 +66,52 @@ namespace HSCrm.Entities.Models
         public string AccountTitle { get; set; } = default!;
         public int? BankAccountId { get; set; }
         public string? BankAccountTitle { get; set; }
+        public string? CustomerName { get; set; }
+        public string? SupplierName { get; set; }
+        public string? ProjectTitle { get; set; }
         public string Description { get; set; } = default!;
+        public string? VoucherDescription { get; set; }
+        public int ReferenceType { get; set; }
         public string ReferenceTypeTitle { get; set; } = default!;
         public int? ReferenceId { get; set; }
         public decimal Debit { get; set; }
         public decimal Credit { get; set; }
         public decimal RunningBalance { get; set; }
         public string BalanceNature => RunningBalance > 0 ? "بد" : RunningBalance < 0 ? "بس" : "بی‌حساب";
+    }
+
+    public class JournalVoucherItemDetailDto
+    {
+        public int Id { get; set; }
+        public int RowNumber { get; set; }
+        public int AccountId { get; set; }
+        public string AccountCode { get; set; } = string.Empty;
+        public string AccountTitle { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+        public int? BankAccountId { get; set; }
+        public string? BankAccountTitle { get; set; }
+        public int? CustomerId { get; set; }
+        public string? CustomerName { get; set; }
+        public int? SupplierId { get; set; }
+        public string? SupplierName { get; set; }
+        public int? ProjectId { get; set; }
+        public string? ProjectTitle { get; set; }
+    }
+
+    public class JournalVoucherDetailDto
+    {
+        public int Id { get; set; }
+        public int VoucherNumber { get; set; }
+        public DateTime VoucherDate { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public int ReferenceType { get; set; }
+        public string ReferenceTypeTitle { get; set; } = string.Empty;
+        public int? ReferenceId { get; set; }
+        public decimal TotalDebit { get; set; }
+        public decimal TotalCredit { get; set; }
+        public List<JournalVoucherItemDetailDto> Items { get; set; } = new();
     }
 
     /// <summary>

@@ -213,6 +213,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetCompanySettings")]
+        [Permission(Permissions.Tenants.View)]
         public ApiResponse<CompanySettingsDto> GetCompanySettings()
         {
             var tenantId = User.GetTenantId();
@@ -576,6 +577,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("GetInvoicePatterns")]
+        [Permission(Permissions.Tenants.View)]
         public ApiResponse<object> GetInvoicePatterns()
         {
             var tenantId = User.GetTenantId();
@@ -620,6 +622,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("UpdateInvoicePatterns")]
+        [Permission(Permissions.Tenants.Edit)]
         public ApiResponse UpdateInvoicePatterns([FromBody] InvoicePatternUpdateModel model)
         {
             var tenantId = User.GetTenantId();
