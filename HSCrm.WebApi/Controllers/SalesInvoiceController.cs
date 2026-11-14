@@ -58,18 +58,6 @@ namespace HSCrm.WebApi.Controllers
             };
 
             var fyId = fiscalYearId ?? _currentFiscalYearService?.FiscalYearId;
-            var actorUserId = User?.GetUserId();
-            if (_projectAccess != null && !string.IsNullOrWhiteSpace(actorUserId)
-                && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, actorUserId, model.ProjectId))
-            {
-                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return new ApiResponse
-                {
-                    Status = false,
-                    StatusCode = ApiResultStatusCode.Forbidden,
-                    Message = "شما عضو این پروژه نیستید و مجاز به ثبت فاکتور فروش برای آن نمی‌باشید."
-                };
-            }
 
             var tenant = _context.tenantUW?.GetById(tenantId.Value);
             var mode = string.IsNullOrWhiteSpace(tenant?.InvoiceNumberingMode) ? "Hybrid" : tenant.InvoiceNumberingMode;
@@ -258,6 +246,19 @@ namespace HSCrm.WebApi.Controllers
                     Status = false,
                     StatusCode = ApiResultStatusCode.BadRequest,
                     Message = "شناسه مستاجر (TenantId) در درخواست موجود نیست."
+                };
+            }
+
+            var actorUserId = User?.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(actorUserId)
+                && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, actorUserId, model.ProjectId))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Forbidden,
+                    Message = "شما عضو این پروژه نیستید و مجاز به ثبت فاکتور فروش برای آن نمی‌باشید."
                 };
             }
 
@@ -531,6 +532,20 @@ namespace HSCrm.WebApi.Controllers
                     StatusCode = ApiResultStatusCode.NotFound,
                     Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name)
                 };
+
+                var actorUserId = User?.GetUserId();
+                if (_projectAccess != null && !string.IsNullOrWhiteSpace(actorUserId)
+                    && !await _projectAccess.CanAccessProjectAsync(invoice.TenantId, actorUserId, invoice.ProjectId))
+                {
+                    tr.Rollback();
+                    if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return new ApiResponse
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.Forbidden,
+                        Message = "شما عضو پروژه این فاکتور نیستید و مجاز به ویرایش آن نمی‌باشید."
+                    };
+                }
 
                 var tenant = _context.tenantUW?.GetById(invoice.TenantId);
                 if (tenant?.DocumentLockDate != null && (model.IssueDate.Date <= tenant.DocumentLockDate.Value.Date || invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date))

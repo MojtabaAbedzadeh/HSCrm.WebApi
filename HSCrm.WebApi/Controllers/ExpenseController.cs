@@ -73,16 +73,18 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse<IEnumerable<Expense>> { Status = false, Message = "دسترسی نامعتبر" };
 
             // حذف IgnoreQueryFilters برای حفظ حریم چندمستاجری
+            var query = _context.expenseUW
+                .Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value,
+                     true, x => x.Project, x => x.Tenant, x => x.CreatedBy);
+
             var userId = User.GetUserId();
-            if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId) && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, projectId, ct))
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId) && !await _projectAccess.HasFullProjectAccessAsync(userId, ct))
             {
-                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return new ApiResponse<IEnumerable<Expense>> { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما عضو این پروژه نیستید و مجاز به مشاهده هزینه‌های آن نمی‌باشید." };
+                var allowedIds = await _projectAccess.GetAccessibleProjectIdsAsync(tenantId.Value, userId, ct);
+                query = query.Where(x => allowedIds.Contains(x.ProjectId));
             }
 
-            var expenses = _context.expenseUW
-                .Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value,
-                     true, x => x.Project, x => x.Tenant, x => x.CreatedBy)
+            var expenses = query
                 .OrderByDescending(x => x.ExpenseDate)
                 .ThenByDescending(x => x.Id)
                 .ToList();
@@ -140,6 +142,13 @@ namespace HSCrm.WebApi.Controllers
 
             if (!tenantId.HasValue || !fiscalYearId.HasValue)
                 return new ApiResponse<IEnumerable<Expense>> { Status = false, Message = "دسترسی نامعتبر" };
+
+            var userId = User.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId) && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, projectId, ct))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse<IEnumerable<Expense>> { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما عضو این پروژه نیستید و مجاز به مشاهده هزینه‌های آن نمی‌باشید." };
+            }
 
             var expenses = _context.expenseUW
                 .Get(
