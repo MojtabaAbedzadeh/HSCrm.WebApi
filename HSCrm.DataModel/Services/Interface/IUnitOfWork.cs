@@ -13,6 +13,8 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<ProductPrice> priceUW { get; }
         GenericCRUDClass<Product> productUW { get; }
         GenericCRUDClass<Project> projectUW { get; }
+        GenericCRUDClass<ProjectMember> projectMemberUW { get; }
+        GenericCRUDClass<ProjectWorkLog> projectWorkLogUW { get; }
         GenericCRUDClass<Supplier> supplierUW { get; }
         GenericCRUDClass<Customer> customerUW { get; }
         GenericCRUDClass<Expense> expenseUW { get; }

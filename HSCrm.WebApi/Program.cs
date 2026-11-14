@@ -76,6 +76,8 @@ builder.Services.AddScoped<ICurrentFiscalYearService, CurrentFiscalYearService>(
 builder.Services.AddScoped<IPaymentSettlementService, PaymentSettlementService>();
 builder.Services.AddScoped<IAccountingService, AccountingService>();
 builder.Services.AddScoped<IInvoiceNumberGenerator, InvoiceNumberGenerator>();
+builder.Services.AddScoped<IProjectAccessService, ProjectAccessService>();
+builder.Services.AddScoped<IProjectTeamService, ProjectTeamService>();
 
 
 // ۶. مپ کردن پروفایل‌های AutoMapper

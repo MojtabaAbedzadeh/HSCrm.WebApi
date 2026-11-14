@@ -21,22 +21,25 @@ namespace HSCrm.WebApi.Controllers
         private readonly IPaymentSettlementService _paymentSettlementService;
         private readonly ICurrentFiscalYearService _currentFiscalYearService;
         private readonly IAccountingService _accountingService;
+        private readonly IProjectAccessService? _projectAccess;
 
         public ExpenseController(
             IUnitOfWork context,
             IPaymentSettlementService paymentSettlementService,
             ICurrentFiscalYearService currentFiscalYearService,
-            IAccountingService accountingService)
+            IAccountingService accountingService,
+            IProjectAccessService? projectAccess = null)
         {
             _context = context;
             _paymentSettlementService = paymentSettlementService;
             _currentFiscalYearService = currentFiscalYearService;
             _accountingService = accountingService;
+            _projectAccess = projectAccess;
         }
 
         [HttpGet("SettlementSummary/{id:int}")]
         [Permission(Permissions.Expenses.View)]
-        public IActionResult SettlementSummary(int id)
+        public async Task<IActionResult> SettlementSummary(int id, CancellationToken ct = default)
         {
             var tenantId = User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
@@ -51,6 +54,9 @@ namespace HSCrm.WebApi.Controllers
 
             if (expense == null)
                 return NotFound("هزینه مورد نظر یافت نشد");
+            var userId = User.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId) && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, expense.ProjectId, ct))
+                return StatusCode(403, new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما به این پروژه دسترسی ندارید." });
 
             var result = _paymentSettlementService.BuildExpenseSummary(expense.Id, expense.Amount);
             return Ok(result);
@@ -58,7 +64,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetExpense")]
         [Permission(Permissions.Expenses.View)]
-        public ApiResponse<IEnumerable<Expense>> Get()
+        public async Task<ApiResponse<IEnumerable<Expense>>> Get(CancellationToken ct = default)
         {
             var tenantId = User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
@@ -67,6 +73,13 @@ namespace HSCrm.WebApi.Controllers
                 return new ApiResponse<IEnumerable<Expense>> { Status = false, Message = "دسترسی نامعتبر" };
 
             // حذف IgnoreQueryFilters برای حفظ حریم چندمستاجری
+            var userId = User.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId) && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, projectId, ct))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse<IEnumerable<Expense>> { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما عضو این پروژه نیستید و مجاز به مشاهده هزینه‌های آن نمی‌باشید." };
+            }
+
             var expenses = _context.expenseUW
                 .Get(x => x.TenantId == tenantId.Value && x.FiscalYearId == fiscalYearId.Value,
                      true, x => x.Project, x => x.Tenant, x => x.CreatedBy)
@@ -85,7 +98,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetById")]
         [Permission(Permissions.Expenses.View)]
-        public ApiResponse<Expense> GetById(int expenseId)
+        public async Task<ApiResponse<Expense>> GetById(int expenseId, CancellationToken ct = default)
         {
             var tenantId = User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
@@ -101,6 +114,13 @@ namespace HSCrm.WebApi.Controllers
             if (expense == null)
                 return new ApiResponse<Expense> { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "هزینه یافت نشد" };
 
+            var userId = User.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId) && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, expense.ProjectId, ct))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse<Expense> { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما به این پروژه دسترسی ندارید." };
+            }
+
             return new ApiResponse<Expense>
             {
                 Status = true,
@@ -113,7 +133,7 @@ namespace HSCrm.WebApi.Controllers
         [HttpGet("GetByProjectId")]
         [HttpGet("GetProjectExpenses")]
         [Permission(Permissions.Expenses.View)]
-        public ApiResponse<IEnumerable<Expense>> GetByProjectId(int projectId)
+        public async Task<ApiResponse<IEnumerable<Expense>>> GetByProjectId(int projectId, CancellationToken ct = default)
         {
             var tenantId = User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
@@ -156,6 +176,12 @@ namespace HSCrm.WebApi.Controllers
 
             if (!tenantId.HasValue || !fiscalYearId.HasValue)
                 return new ApiResponse { Status = false, Message = "خطا در احراز هویت یا سال مالی" };
+
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId) && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, model.ProjectId))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما عضو این پروژه نیستید و مجاز به ثبت هزینه برای آن نمی‌باشید." };
+            }
 
             DateTime expenseDate;
             try
@@ -244,7 +270,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpPut("UpdateExpense")]
         [Permission(Permissions.Expenses.Edit)]
-        public ApiResponse Update([FromBody] ExpenseEditModel model)
+        public async Task<ApiResponse> Update([FromBody] ExpenseEditModel model, CancellationToken ct = default)
         {
             if (model == null || model.ExpenseId <= 0)
                 return new ApiResponse { Status = false, Message = "شناسه هزینه معتبر نیست" };
@@ -261,6 +287,17 @@ namespace HSCrm.WebApi.Controllers
 
             if (expense == null)
                 return new ApiResponse { Status = false, Message = "هزینه یافت نشد" };
+
+            var actorId = User.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(actorId))
+            {
+                if (!await _projectAccess.CanAccessProjectAsync(tenantId.Value, actorId, expense.ProjectId, ct) ||
+                    !await _projectAccess.CanAccessProjectAsync(tenantId.Value, actorId, model.ProjectId, ct))
+                {
+                    if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما به این پروژه دسترسی ندارید." };
+                }
+            }
 
             DateTime parsedDate;
             try
@@ -305,7 +342,7 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpDelete("DeleteExpense/{id:int}")]
         [Permission(Permissions.Expenses.Delete)]
-        public ApiResponse Delete(int id)
+        public async Task<ApiResponse> Delete(int id, CancellationToken ct = default)
         {
             var tenantId = User.GetTenantId();
             var fiscalYearId = _currentFiscalYearService.FiscalYearId;
@@ -318,6 +355,13 @@ namespace HSCrm.WebApi.Controllers
 
             if (expense == null)
                 return new ApiResponse { Status = false, Message = "رکورد یافت نشد" };
+
+            var actorId = User.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(actorId) && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, actorId, expense.ProjectId, ct))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما به این پروژه دسترسی ندارید." };
+            }
 
             try
             {

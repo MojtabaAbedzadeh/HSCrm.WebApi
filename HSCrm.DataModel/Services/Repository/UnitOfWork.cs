@@ -22,6 +22,8 @@ namespace HSCrm.DataModel.Services.Repository
         private GenericCRUDClass<ProductPrice>? _price;
         private GenericCRUDClass<Product>? _product;
         private GenericCRUDClass<Project>? _project;
+        private GenericCRUDClass<ProjectMember>? _projectMember;
+        private GenericCRUDClass<ProjectWorkLog>? _projectWorkLog;
         private GenericCRUDClass<Supplier>? _supplier;
         private GenericCRUDClass<Customer>? _customer;
         private GenericCRUDClass<Expense>? _expense;
@@ -54,6 +56,8 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<ProductPrice> priceUW => _price ??= new GenericCRUDClass<ProductPrice>(_context);
         public GenericCRUDClass<Product> productUW => _product ??= new GenericCRUDClass<Product>(_context);
         public GenericCRUDClass<Project> projectUW => _project ??= new GenericCRUDClass<Project>(_context);
+        public GenericCRUDClass<ProjectMember> projectMemberUW => _projectMember ??= new GenericCRUDClass<ProjectMember>(_context);
+        public GenericCRUDClass<ProjectWorkLog> projectWorkLogUW => _projectWorkLog ??= new GenericCRUDClass<ProjectWorkLog>(_context);
         public GenericCRUDClass<Supplier> supplierUW => _supplier ??= new GenericCRUDClass<Supplier>(_context);
         public GenericCRUDClass<Customer> customerUW => _customer ??= new GenericCRUDClass<Customer>(_context);
         public GenericCRUDClass<Expense> expenseUW => _expense ??= new GenericCRUDClass<Expense>(_context);

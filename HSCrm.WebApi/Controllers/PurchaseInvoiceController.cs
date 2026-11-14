@@ -238,6 +238,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPost("CreateInvoice")]
+        [Permission(Permissions.PurchaseInvoices.Create)]
         public async Task<ApiResponse> Create([FromBody] PurchaseInvoiceCreateModel model)
         {
             try
@@ -455,6 +456,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpPut("UpdateInvoice")]
+        [Permission(Permissions.PurchaseInvoices.Edit)]
         public async Task<ApiResponse> Update([FromBody] PurchaseInvoiceEditModel model)
         {
             if (model == null)
@@ -580,6 +582,7 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpPost("ConfirmInvoice/{id}")]
+        [Permission(Permissions.PurchaseInvoices.Approve)]
         public async Task<ApiResponse> ConfirmInvoice(int id)
         {
             var tenantId = User.GetTenantId();
@@ -721,6 +724,7 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpPost("CancelInvoice/{id}")]
+        [Permission(Permissions.PurchaseInvoices.Reject)]
         public async Task<ApiResponse> Cancel(int id, [FromBody] string? reason)
         {
             var tenantId = User.GetTenantId();
@@ -855,6 +859,7 @@ namespace HSCrm.WebApi.Controllers
 
 
         [HttpPost("RejectInvoice/{id}")]
+        [Permission(Permissions.PurchaseInvoices.Reject)]
         public async Task<ApiResponse> Reject(int id, [FromBody] string? reason)
         {
             var tenantId = User.GetTenantId();

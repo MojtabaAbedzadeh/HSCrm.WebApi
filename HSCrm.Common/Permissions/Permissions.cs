@@ -226,4 +226,19 @@ public static class Permissions
         public const string Approve = "Permissions.PurchaseReturnInvoices.Approve";
         public const string Cancel = "Permissions.PurchaseReturnInvoices.Cancel";
     }
+
+    public static class ProjectMembers
+    {
+        public const string View = "projectMembers.view";
+        public const string Manage = "projectMembers.manage";
+    }
+
+    public static class WorkLogs
+    {
+        public const string View = "workLogs.view";
+        public const string Create = "workLogs.create";
+        public const string Edit = "workLogs.edit";
+        public const string Delete = "workLogs.delete";
+        public const string Approve = "workLogs.approve";
+    }
 }

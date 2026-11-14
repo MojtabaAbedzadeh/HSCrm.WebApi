@@ -29,6 +29,29 @@ namespace HSCrm.WebApi.Controllers
         /// <summary>
         /// دریافت لیست حساب‌های بانکی و صندوق‌های شرکت
         /// </summary>
+        [HttpGet("DropdownList")]
+        public async Task<ActionResult<ApiResponse<List<DropdownDto>>>> DropdownList(CancellationToken ct)
+        {
+            var list = await _unitOfWork.bankAccountUW
+                .Get(x => !x.IsDeleted && x.IsActive, asNoTracking: true)
+                .OrderByDescending(x => x.IsDefault)
+                .ThenBy(x => x.Id)
+                .Select(x => new DropdownDto
+                {
+                    DrId = x.Id,
+                    DrName = string.IsNullOrWhiteSpace(x.BankName) ? x.Title : $"{x.Title} ({x.BankName})"
+                })
+                .ToListAsync(ct);
+
+            return Ok(new ApiResponse<List<DropdownDto>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "لیست حساب‌های بانکی دریافت شد.",
+                Data = list
+            });
+        }
+
         [HttpGet("GetAll")]
         [Permission(Permissions.BankAccounts.View)]
         public async Task<ActionResult<ApiResponse<List<BankAccount>>>> GetAll(CancellationToken ct)

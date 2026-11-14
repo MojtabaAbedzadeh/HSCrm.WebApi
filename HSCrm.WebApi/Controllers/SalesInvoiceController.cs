@@ -26,6 +26,7 @@ namespace HSCrm.WebApi.Controllers
         private readonly IPaymentSettlementService _paymentSettlementService;
         private readonly ICurrentFiscalYearService? _currentFiscalYearService;
         private readonly IInvoiceNumberGenerator? _invoiceNumberGenerator;
+        private readonly IProjectAccessService? _projectAccess;
 
         public SalesInvoiceController(
             IUnitOfWork context,
@@ -33,7 +34,8 @@ namespace HSCrm.WebApi.Controllers
             IPaymentSettlementService paymentSettlementService,
             IAccountingService accountingService,
             ICurrentFiscalYearService? currentFiscalYearService = null,
-            IInvoiceNumberGenerator? invoiceNumberGenerator = null)
+            IInvoiceNumberGenerator? invoiceNumberGenerator = null,
+            IProjectAccessService? projectAccess = null)
         {
             _context = context;
             _inventory = inventory;
@@ -41,6 +43,7 @@ namespace HSCrm.WebApi.Controllers
             _accountingService = accountingService;
             _currentFiscalYearService = currentFiscalYearService;
             _invoiceNumberGenerator = invoiceNumberGenerator;
+            _projectAccess = projectAccess;
         }
 
         [HttpGet("GetNextInvoiceNumber")]
@@ -55,6 +58,19 @@ namespace HSCrm.WebApi.Controllers
             };
 
             var fyId = fiscalYearId ?? _currentFiscalYearService?.FiscalYearId;
+            var actorUserId = User?.GetUserId();
+            if (_projectAccess != null && !string.IsNullOrWhiteSpace(actorUserId)
+                && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, actorUserId, model.ProjectId))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Forbidden,
+                    Message = "شما عضو این پروژه نیستید و مجاز به ثبت فاکتور فروش برای آن نمی‌باشید."
+                };
+            }
+
             var tenant = _context.tenantUW?.GetById(tenantId.Value);
             var mode = string.IsNullOrWhiteSpace(tenant?.InvoiceNumberingMode) ? "Hybrid" : tenant.InvoiceNumberingMode;
 
@@ -87,7 +103,7 @@ namespace HSCrm.WebApi.Controllers
         }
 
         [HttpGet("SettlementSummary/{id}")]
-        public IActionResult SettlementSummary(int id)
+        public async Task<IActionResult> SettlementSummary(int id, CancellationToken ct = default)
         {
             var invoice = _context.salesInvoiceUW.GetById(id);
             if (invoice == null)
@@ -101,9 +117,18 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("SettlementSummaries")]
         [Permission(Permissions.SalesInvoices.View)]
-        public ApiResponse<List<HSCrm.Entities.Models.Dto.SettlementSummaryDto>> GetSettlementSummaries()
+        public async Task<ApiResponse<List<HSCrm.Entities.Models.Dto.SettlementSummaryDto>>> GetSettlementSummaries(CancellationToken ct = default)
         {
-            var invoices = _context.salesInvoiceUW.Get(x => !x.IsDeleted, true).ToList();
+            var query = _context.salesInvoiceUW.Get(x => !x.IsDeleted, true);
+            var tenantId = User?.GetTenantId();
+            var userId = User?.GetUserId();
+            if (_projectAccess != null && tenantId.HasValue && !string.IsNullOrWhiteSpace(userId)
+                && !await _projectAccess.HasFullProjectAccessAsync(userId, ct))
+            {
+                var allowedIds = await _projectAccess.GetAccessibleProjectIdsAsync(tenantId.Value, userId, ct);
+                query = query.Where(x => allowedIds.Contains(x.ProjectId));
+            }
+            var invoices = query.ToList();
             var summaries = invoices
                 .Select(inv => _paymentSettlementService.BuildSalesInvoiceSummary(inv.Id, inv.Total))
                 .ToList();
@@ -119,10 +144,19 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetSalesInvoices")]
         [Permission(Permissions.SalesInvoices.View)]
-        public ApiResponse<IEnumerable<SalesInvoice>> Get()
+        public async Task<ApiResponse<IEnumerable<SalesInvoice>>> Get(CancellationToken ct = default)
         {
-            var invoices = _context.salesInvoiceUW
-                .Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant)
+            var query = _context.salesInvoiceUW
+                .Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant);
+            var tenantId = User?.GetTenantId();
+            var userId = User?.GetUserId();
+            if (_projectAccess != null && tenantId.HasValue && !string.IsNullOrWhiteSpace(userId)
+                && !await _projectAccess.HasFullProjectAccessAsync(userId, ct))
+            {
+                var allowedIds = await _projectAccess.GetAccessibleProjectIdsAsync(tenantId.Value, userId, ct);
+                query = query.Where(x => allowedIds.Contains(x.ProjectId));
+            }
+            var invoices = query
                 .OrderByDescending(x => x.IssueDate)
                 .ThenByDescending(x => x.Id)
                 .ToList();
@@ -141,7 +175,7 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(typeof(SalesInvoice), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.SalesInvoices.View)]
-        public ApiResponse GetById(int? invoiceId = null, int? id = null)
+        public async Task<ApiResponse> GetById(int? invoiceId = null, int? id = null, CancellationToken ct = default)
         {
             var targetId = invoiceId ?? id ?? 0;
             var tenantId = User?.GetTenantId();
@@ -164,6 +198,19 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.NotFound.DisplayNameAttribute(DisplayProperty.Name),
                 Data = invoice
             };
+
+            var userId = User?.GetUserId();
+            if (_projectAccess != null && tenantId.HasValue && !string.IsNullOrWhiteSpace(userId)
+                && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, invoice.ProjectId, ct))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Forbidden,
+                    Message = "شما عضو پروژه این فاکتور نیستید و مجاز به مشاهده آن نمی‌باشید."
+                };
+            }
 
             if (invoice.Items != null)
             {
@@ -413,8 +460,22 @@ namespace HSCrm.WebApi.Controllers
         [ProducesResponseType(typeof(SalesInvoiceModel), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [Permission(Permissions.SalesInvoices.View)]
-        public ApiResponse<IEnumerable<SalesInvoiceModel>> GetByProjectId(int projectId)
+        public async Task<ApiResponse<IEnumerable<SalesInvoiceModel>>> GetByProjectId(int projectId, CancellationToken ct = default)
         {
+            var tenantId = User?.GetTenantId();
+            var userId = User?.GetUserId();
+            if (_projectAccess != null && tenantId.HasValue && !string.IsNullOrWhiteSpace(userId)
+                && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, projectId, ct))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse<IEnumerable<SalesInvoiceModel>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Forbidden,
+                    Message = "شما عضو این پروژه نیستید و مجاز به مشاهده فاکتورهای آن نمی‌باشید."
+                };
+            }
+
             var invoiceList = _context.salesInvoiceUW
                 .Get(e => e.ProjectId == projectId,
                      asNoTracking: true,
@@ -573,6 +634,13 @@ namespace HSCrm.WebApi.Controllers
                 if (invoice == null)
                     return NotFound("فاکتور یافت نشد");
 
+                if (_projectAccess != null && !string.IsNullOrWhiteSpace(userId)
+                    && !await _projectAccess.CanAccessProjectAsync(tenantId, userId, invoice.ProjectId))
+                {
+                    tran.Rollback();
+                    return StatusCode(403, new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.Forbidden, Message = "شما به پروژه این فاکتور دسترسی ندارید." });
+                }
+
                 var tenant = _context.tenantUW?.GetById(tenantId);
                 if (tenant?.DocumentLockDate != null && invoice.IssueDate.Date <= tenant.DocumentLockDate.Value.Date)
                     return BadRequest("تأیید فاکتور در تاریخ‌های قفل‌شده امکان‌پذیر نیست.");
@@ -644,8 +712,22 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetInvoiceDetail")]
         [Permission(Permissions.SalesInvoices.View)]
-        public ApiResponse<IEnumerable<SalesInvoiceItem>> GetDetail(int invoiceId)
+        public async Task<ApiResponse<IEnumerable<SalesInvoiceItem>>> GetDetail(int invoiceId, CancellationToken ct = default)
         {
+            var header = _context.salesInvoiceUW.Get(x => x.Id == invoiceId, true).FirstOrDefault();
+            var tenantId = User?.GetTenantId();
+            var userId = User?.GetUserId();
+            if (header != null && _projectAccess != null && tenantId.HasValue && !string.IsNullOrWhiteSpace(userId)
+                && !await _projectAccess.CanAccessProjectAsync(tenantId.Value, userId, header.ProjectId, ct))
+            {
+                if (HttpContext != null) HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return new ApiResponse<IEnumerable<SalesInvoiceItem>>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Forbidden,
+                    Message = "شما به پروژه این فاکتور دسترسی ندارید."
+                };
+            }
             var invoice = _context.salesInvoiceItemUW.Get(i => i.SalesInvoiceId == invoiceId);
 
             if (invoice == null) return new ApiResponse<IEnumerable<SalesInvoiceItem>>

@@ -26,6 +26,8 @@ namespace HSCrm.DataModel.Context
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Supplier> Suppliers { get; set; }
         public DbSet<Project> Projects { get; set; }
+        public DbSet<ProjectMember> ProjectMembers { get; set; }
+        public DbSet<ProjectWorkLog> ProjectWorkLogs { get; set; }
         public DbSet<Product> Products { get; set; }
         public DbSet<ProductPrice> ProductPrices { get; set; }
         public DbSet<PurchaseInvoice> PurchaseInvoices { get; set; }
@@ -223,6 +225,8 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<Customer>(builder);
             ConfigureAuditedEntity<Supplier>(builder);
             ConfigureAuditedEntity<Project>(builder);
+            ConfigureAuditedEntity<ProjectMember>(builder);
+            ConfigureAuditedEntity<ProjectWorkLog>(builder);
             ConfigureAuditedEntity<Product>(builder);
             ConfigureAuditedEntity<ProductPrice>(builder);
             ConfigureAuditedEntity<PurchaseInvoice>(builder);
@@ -293,6 +297,65 @@ namespace HSCrm.DataModel.Context
                  .HasForeignKey(x => x.CustomerId)
                  .OnDelete(DeleteBehavior.Restrict);
 
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ======================= ProjectMember =======================
+            builder.Entity<ProjectMember>(e =>
+            {
+                e.ToTable("ProjectMembers");
+                e.Property(x => x.UserId).IsRequired().HasMaxLength(450);
+                e.Property(x => x.ProjectRole).HasMaxLength(100);
+                e.Property(x => x.HourlyRate).HasPrecision(18, 2);
+                e.HasIndex(x => new { x.TenantId, x.ProjectId, x.UserId })
+                 .IsUnique()
+                 .HasFilter("[IsDeleted] = 0");
+                e.HasOne(x => x.Project)
+                 .WithMany(p => p.Members)
+                 .HasForeignKey(x => x.ProjectId)
+                 .OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(x => x.User)
+                 .WithMany()
+                 .HasForeignKey(x => x.UserId)
+                 .OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ======================= ProjectWorkLog =======================
+            builder.Entity<ProjectWorkLog>(e =>
+            {
+                e.ToTable("ProjectWorkLogs");
+                e.Property(x => x.UserId).IsRequired().HasMaxLength(450);
+                e.Property(x => x.Description).IsRequired().HasMaxLength(1000);
+                e.Property(x => x.ReviewNote).HasMaxLength(500);
+                e.Property(x => x.Hours).HasPrecision(18, 2);
+                e.Property(x => x.HourlyRateSnapshot).HasPrecision(18, 2);
+                e.Property(x => x.WageCost).HasPrecision(18, 2);
+                e.HasIndex(x => new { x.TenantId, x.FiscalYearId, x.ProjectId, x.WorkDate });
+                e.HasIndex(x => new { x.TenantId, x.UserId, x.Status });
+                e.HasOne(x => x.Project)
+                 .WithMany(p => p.WorkLogs)
+                 .HasForeignKey(x => x.ProjectId)
+                 .OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(x => x.User)
+                 .WithMany()
+                 .HasForeignKey(x => x.UserId)
+                 .OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(x => x.ReviewedByUser)
+                 .WithMany()
+                 .HasForeignKey(x => x.ReviewedByUserId)
+                 .IsRequired(false)
+                 .OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(x => x.FiscalYear)
+                 .WithMany()
+                 .HasForeignKey(x => x.FiscalYearId)
+                 .OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(x => x.Tenant)
                  .WithMany()
                  .HasForeignKey(x => x.TenantId)

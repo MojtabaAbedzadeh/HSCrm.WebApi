@@ -25,7 +25,9 @@
             new() { Key="BankAccounts", TitleFa="حساب‌های بانکی و خزانه", Icon="mdi mdi-bank", Order=19 },
             new() { Key="Cheques", TitleFa="چک‌های دریافتنی و پرداختنی", Icon="mdi mdi-checkbook", Order=20 },
             new() { Key="SalesReturnInvoices", TitleFa="فاکتورهای برگشت از فروش", Icon="mdi mdi-keyboard-return", Order=21 },
-            new() { Key="PurchaseReturnInvoices", TitleFa="فاکتورهای برگشت از خرید", Icon="mdi mdi-truck-delivery-outline", Order=22 }
+            new() { Key="PurchaseReturnInvoices", TitleFa="فاکتورهای برگشت از خرید", Icon="mdi mdi-truck-delivery-outline", Order=22 },
+            new() { Key="ProjectMembers", TitleFa="اعضای پروژه", Icon="mdi mdi-account-multiple-check", Order=23 },
+            new() { Key="WorkLogs", TitleFa="ساعات کاری و تایم‌شیت", Icon="mdi mdi-clock-outline", Order=24 }
         };
 
         public static PermissionCategory Get(string key)

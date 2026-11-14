@@ -212,5 +212,19 @@ namespace HSCrm.Common.PublicTools
             [Display(Name = "تأمین‌کننده (حساب‌های پرداختنی)")]
             Supplier = 2
         }
+        /// <summary>
+        /// وضعیت تأیید ساعات کاری ثبت‌شده روی پروژه (Timesheet)
+        /// </summary>
+        public enum WorkLogStatus : byte
+        {
+            [Display(Name = "در انتظار تأیید")]
+            Pending = 0,
+
+            [Display(Name = "تأیید شده")]
+            Approved = 1,
+
+            [Display(Name = "رد شده")]
+            Rejected = 2
+        }
     }
 }

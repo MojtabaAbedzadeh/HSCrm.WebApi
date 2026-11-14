@@ -57,6 +57,32 @@ namespace HSCrm.DataModel.Services
             var permissions = await context.Permissions.ToListAsync();
             var existingRolePermissions = await context.RolePermissions.ToListAsync();
 
+            var userRoles = await context.Roles
+                .Where(r => r.Name == "User")
+                .ToListAsync();
+            var baselineEmployeePermNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "projects.view",
+                "workLogs.view",
+                "workLogs.create",
+                "workLogs.edit",
+                "workLogs.delete"
+            };
+            foreach (var uRole in userRoles)
+            {
+                if (!existingRolePermissions.Any(rp => rp.RoleId == uRole.Id))
+                {
+                    foreach (var permission in permissions.Where(p => baselineEmployeePermNames.Contains(p.Name)))
+                    {
+                        context.RolePermissions.Add(new RolePermission
+                        {
+                            RoleId = uRole.Id,
+                            PermissionId = permission.Id
+                        });
+                    }
+                }
+            }
+
             foreach (var role in targetRoles)
             {
                 foreach (var permission in permissions)

@@ -74,6 +74,7 @@ namespace HSCrm.DataModel.Seeders
                 "Reopen" => "بازگشایی",
                 "ChangeStatus" => "تغییر وضعیت",
                 "ManagePermissions" => "مدیریت دسترسی‌ها",
+                "Manage" => "مدیریت",
                 _ => action
             };
 

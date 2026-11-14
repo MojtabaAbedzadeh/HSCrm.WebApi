@@ -46,5 +46,8 @@ namespace HSCrm.Framework.StandardApiResult
 
         [Display(Name = "کاربر جاری شناسایی نشد")]
         Unauthorized = 401,
+
+        [Display(Name = "دسترسی به این بخش مجاز نیست")]
+        Forbidden = 403,
     }
 }
