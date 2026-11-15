@@ -65,7 +65,7 @@ namespace HSCrm.DataModel.Services.Repository
                     .IgnoreQueryFilters()
                     .Where(c => c.TenantId == tenantId
                              && !c.IsDeleted
-                             && (c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.DepositedToBank)
+                             && (c.Status == ChequeStatus.InSafe || c.Status == ChequeStatus.InBankForCollection)
                              && c.DueDate <= threshold)
                     .OrderBy(c => c.DueDate)
                     .Take(10)

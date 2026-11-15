@@ -105,7 +105,7 @@ namespace HSCrm.DataModel.Services.Repository
             decimal pendingCheques = 0m;
             if (_accountingService != null)
             {
-                var st = await _accountingService.GetPartyStatementAsync(AccountingPartyType.Customer, customer.Id, null, null, null, ct);
+                var st = await _accountingService.GetPartyStatementAsync(AccountingPartyType.Customer, customer.Id, null, null, true, ct);
                 netBalance = st.FinalBookBalance;
                 pendingCheques = st.PendingChequesAmount;
             }
@@ -387,7 +387,7 @@ namespace HSCrm.DataModel.Services.Repository
                     customer.Id,
                     fromDate,
                     toDate,
-                    fiscalYearId,
+                    true,
                     ct);
             }
 
@@ -595,10 +595,10 @@ namespace HSCrm.DataModel.Services.Repository
 
         private static string TranslateInvoiceStatus(InvoiceStatus status) => status switch
         {
-            InvoiceStatus.Draft => "پیش‌نویس",
-            InvoiceStatus.Approved => "تأیید شده",
+            InvoiceStatus.Proforma => "پیش‌فاکتور",
             InvoiceStatus.Final => "قطعی شده",
             InvoiceStatus.Cancelled => "لغو شده",
+            InvoiceStatus.Rejected => "رد شده",
             _ => "نامشخص"
         };
 
