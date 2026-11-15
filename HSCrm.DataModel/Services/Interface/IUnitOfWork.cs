@@ -1,4 +1,4 @@
-﻿using HSCrm.DataModel.Services.Repository;
+using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
 
 namespace HSCrm.DataModel.Services.Interface
@@ -15,6 +15,9 @@ namespace HSCrm.DataModel.Services.Interface
         GenericCRUDClass<Project> projectUW { get; }
         GenericCRUDClass<ProjectMember> projectMemberUW { get; }
         GenericCRUDClass<ProjectWorkLog> projectWorkLogUW { get; }
+        GenericCRUDClass<ProjectMilestone> projectMilestoneUW { get; }
+        GenericCRUDClass<ProjectProgressLog> projectProgressLogUW { get; }
+        GenericCRUDClass<Attachment> attachmentUW { get; }
         GenericCRUDClass<Supplier> supplierUW { get; }
         GenericCRUDClass<Customer> customerUW { get; }
         GenericCRUDClass<Expense> expenseUW { get; }

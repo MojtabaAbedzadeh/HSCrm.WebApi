@@ -28,7 +28,8 @@ namespace HSCrm.Common.Permissions
             new() { Key="SalesReturnInvoices", TitleFa="فاکتورهای برگشت از فروش", Icon="mdi mdi-keyboard-return", Order=21 },
             new() { Key="PurchaseReturnInvoices", TitleFa="فاکتورهای برگشت از خرید", Icon="mdi mdi-truck-delivery-outline", Order=22 },
             new() { Key="ProjectMembers", TitleFa="اعضای پروژه", Icon="mdi mdi-account-multiple-check", Order=23 },
-            new() { Key="WorkLogs", TitleFa="ساعات کاری و تایم‌شیت", Icon="mdi mdi-clock-outline", Order=24 }
+            new() { Key="WorkLogs", TitleFa="ساعات کاری و تایم‌شیت", Icon="mdi mdi-clock-outline", Order=24 },
+            new() { Key="ProjectProgress", TitleFa="پیشرفت و مستندات پروژه", Icon="mdi mdi-chart-timeline-variant", Order=25 }
         };
 
         public static PermissionCategory Get(string key)

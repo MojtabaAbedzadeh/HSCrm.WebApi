@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 
 namespace HSCrm.Common.PublicTools
@@ -225,6 +225,24 @@ namespace HSCrm.Common.PublicTools
 
             [Display(Name = "رد شده")]
             Rejected = 2
+        }
+
+        /// <summary>
+        /// وضعیت فاز / مایلستون پروژه
+        /// </summary>
+        public enum MilestoneStatus : byte
+        {
+            [Display(Name = "شروع نشده")]
+            NotStarted = 0,
+
+            [Display(Name = "در حال انجام")]
+            InProgress = 1,
+
+            [Display(Name = "تکمیل شده")]
+            Completed = 2,
+
+            [Display(Name = "دارای تأخیر")]
+            Delayed = 3
         }
     }
 }

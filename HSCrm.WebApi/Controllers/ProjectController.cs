@@ -135,6 +135,8 @@ namespace HSCrm.WebApi.Controllers
                     ProjectTitle = model.ProjectTitle,
                     CustomerId = model.CustomerId,
                     ProjectLocation = model.ProjectLocation,
+                    EstimatedBudget = model.EstimatedBudget,
+                    ProgressPercent = 0m,
                     CreatedAt = DateTime.UtcNow,
                     CreatedById = User.GetUserId(),
                     Status = "Active",
@@ -191,6 +193,7 @@ namespace HSCrm.WebApi.Controllers
             getProject.ProjectTitle = model.ProjectTitle;
             getProject.ProjectLocation = model.ProjectLocation;
             getProject.CustomerId = model.CustomerId;
+            getProject.EstimatedBudget = model.EstimatedBudget;
             getProject.ModifiedAt = DateTime.UtcNow;
             getProject.ModifiedById = User.GetUserId();
 

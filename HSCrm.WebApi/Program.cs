@@ -1,4 +1,4 @@
-﻿using Framework.Authorization;
+using Framework.Authorization;
 using FluentValidation;
 using HSCrm.DataModel.Services;
 using HSCrm.DataModel.Services.Interface;
@@ -78,6 +78,7 @@ builder.Services.AddScoped<IAccountingService, AccountingService>();
 builder.Services.AddScoped<IInvoiceNumberGenerator, InvoiceNumberGenerator>();
 builder.Services.AddScoped<IProjectAccessService, ProjectAccessService>();
 builder.Services.AddScoped<IProjectTeamService, ProjectTeamService>();
+builder.Services.AddScoped<IProjectProgressService, ProjectProgressService>();
 
 
 // ۶. مپ کردن پروفایل‌های AutoMapper

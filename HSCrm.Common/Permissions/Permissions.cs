@@ -1,4 +1,4 @@
-﻿namespace Common.Permissions;
+namespace Common.Permissions;
 
 public static class Permissions
 {
@@ -240,5 +240,13 @@ public static class Permissions
         public const string Edit = "workLogs.edit";
         public const string Delete = "workLogs.delete";
         public const string Approve = "workLogs.approve";
+    }
+
+    public static class ProjectProgress
+    {
+        public const string View = "projectProgress.view";
+        public const string Create = "projectProgress.create";
+        public const string Edit = "projectProgress.edit";
+        public const string Delete = "projectProgress.delete";
     }
 }

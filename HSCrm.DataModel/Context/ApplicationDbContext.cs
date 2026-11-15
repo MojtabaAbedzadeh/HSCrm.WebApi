@@ -28,6 +28,8 @@ namespace HSCrm.DataModel.Context
         public DbSet<Project> Projects { get; set; }
         public DbSet<ProjectMember> ProjectMembers { get; set; }
         public DbSet<ProjectWorkLog> ProjectWorkLogs { get; set; }
+        public DbSet<ProjectMilestone> ProjectMilestones { get; set; }
+        public DbSet<ProjectProgressLog> ProjectProgressLogs { get; set; }
         public DbSet<Product> Products { get; set; }
         public DbSet<ProductPrice> ProductPrices { get; set; }
         public DbSet<PurchaseInvoice> PurchaseInvoices { get; set; }
@@ -227,6 +229,9 @@ namespace HSCrm.DataModel.Context
             ConfigureAuditedEntity<Project>(builder);
             ConfigureAuditedEntity<ProjectMember>(builder);
             ConfigureAuditedEntity<ProjectWorkLog>(builder);
+            ConfigureAuditedEntity<ProjectMilestone>(builder);
+            ConfigureAuditedEntity<ProjectProgressLog>(builder);
+            ConfigureAuditedEntity<Attachment>(builder);
             ConfigureAuditedEntity<Product>(builder);
             ConfigureAuditedEntity<ProductPrice>(builder);
             ConfigureAuditedEntity<PurchaseInvoice>(builder);
@@ -291,6 +296,8 @@ namespace HSCrm.DataModel.Context
                 e.ToTable("Projects");
                 e.HasIndex(x => new { x.TenantId, x.ProjectTitle, x.IsDeleted });
                 e.Property(x => x.ProjectTitle).HasMaxLength(200);
+                e.Property(x => x.EstimatedBudget).HasPrecision(18, 2);
+                e.Property(x => x.ProgressPercent).HasPrecision(5, 2);
 
                 e.HasOne(x => x.Customer)
                  .WithMany()
@@ -321,6 +328,67 @@ namespace HSCrm.DataModel.Context
                  .WithMany()
                  .HasForeignKey(x => x.UserId)
                  .OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ======================= ProjectMilestone =======================
+            builder.Entity<ProjectMilestone>(e =>
+            {
+                e.ToTable("ProjectMilestones");
+                e.Property(x => x.Title).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Description).HasMaxLength(1000);
+                e.Property(x => x.WeightPercent).HasPrecision(5, 2);
+                e.Property(x => x.ProgressPercent).HasPrecision(5, 2);
+
+                e.HasIndex(x => new { x.TenantId, x.ProjectId, x.SortOrder });
+
+                e.HasOne(x => x.Project)
+                 .WithMany(p => p.Milestones)
+                 .HasForeignKey(x => x.ProjectId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ======================= ProjectProgressLog =======================
+            builder.Entity<ProjectProgressLog>(e =>
+            {
+                e.ToTable("ProjectProgressLogs");
+                e.Property(x => x.RecordedByUserId).IsRequired().HasMaxLength(450);
+                e.Property(x => x.Title).IsRequired().HasMaxLength(200);
+                e.Property(x => x.ReportText).IsRequired().HasMaxLength(2000);
+                e.Property(x => x.WorkshopArea).HasMaxLength(300);
+                e.Property(x => x.ProgressPercent).HasPrecision(5, 2);
+
+                e.HasIndex(x => new { x.TenantId, x.ProjectId, x.LogDate });
+
+                e.HasOne(x => x.Project)
+                 .WithMany(p => p.ProgressLogs)
+                 .HasForeignKey(x => x.ProjectId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Milestone)
+                 .WithMany(m => m.ProgressLogs)
+                 .HasForeignKey(x => x.MilestoneId)
+                 .IsRequired(false)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.FiscalYear)
+                 .WithMany()
+                 .HasForeignKey(x => x.FiscalYearId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.RecordedByUser)
+                 .WithMany()
+                 .HasForeignKey(x => x.RecordedByUserId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
                 e.HasOne(x => x.Tenant)
                  .WithMany()
                  .HasForeignKey(x => x.TenantId)

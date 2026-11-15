@@ -1,4 +1,4 @@
-﻿using HSCrm.DataModel.Context;
+using HSCrm.DataModel.Context;
 using HSCrm.DataModel.Services.Interface;
 using HSCrm.Entities.Entities;
 
@@ -24,6 +24,9 @@ namespace HSCrm.DataModel.Services.Repository
         private GenericCRUDClass<Project>? _project;
         private GenericCRUDClass<ProjectMember>? _projectMember;
         private GenericCRUDClass<ProjectWorkLog>? _projectWorkLog;
+        private GenericCRUDClass<ProjectMilestone>? _projectMilestone;
+        private GenericCRUDClass<ProjectProgressLog>? _projectProgressLog;
+        private GenericCRUDClass<Attachment>? _attachment;
         private GenericCRUDClass<Supplier>? _supplier;
         private GenericCRUDClass<Customer>? _customer;
         private GenericCRUDClass<Expense>? _expense;
@@ -58,6 +61,9 @@ namespace HSCrm.DataModel.Services.Repository
         public GenericCRUDClass<Project> projectUW => _project ??= new GenericCRUDClass<Project>(_context);
         public GenericCRUDClass<ProjectMember> projectMemberUW => _projectMember ??= new GenericCRUDClass<ProjectMember>(_context);
         public GenericCRUDClass<ProjectWorkLog> projectWorkLogUW => _projectWorkLog ??= new GenericCRUDClass<ProjectWorkLog>(_context);
+        public GenericCRUDClass<ProjectMilestone> projectMilestoneUW => _projectMilestone ??= new GenericCRUDClass<ProjectMilestone>(_context);
+        public GenericCRUDClass<ProjectProgressLog> projectProgressLogUW => _projectProgressLog ??= new GenericCRUDClass<ProjectProgressLog>(_context);
+        public GenericCRUDClass<Attachment> attachmentUW => _attachment ??= new GenericCRUDClass<Attachment>(_context);
         public GenericCRUDClass<Supplier> supplierUW => _supplier ??= new GenericCRUDClass<Supplier>(_context);
         public GenericCRUDClass<Customer> customerUW => _customer ??= new GenericCRUDClass<Customer>(_context);
         public GenericCRUDClass<Expense> expenseUW => _expense ??= new GenericCRUDClass<Expense>(_context);
