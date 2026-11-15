@@ -15,11 +15,16 @@ namespace HSCrm.DataModel.Services.Repository
     {
         private readonly ApplicationDbContext _context;
         private readonly IProjectAccessService _projectAccess;
+        private readonly INotificationService? _notificationService;
 
-        public ProjectTeamService(ApplicationDbContext context, IProjectAccessService projectAccess)
+        public ProjectTeamService(
+            ApplicationDbContext context,
+            IProjectAccessService projectAccess,
+            INotificationService? notificationService = null)
         {
             _context = context;
             _projectAccess = projectAccess;
+            _notificationService = notificationService;
         }
 
         public async Task<List<ProjectMemberDto>> GetProjectMembersAsync(int tenantId, int projectId, CancellationToken ct = default)
@@ -247,6 +252,11 @@ namespace HSCrm.DataModel.Services.Repository
 
             log.Project = project;
             log.User = await _context.Users.AsNoTracking().FirstAsync(u => u.Id == actorUserId, ct);
+            if (_notificationService != null)
+            {
+                var empName = $"{log.User.UserFirstName} {log.User.UserLastName}".Trim();
+                await _notificationService.NotifyWorkLogSubmittedAsync(tenantId, log, project.ProjectTitle, string.IsNullOrWhiteSpace(empName) ? (log.User.UserName ?? "کارمند") : empName, actorUserId, ct);
+            }
             return MapWorkLogDto(log);
         }
 
@@ -374,6 +384,20 @@ namespace HSCrm.DataModel.Services.Repository
 
             await _context.SaveChangesAsync(ct);
             log.ReviewedByUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == reviewerUserId, ct);
+            if (_notificationService != null)
+            {
+                var reviewerName = log.ReviewedByUser != null
+                    ? $"{log.ReviewedByUser.UserFirstName} {log.ReviewedByUser.UserLastName}".Trim()
+                    : "مدیر پروژه";
+                await _notificationService.NotifyWorkLogReviewedAsync(
+                    tenantId,
+                    log,
+                    log.Project?.ProjectTitle ?? $"پروژه #{log.ProjectId}",
+                    string.IsNullOrWhiteSpace(reviewerName) ? "مدیر" : reviewerName,
+                    model.IsApproved,
+                    log.ReviewNote,
+                    ct);
+            }
             return MapWorkLogDto(log);
         }
 
@@ -387,6 +411,7 @@ namespace HSCrm.DataModel.Services.Repository
 
             var logs = await _context.ProjectWorkLogs
                 .IgnoreQueryFilters()
+                .Include(w => w.Project)
                 .Where(w => w.TenantId == tenantId && w.FiscalYearId == fiscalYearId && !w.IsDeleted && model.WorkLogIds.Contains(w.Id))
                 .ToListAsync(ct);
 
@@ -402,6 +427,23 @@ namespace HSCrm.DataModel.Services.Repository
             }
 
             await _context.SaveChangesAsync(ct);
+            if (_notificationService != null && logs.Count > 0)
+            {
+                var reviewer = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == reviewerUserId, ct);
+                var reviewerName = reviewer != null ? $"{reviewer.UserFirstName} {reviewer.UserLastName}".Trim() : "مدیر";
+                if (string.IsNullOrWhiteSpace(reviewerName)) reviewerName = "مدیر";
+                foreach (var log in logs)
+                {
+                    await _notificationService.NotifyWorkLogReviewedAsync(
+                        tenantId,
+                        log,
+                        log.Project?.ProjectTitle ?? $"پروژه #{log.ProjectId}",
+                        reviewerName,
+                        model.IsApproved,
+                        log.ReviewNote,
+                        ct);
+                }
+            }
             return logs.Count;
         }
 

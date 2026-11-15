@@ -19,11 +19,16 @@ namespace HSCrm.WebApi.Controllers
     {
         private readonly IUnitOfWork _context;
         private readonly IProjectAccessService? _projectAccess;
+        private readonly INotificationService? _notificationService;
 
-        public ProjectController(IUnitOfWork context, IProjectAccessService? projectAccess = null)
+        public ProjectController(
+            IUnitOfWork context,
+            IProjectAccessService? projectAccess = null,
+            INotificationService? notificationService = null)
         {
             _context = context;
             _projectAccess = projectAccess;
+            _notificationService = notificationService;
         }
 
         [HttpGet("GetProjects")]
@@ -206,6 +211,49 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                 Data = getProject
             };
+        }
+
+        [HttpPut("UpdateStatus")]
+        [Permission(Permissions.Projects.Edit)]
+        public async Task<ActionResult<ApiResponse<Project>>> UpdateStatus([FromBody] ProjectStatusUpdateModel model, CancellationToken ct = default)
+        {
+            if (model == null || model.ProjectId <= 0 || string.IsNullOrWhiteSpace(model.Status))
+                return BadRequest(new ApiResponse<Project> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شناسه پروژه و وضعیت جدید الزامی هستند." });
+
+            var tenantId = User.GetTenantId();
+            var actorUserId = User.GetUserId();
+            if (!tenantId.HasValue || string.IsNullOrWhiteSpace(actorUserId))
+                return Unauthorized(new ApiResponse<Project> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "دسترسی نامعتبر" });
+
+            var allowedStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Active", "Completed", "OnHold", "Cancelled" };
+            var normalizedStatus = allowedStatuses.FirstOrDefault(s => string.Equals(s, model.Status.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (normalizedStatus == null)
+                return BadRequest(new ApiResponse<Project> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "وضعیت نامعتبر است. مقادیر مجاز: Active, Completed, OnHold, Cancelled" });
+
+            var project = _context.projectUW.Get(p => p.Id == model.ProjectId && p.TenantId == tenantId.Value && !p.IsDeleted, false).FirstOrDefault();
+            if (project == null)
+                return NotFound(new ApiResponse<Project> { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "پروژه یافت نشد." });
+
+            var oldStatus = project.Status;
+            project.Status = normalizedStatus;
+            project.ModifiedAt = DateTime.UtcNow;
+            project.ModifiedById = actorUserId;
+
+            _context.projectUW.Update(project);
+            await _context.SaveAsync();
+
+            if (_notificationService != null && !string.Equals(oldStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                await _notificationService.NotifyProjectStatusChangedAsync(tenantId.Value, project, oldStatus, normalizedStatus, actorUserId, model.Note, ct);
+            }
+
+            return Ok(new ApiResponse<Project>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "وضعیت پروژه با موفقیت بروزرسانی شد.",
+                Data = project
+            });
         }
 
         [HttpGet("ProjectDropdownList")]

@@ -249,4 +249,9 @@ public static class Permissions
         public const string Edit = "projectProgress.edit";
         public const string Delete = "projectProgress.delete";
     }
+
+    public static class AuditTrail
+    {
+        public const string View = "auditTrail.view";
+    }
 }

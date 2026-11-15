@@ -10,6 +10,7 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using static HSCrm.Common.PublicTools.StringCleaner;
 using CustomerCreateModel = HSCrm.Entities.Models.CustomerCreateModel;
 
@@ -459,6 +460,173 @@ namespace HSCrm.WebApi.Controllers
                 Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
                 Data = getCustomer
             };
+        }
+
+        [HttpGet("GetPortalStatuses")]
+        [Permission(Permissions.Customers.View)]
+        public async Task<ActionResult<ApiResponse<List<CustomerPortalStatusDto>>>> GetPortalStatuses(CancellationToken ct = default)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return Unauthorized(new ApiResponse<List<CustomerPortalStatusDto>> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "دسترسی نامعتبر" });
+
+            var list = await _context.customerUW
+                .Get(c => c.TenantId == tenantId.Value && !c.IsDeleted, true, c => c.ApplicationUser!)
+                .Select(c => new CustomerPortalStatusDto
+                {
+                    CustomerId = c.Id,
+                    HasPortalAccount = !string.IsNullOrWhiteSpace(c.ApplicationUserId),
+                    UserName = c.ApplicationUser != null ? c.ApplicationUser.UserName : null,
+                    IsActive = c.ApplicationUser != null && c.ApplicationUser.UserStatus
+                })
+                .ToListAsync(ct);
+
+            return Ok(new ApiResponse<List<CustomerPortalStatusDto>>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "وضعیت حساب‌های پرتال مشتریان دریافت شد.",
+                Data = list
+            });
+        }
+
+        [HttpPost("ActivatePortalAccount")]
+        [Permission(Permissions.Customers.Edit)]
+        public async Task<ActionResult<ApiResponse<CustomerPortalStatusDto>>> ActivatePortalAccount([FromBody] CustomerPortalAccountActivationModel model, CancellationToken ct = default)
+        {
+            var tenantId = User.GetTenantId();
+            var currentUserId = User.GetUserId();
+            if (!tenantId.HasValue || string.IsNullOrWhiteSpace(currentUserId))
+                return Unauthorized(new ApiResponse<CustomerPortalStatusDto> { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "دسترسی نامعتبر" });
+
+            if (model.CustomerId <= 0 || string.IsNullOrWhiteSpace(model.UserName) || string.IsNullOrWhiteSpace(model.Password))
+                return BadRequest(new ApiResponse<CustomerPortalStatusDto> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شناسه مشتری، نام کاربری و رمز عبور الزامی هستند." });
+
+            var customer = _context.customerUW.Get(c => c.Id == model.CustomerId && c.TenantId == tenantId.Value && !c.IsDeleted, false).FirstOrDefault();
+            if (customer == null)
+                return NotFound(new ApiResponse<CustomerPortalStatusDto> { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "مشتری یافت نشد." });
+
+            if (!string.IsNullOrWhiteSpace(customer.ApplicationUserId))
+            {
+                var existingLinked = await _userManager.FindByIdAsync(customer.ApplicationUserId);
+                if (existingLinked != null)
+                {
+                    if (!await _userManager.IsInRoleAsync(existingLinked, CustomerRoleName) && await _roleManager.RoleExistsAsync(CustomerRoleName))
+                    {
+                        await _userManager.AddToRoleAsync(existingLinked, CustomerRoleName);
+                    }
+                    return Ok(new ApiResponse<CustomerPortalStatusDto>
+                    {
+                        Status = true,
+                        StatusCode = ApiResultStatusCode.Success,
+                        Message = "حساب کاربری پرتال مشتری از قبل فعال است.",
+                        Data = new CustomerPortalStatusDto
+                        {
+                            CustomerId = customer.Id,
+                            HasPortalAccount = true,
+                            UserName = existingLinked.UserName,
+                            IsActive = existingLinked.UserStatus
+                        }
+                    });
+                }
+            }
+
+            if (!await _roleManager.RoleExistsAsync(CustomerRoleName))
+                return BadRequest(new ApiResponse<CustomerPortalStatusDto> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = $"Role '{CustomerRoleName}' در سیستم وجود ندارد." });
+
+            var cleanUserName = model.UserName.Trim();
+            if (await _userManager.FindByNameAsync(cleanUserName) != null)
+                return Conflict(new ApiResponse<CustomerPortalStatusDto> { Status = false, StatusCode = ApiResultStatusCode.Conflict, Message = "نام کاربری تکراری است." });
+
+            var email = string.IsNullOrWhiteSpace(model.Email) ? customer.Email : model.Email.Trim();
+            if (!string.IsNullOrWhiteSpace(email) && await _userManager.FindByEmailAsync(email) != null)
+                return Conflict(new ApiResponse<CustomerPortalStatusDto> { Status = false, StatusCode = ApiResultStatusCode.Conflict, Message = "ایمیل تکراری است." });
+
+            var parts = (customer.Name ?? string.Empty).Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            var firstName = parts.Length > 0 ? parts[0] : customer.Name;
+            var lastName = parts.Length > 1 ? parts[1] : "مشتری";
+
+            var user = new ApplicationUser
+            {
+                UserFirstName = firstName ?? "مشتری",
+                UserLastName = lastName ?? "پرتال",
+                UserName = cleanUserName,
+                UserImageUrl = BuildDefaultAvatarUrl(),
+                UserStatus = true,
+                Email = email,
+                PhoneNumber = string.IsNullOrWhiteSpace(model.Phone) ? customer.Phone : model.Phone.Trim(),
+                TenantId = tenantId.Value,
+                UserType = 3,
+                UserGender = true,
+                IsTenantOwner = false,
+                EmailConfirmed = false,
+                LockoutEnabled = true
+            };
+
+            var createResult = await _userManager.CreateAsync(user, model.Password);
+            if (!createResult.Succeeded)
+                return BadRequest(new ApiResponse<CustomerPortalStatusDto> { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = string.Join(" | ", createResult.Errors.Select(e => e.Description)) });
+
+            await _userManager.AddToRoleAsync(user, CustomerRoleName);
+
+            customer.ApplicationUserId = user.Id;
+            if (!string.IsNullOrWhiteSpace(email)) customer.Email = email;
+            if (!string.IsNullOrWhiteSpace(model.Phone)) customer.Phone = model.Phone.Trim();
+            customer.ModifiedAt = DateTime.UtcNow;
+            customer.ModifiedById = currentUserId;
+            _context.customerUW.Update(customer);
+            await _context.SaveAsync();
+
+            return Ok(new ApiResponse<CustomerPortalStatusDto>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "حساب کاربری پرتال مشتری با موفقیت فعال شد.",
+                Data = new CustomerPortalStatusDto
+                {
+                    CustomerId = customer.Id,
+                    HasPortalAccount = true,
+                    UserName = user.UserName,
+                    IsActive = user.UserStatus
+                }
+            });
+        }
+
+        [HttpPost("ResetPortalPassword")]
+        [Permission(Permissions.Customers.Edit)]
+        public async Task<ActionResult<ApiResponse>> ResetPortalPassword([FromBody] CustomerPortalAccountResetPasswordModel model)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return Unauthorized(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.Unauthorized, Message = "دسترسی نامعتبر" });
+
+            if (model.CustomerId <= 0 || string.IsNullOrWhiteSpace(model.NewPassword))
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = "شناسه مشتری و رمز عبور جدید الزامی هستند." });
+
+            var customer = _context.customerUW.Get(c => c.Id == model.CustomerId && c.TenantId == tenantId.Value && !c.IsDeleted, false).FirstOrDefault();
+            if (customer == null || string.IsNullOrWhiteSpace(customer.ApplicationUserId))
+                return NotFound(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "حساب پرتال فعالی برای این مشتری ثبت نشده است." });
+
+            var user = await _userManager.FindByIdAsync(customer.ApplicationUserId);
+            if (user == null)
+                return NotFound(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.NotFound, Message = "کاربر متصل به مشتری یافت نشد." });
+
+            var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var res = await _userManager.ResetPasswordAsync(user, resetToken, model.NewPassword);
+            if (!res.Succeeded)
+                return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = string.Join(" | ", res.Errors.Select(e => e.Description)) });
+
+            if (!await _userManager.IsInRoleAsync(user, CustomerRoleName) && await _roleManager.RoleExistsAsync(CustomerRoleName))
+            {
+                await _userManager.AddToRoleAsync(user, CustomerRoleName);
+            }
+
+            return Ok(new ApiResponse
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "رمز عبور ورود به پرتال مشتری با موفقیت بازنشانی شد."
+            });
         }
 
         [HttpGet("CustomerDropdownList")]

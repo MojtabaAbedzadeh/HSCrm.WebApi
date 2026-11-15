@@ -30,6 +30,7 @@ namespace HSCrm.DataModel.Context
         public DbSet<ProjectWorkLog> ProjectWorkLogs { get; set; }
         public DbSet<ProjectMilestone> ProjectMilestones { get; set; }
         public DbSet<ProjectProgressLog> ProjectProgressLogs { get; set; }
+        public DbSet<AppNotification> AppNotifications { get; set; }
         public DbSet<Product> Products { get; set; }
         public DbSet<ProductPrice> ProductPrices { get; set; }
         public DbSet<PurchaseInvoice> PurchaseInvoices { get; set; }
@@ -387,6 +388,31 @@ namespace HSCrm.DataModel.Context
                 e.HasOne(x => x.RecordedByUser)
                  .WithMany()
                  .HasForeignKey(x => x.RecordedByUserId)
+                 .OnDelete(DeleteBehavior.Restrict);
+
+                e.HasOne(x => x.Tenant)
+                 .WithMany()
+                 .HasForeignKey(x => x.TenantId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ======================= AppNotification =======================
+            builder.Entity<AppNotification>(e =>
+            {
+                e.ToTable("AppNotifications");
+                e.Property(x => x.RecipientUserId).IsRequired().HasMaxLength(450);
+                e.Property(x => x.Title).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Message).IsRequired().HasMaxLength(1000);
+                e.Property(x => x.Category).IsRequired().HasMaxLength(50);
+                e.Property(x => x.Severity).IsRequired().HasMaxLength(20);
+                e.Property(x => x.ReferenceEntity).HasMaxLength(100);
+                e.Property(x => x.ActionUrl).HasMaxLength(500);
+
+                e.HasIndex(x => new { x.TenantId, x.RecipientUserId, x.IsRead, x.CreatedAt });
+
+                e.HasOne(x => x.RecipientUser)
+                 .WithMany()
+                 .HasForeignKey(x => x.RecipientUserId)
                  .OnDelete(DeleteBehavior.Restrict);
 
                 e.HasOne(x => x.Tenant)

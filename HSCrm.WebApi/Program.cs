@@ -79,6 +79,9 @@ builder.Services.AddScoped<IInvoiceNumberGenerator, InvoiceNumberGenerator>();
 builder.Services.AddScoped<IProjectAccessService, ProjectAccessService>();
 builder.Services.AddScoped<IProjectTeamService, ProjectTeamService>();
 builder.Services.AddScoped<IProjectProgressService, ProjectProgressService>();
+builder.Services.AddScoped<ICustomerPortalService, CustomerPortalService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IAuditTrailService, AuditTrailService>();
 
 
 // ۶. مپ کردن پروفایل‌های AutoMapper
