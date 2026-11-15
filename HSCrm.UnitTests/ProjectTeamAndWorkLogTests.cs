@@ -542,6 +542,14 @@ namespace HSCrm.UnitTests
                 ReferenceNo = "32",
                 CreatedAt = DateTime.UtcNow
             };
+            env.Context.Projects.Add(new Project
+            {
+                Id = 10,
+                TenantId = 1,
+                ProjectTitle = "برج مسکونی آفتاب",
+                Status = "Active",
+                CreatedAt = DateTime.UtcNow
+            });
             env.Context.BankAccounts.Add(bank);
             env.Context.Expenses.Add(expense);
             env.Context.Payments.Add(payment);

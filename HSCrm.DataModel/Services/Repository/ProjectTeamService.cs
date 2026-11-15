@@ -124,9 +124,7 @@ namespace HSCrm.DataModel.Services.Repository
 
             await _context.SaveChangesAsync(ct);
 
-            existing.Project = project;
-            existing.User = user;
-            return MapMemberDto(existing);
+            return MapMemberDtoCore(existing, project, user);
         }
 
         public async Task<bool> RemoveMemberAsync(int tenantId, int memberId, string actorUserId, CancellationToken ct = default)
@@ -250,14 +248,13 @@ namespace HSCrm.DataModel.Services.Repository
             _context.ProjectWorkLogs.Add(log);
             await _context.SaveChangesAsync(ct);
 
-            log.Project = project;
-            log.User = await _context.Users.AsNoTracking().FirstAsync(u => u.Id == actorUserId, ct);
+            var creatorUser = await _context.Users.AsNoTracking().FirstAsync(u => u.Id == actorUserId, ct);
             if (_notificationService != null)
             {
-                var empName = $"{log.User.UserFirstName} {log.User.UserLastName}".Trim();
-                await _notificationService.NotifyWorkLogSubmittedAsync(tenantId, log, project.ProjectTitle, string.IsNullOrWhiteSpace(empName) ? (log.User.UserName ?? "کارمند") : empName, actorUserId, ct);
+                var empName = $"{creatorUser.UserFirstName} {creatorUser.UserLastName}".Trim();
+                await _notificationService.NotifyWorkLogSubmittedAsync(tenantId, log, project.ProjectTitle, string.IsNullOrWhiteSpace(empName) ? (creatorUser.UserName ?? "کارمند") : empName, actorUserId, ct);
             }
-            return MapWorkLogDto(log);
+            return MapWorkLogDtoCore(log, project, creatorUser, null);
         }
 
         public async Task<ProjectWorkLogDto> UpdateWorkLogAsync(int tenantId, int fiscalYearId, string actorUserId, ProjectWorkLogEditModel model, CancellationToken ct = default)
@@ -383,11 +380,11 @@ namespace HSCrm.DataModel.Services.Repository
             log.ModifiedById = reviewerUserId;
 
             await _context.SaveChangesAsync(ct);
-            log.ReviewedByUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == reviewerUserId, ct);
+            var reviewerUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == reviewerUserId, ct);
             if (_notificationService != null)
             {
-                var reviewerName = log.ReviewedByUser != null
-                    ? $"{log.ReviewedByUser.UserFirstName} {log.ReviewedByUser.UserLastName}".Trim()
+                var reviewerName = reviewerUser != null
+                    ? $"{reviewerUser.UserFirstName} {reviewerUser.UserLastName}".Trim()
                     : "مدیر پروژه";
                 await _notificationService.NotifyWorkLogReviewedAsync(
                     tenantId,
@@ -398,7 +395,7 @@ namespace HSCrm.DataModel.Services.Repository
                     log.ReviewNote,
                     ct);
             }
-            return MapWorkLogDto(log);
+            return MapWorkLogDtoCore(log, log.Project, log.User, reviewerUser);
         }
 
         public async Task<int> BatchReviewWorkLogsAsync(int tenantId, int fiscalYearId, string reviewerUserId, ProjectWorkLogBatchReviewModel model, CancellationToken ct = default)
@@ -533,44 +530,68 @@ namespace HSCrm.DataModel.Services.Repository
             return ConvertDate.ConvertShamsiToMiladi(clean).Date;
         }
 
-        private static ProjectMemberDto MapMemberDto(ProjectMember m) => new()
-        {
-            Id = m.Id,
-            ProjectId = m.ProjectId,
-            ProjectTitle = m.Project?.ProjectTitle ?? string.Empty,
-            UserId = m.UserId,
-            FullName = m.User != null ? $"{m.User.UserFirstName} {m.User.UserLastName}".Trim() : string.Empty,
-            UserName = m.User?.UserName ?? string.Empty,
-            UserImageUrl = m.User?.UserImageUrl,
-            ProjectRole = m.ProjectRole,
-            HourlyRate = m.HourlyRate,
-            IsActive = m.IsActive,
-            JoinedAt = m.JoinedAt,
-            JoinedAtShamsi = ConvertDate.ConvertMiladiToShamsi(m.JoinedAt, "yyyy/MM/dd")
-        };
+        private static ProjectMemberDto MapMemberDto(ProjectMember m)
+            => MapMemberDtoCore(m, null, null);
 
-        private static ProjectWorkLogDto MapWorkLogDto(ProjectWorkLog w) => new()
+        private static ProjectMemberDto MapMemberDtoCore(
+            ProjectMember m,
+            Project? projectOverride,
+            ApplicationUser? userOverride)
         {
-            Id = w.Id,
-            ProjectId = w.ProjectId,
-            ProjectTitle = w.Project?.ProjectTitle ?? string.Empty,
-            UserId = w.UserId,
-            EmployeeName = w.User != null ? $"{w.User.UserFirstName} {w.User.UserLastName}".Trim() : string.Empty,
-            FiscalYearId = w.FiscalYearId,
-            WorkDate = w.WorkDate,
-            WorkDateShamsi = ConvertDate.ConvertMiladiToShamsi(w.WorkDate, "yyyy/MM/dd"),
-            Hours = w.Hours,
-            HourlyRateSnapshot = w.HourlyRateSnapshot,
-            WageCost = w.WageCost,
-            Description = w.Description,
-            Status = w.Status,
-            StatusTitle = w.Status.DisplayNameAttribute(),
-            ReviewedByUserId = w.ReviewedByUserId,
-            ReviewedByName = w.ReviewedByUser != null ? $"{w.ReviewedByUser.UserFirstName} {w.ReviewedByUser.UserLastName}".Trim() : null,
-            ReviewedAt = w.ReviewedAt,
-            ReviewedAtShamsi = w.ReviewedAt.HasValue ? ConvertDate.ConvertMiladiToShamsi(w.ReviewedAt.Value, "yyyy/MM/dd HH:mm") : null,
-            ReviewNote = w.ReviewNote,
-            CreatedAt = w.CreatedAt
-        };
+            var proj = projectOverride ?? m.Project;
+            var usr = userOverride ?? m.User;
+            return new ProjectMemberDto
+            {
+                Id = m.Id,
+                ProjectId = m.ProjectId,
+                ProjectTitle = proj?.ProjectTitle ?? string.Empty,
+                UserId = m.UserId,
+                FullName = usr != null ? $"{usr.UserFirstName} {usr.UserLastName}".Trim() : string.Empty,
+                UserName = usr?.UserName ?? string.Empty,
+                UserImageUrl = usr?.UserImageUrl,
+                ProjectRole = m.ProjectRole,
+                HourlyRate = m.HourlyRate,
+                IsActive = m.IsActive,
+                JoinedAt = m.JoinedAt,
+                JoinedAtShamsi = ConvertDate.ConvertMiladiToShamsi(m.JoinedAt, "yyyy/MM/dd")
+            };
+        }
+
+        private static ProjectWorkLogDto MapWorkLogDto(ProjectWorkLog w)
+            => MapWorkLogDtoCore(w, null, null, null);
+
+        private static ProjectWorkLogDto MapWorkLogDtoCore(
+            ProjectWorkLog w,
+            Project? projectOverride,
+            ApplicationUser? userOverride,
+            ApplicationUser? reviewedByOverride)
+        {
+            var proj = projectOverride ?? w.Project;
+            var usr = userOverride ?? w.User;
+            var rev = reviewedByOverride ?? w.ReviewedByUser;
+            return new ProjectWorkLogDto
+            {
+                Id = w.Id,
+                ProjectId = w.ProjectId,
+                ProjectTitle = proj?.ProjectTitle ?? string.Empty,
+                UserId = w.UserId,
+                EmployeeName = usr != null ? $"{usr.UserFirstName} {usr.UserLastName}".Trim() : string.Empty,
+                FiscalYearId = w.FiscalYearId,
+                WorkDate = w.WorkDate,
+                WorkDateShamsi = ConvertDate.ConvertMiladiToShamsi(w.WorkDate, "yyyy/MM/dd"),
+                Hours = w.Hours,
+                HourlyRateSnapshot = w.HourlyRateSnapshot,
+                WageCost = w.WageCost,
+                Description = w.Description,
+                Status = w.Status,
+                StatusTitle = w.Status.DisplayNameAttribute(),
+                ReviewedByUserId = w.ReviewedByUserId,
+                ReviewedByName = rev != null ? $"{rev.UserFirstName} {rev.UserLastName}".Trim() : null,
+                ReviewedAt = w.ReviewedAt,
+                ReviewedAtShamsi = w.ReviewedAt.HasValue ? ConvertDate.ConvertMiladiToShamsi(w.ReviewedAt.Value, "yyyy/MM/dd HH:mm") : null,
+                ReviewNote = w.ReviewNote,
+                CreatedAt = w.CreatedAt
+            };
+        }
     }
 }

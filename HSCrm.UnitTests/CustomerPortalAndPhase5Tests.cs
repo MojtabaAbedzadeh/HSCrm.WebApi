@@ -290,7 +290,7 @@ namespace HSCrm.UnitTests
             Assert.Single(invoices);
             Assert.Equal("INV-1405-0001", invoices[0].Number);
             Assert.Equal("شرکت آسانسور پارس", invoices[0].CompanyInfo.CompanyTitle);
-            Assert.Equal("گارانتی ۱۲ ماهه قطعات و نصب", invoices[0].CompanyInfo.InvoiceFooterText);
+            Assert.Equal("گارانتی 12 ماهه قطعات و نصب", invoices[0].CompanyInfo.InvoiceFooterText);
             Assert.Equal("10101234567", invoices[0].CompanyInfo.TaxId);
 
             // Access to customer 2's invoice must fail
@@ -432,9 +432,10 @@ namespace HSCrm.UnitTests
 
             var auditService = new AuditTrailService(context);
             var logs = await auditService.GetAuditLogsAsync(1, entityType: "Project");
-            Assert.Single(logs.Items);
-            Assert.Equal("مدیر سیستم", logs.Items[0].CreatedByName);
-            Assert.Equal("مهندس نصاب", logs.Items[0].ModifiedByName);
+            Assert.Equal(2, logs.Items.Count);
+            var proj10Log = Assert.Single(logs.Items, l => l.EntityId == 10);
+            Assert.Equal("مدیر سیستم", proj10Log.CreatedByName);
+            Assert.Equal("مهندس نصاب", proj10Log.ModifiedByName);
 
             var allTenant1 = await auditService.GetAuditLogsAsync(1);
             Assert.DoesNotContain(allTenant1.Items, i => i.EntityType == "Customer" && i.EntityId == 99);

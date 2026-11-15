@@ -340,11 +340,9 @@ namespace HSCrm.DataModel.Services.Repository
 
             await RecalculateProjectProgressAsync(tenantId, project.Id, ct);
 
-            log.Project = project;
-            log.Milestone = milestone;
-            log.RecordedByUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == actorUserId, ct) ?? null!;
+            var recordedByUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == actorUserId, ct);
 
-            return MapProgressLogDto(log, createdAttachments);
+            return MapProgressLogDtoCore(log, createdAttachments, project, milestone, recordedByUser);
         }
 
         public async Task<bool> DeleteProgressLogAsync(int tenantId, string actorUserId, int logId, CancellationToken ct = default)
@@ -813,10 +811,17 @@ namespace HSCrm.DataModel.Services.Repository
         };
 
         private static ProjectAttachmentDto MapAttachmentDto(Attachment a, ProjectProgressLog? parentLog)
+            => MapAttachmentDtoCore(a, parentLog, null);
+
+        private static ProjectAttachmentDto MapAttachmentDtoCore(
+            Attachment a,
+            ProjectProgressLog? parentLog,
+            ApplicationUser? recordedByUserOverride)
         {
             var ext = Path.GetExtension(a.FileName);
             var isImage = (!string.IsNullOrWhiteSpace(a.ContentType) && a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
                           || (!string.IsNullOrWhiteSpace(ext) && ImageExtensions.Contains(ext));
+            var uploader = recordedByUserOverride ?? parentLog?.RecordedByUser;
 
             return new ProjectAttachmentDto
             {
@@ -828,33 +833,47 @@ namespace HSCrm.DataModel.Services.Repository
                 ProgressLogId = a.EntityId,
                 ProgressLogTitle = parentLog?.Title ?? string.Empty,
                 LogDateShamsi = parentLog != null ? ConvertDate.ConvertMiladiToShamsi(parentLog.LogDate, "yyyy/MM/dd") : string.Empty,
-                UploadedByName = parentLog?.RecordedByUser != null
-                    ? $"{parentLog.RecordedByUser.UserFirstName} {parentLog.RecordedByUser.UserLastName}".Trim()
+                UploadedByName = uploader != null
+                    ? $"{uploader.UserFirstName} {uploader.UserLastName}".Trim()
                     : string.Empty,
                 CreatedAt = a.CreatedAt
             };
         }
 
-        private static ProjectProgressLogDto MapProgressLogDto(ProjectProgressLog l, List<Attachment> attachments) => new()
+        private static ProjectProgressLogDto MapProgressLogDto(ProjectProgressLog l, List<Attachment> attachments)
+            => MapProgressLogDtoCore(l, attachments, null, null, null);
+
+        private static ProjectProgressLogDto MapProgressLogDtoCore(
+            ProjectProgressLog l,
+            List<Attachment> attachments,
+            Project? projectOverride,
+            ProjectMilestone? milestoneOverride,
+            ApplicationUser? recordedByUserOverride)
         {
-            Id = l.Id,
-            ProjectId = l.ProjectId,
-            ProjectTitle = l.Project?.ProjectTitle ?? string.Empty,
-            MilestoneId = l.MilestoneId,
-            MilestoneTitle = l.Milestone?.Title,
-            FiscalYearId = l.FiscalYearId,
-            RecordedByUserId = l.RecordedByUserId,
-            RecordedByName = l.RecordedByUser != null
-                ? $"{l.RecordedByUser.UserFirstName} {l.RecordedByUser.UserLastName}".Trim()
-                : string.Empty,
-            LogDate = l.LogDate,
-            LogDateShamsi = ConvertDate.ConvertMiladiToShamsi(l.LogDate, "yyyy/MM/dd"),
-            Title = l.Title,
-            ReportText = l.ReportText,
-            ProgressPercent = l.ProgressPercent,
-            WorkshopArea = l.WorkshopArea,
-            CreatedAt = l.CreatedAt,
-            Attachments = attachments.Select(a => MapAttachmentDto(a, l)).ToList()
-        };
+            var proj = projectOverride ?? l.Project;
+            var ms = milestoneOverride ?? l.Milestone;
+            var recUser = recordedByUserOverride ?? l.RecordedByUser;
+            return new ProjectProgressLogDto
+            {
+                Id = l.Id,
+                ProjectId = l.ProjectId,
+                ProjectTitle = proj?.ProjectTitle ?? string.Empty,
+                MilestoneId = l.MilestoneId,
+                MilestoneTitle = ms?.Title,
+                FiscalYearId = l.FiscalYearId,
+                RecordedByUserId = l.RecordedByUserId,
+                RecordedByName = recUser != null
+                    ? $"{recUser.UserFirstName} {recUser.UserLastName}".Trim()
+                    : string.Empty,
+                LogDate = l.LogDate,
+                LogDateShamsi = ConvertDate.ConvertMiladiToShamsi(l.LogDate, "yyyy/MM/dd"),
+                Title = l.Title,
+                ReportText = l.ReportText,
+                ProgressPercent = l.ProgressPercent,
+                WorkshopArea = l.WorkshopArea,
+                CreatedAt = l.CreatedAt,
+                Attachments = attachments.Select(a => MapAttachmentDtoCore(a, l, recUser)).ToList()
+            };
+        }
     }
 }
