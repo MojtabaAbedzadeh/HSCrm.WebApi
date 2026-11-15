@@ -4,6 +4,7 @@ using HSCrm.DataModel.Services.Interface;
 using HSCrm.DataModel.Services.Repository;
 using HSCrm.Entities.Entities;
 using HSCrm.Entities.Models;
+using AutoMapper;
 using HSCrm.WebApi.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -443,6 +444,74 @@ namespace HSCrm.UnitTests
             var singleHist = await auditService.GetEntityHistoryAsync(1, "SalesInvoice", 300);
             Assert.NotNull(singleHist);
             Assert.Equal("فاکتور #INV-1405-0001", singleHist!.DocumentNumberOrTitle);
+        }
+
+        [Fact(DisplayName = "5. ریست رمز عبور کاربر: بازنشانی رمز عبور کاربر همان شرکت و منع دسترسی متقاطع بین شرکت‌ها")]
+        public async Task UserController_ResetPassword_ResetsSameTenantAndIsolatesCrossTenant()
+        {
+            var (context, _, _) = CreateEnv(nameof(UserController_ResetPassword_ResetsSameTenantAndIsolatesCrossTenant), "mgr-1");
+            var empTenant1 = context.Users.First(u => u.Id == "emp-1");
+            var empTenant2 = new ApplicationUser
+            {
+                Id = "emp-t2",
+                TenantId = 2,
+                UserFirstName = "کاربر",
+                UserLastName = "دیگر",
+                UserName = "emp_t2",
+                NormalizedUserName = "EMP_T2",
+                UserStatus = true,
+                UserType = 0
+            };
+            context.Users.Add(empTenant2);
+            context.SaveChanges();
+
+            var store = new Mock<IUserStore<ApplicationUser>>();
+            var userManagerMock = new Mock<UserManager<ApplicationUser>>(
+                store.Object, null!, null!, null!, null!, null!, null!, null!, null!);
+            userManagerMock.Setup(m => m.FindByIdAsync("emp-1")).ReturnsAsync(empTenant1);
+            userManagerMock.Setup(m => m.FindByIdAsync("emp-t2")).ReturnsAsync(empTenant2);
+            userManagerMock.Setup(m => m.GeneratePasswordResetTokenAsync(empTenant1)).ReturnsAsync("tok-1");
+            userManagerMock.Setup(m => m.ResetPasswordAsync(empTenant1, "tok-1", "NewPass@123")).ReturnsAsync(IdentityResult.Success);
+            userManagerMock.Setup(m => m.IsLockedOutAsync(empTenant1)).ReturnsAsync(false);
+            userManagerMock.Setup(m => m.ResetAccessFailedCountAsync(empTenant1)).ReturnsAsync(IdentityResult.Success);
+
+            var controller = new UserController(
+                new UnitOfWork(context),
+                userManagerMock.Object,
+                new Mock<IMapper>().Object,
+                context,
+                new Mock<IRoleService>().Object)
+            {
+                ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
+                    {
+                        User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                        {
+                            new Claim("TenantId", "1"),
+                            new Claim(ClaimTypes.NameIdentifier, "mgr-1"),
+                            new Claim(ClaimTypes.Role, "Owner")
+                        }, "TestAuth"))
+                    }
+                }
+            };
+
+            var crossTenant = await controller.ResetPassword(new UserResetPasswordModel
+            {
+                UserId = "emp-t2",
+                NewPassword = "NewPass@123"
+            });
+            Assert.IsType<NotFoundObjectResult>(crossTenant.Result);
+
+            var sameTenant = await controller.ResetPassword(new UserResetPasswordModel
+            {
+                UserId = "emp-1",
+                NewPassword = "NewPass@123"
+            });
+            var ok = Assert.IsType<OkObjectResult>(sameTenant.Result);
+            var payload = Assert.IsType<HSCrm.Framework.StandardApiResult.ApiResponse>(ok.Value);
+            Assert.True(payload.Status);
+            userManagerMock.Verify(m => m.ResetPasswordAsync(empTenant1, "tok-1", "NewPass@123"), Times.Once);
         }
     }
 }

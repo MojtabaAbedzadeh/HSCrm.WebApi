@@ -42,4 +42,10 @@ namespace HSCrm.Entities.Models
         public required string UserId { get; set; }
         public required string RoleId { get; set; }
     }
+
+    public class UserResetPasswordModel
+    {
+        public required string UserId { get; set; }
+        public required string NewPassword { get; set; }
+    }
 }

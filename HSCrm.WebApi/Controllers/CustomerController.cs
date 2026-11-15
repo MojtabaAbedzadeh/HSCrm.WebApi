@@ -616,6 +616,12 @@ namespace HSCrm.WebApi.Controllers
             if (!res.Succeeded)
                 return BadRequest(new ApiResponse { Status = false, StatusCode = ApiResultStatusCode.BadRequest, Message = string.Join(" | ", res.Errors.Select(e => e.Description)) });
 
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                await _userManager.SetLockoutEndDateAsync(user, null);
+            }
+            await _userManager.ResetAccessFailedCountAsync(user);
+
             if (!await _userManager.IsInRoleAsync(user, CustomerRoleName) && await _roleManager.RoleExistsAsync(CustomerRoleName))
             {
                 await _userManager.AddToRoleAsync(user, CustomerRoleName);

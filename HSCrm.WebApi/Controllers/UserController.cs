@@ -324,6 +324,68 @@ namespace HSCrm.WebApi.Controllers
             }
         }
 
+        [HttpPost("ResetPassword")]
+        [Permission(Permissions.Users.Edit)]
+        public async Task<ActionResult<ApiResponse>> ResetPassword([FromBody] UserResetPasswordModel model)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+            {
+                return Unauthorized(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = "دسترسی نامعتبر"
+                });
+            }
+
+            if (model == null || string.IsNullOrWhiteSpace(model.UserId) || string.IsNullOrWhiteSpace(model.NewPassword))
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = "شناسه کاربر و رمز عبور جدید الزامی هستند."
+                });
+            }
+
+            var user = await _userManager.FindByIdAsync(model.UserId.Trim());
+            if (user == null || user.TenantId != tenantId.Value || user.UserType == 110)
+            {
+                return NotFound(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "کاربر مورد نظر در این شرکت یافت نشد."
+                });
+            }
+
+            var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var res = await _userManager.ResetPasswordAsync(user, resetToken, model.NewPassword);
+            if (!res.Succeeded)
+            {
+                return BadRequest(new ApiResponse
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.BadRequest,
+                    Message = string.Join(" | ", res.Errors.Select(e => e.Description))
+                });
+            }
+
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                await _userManager.SetLockoutEndDateAsync(user, null);
+            }
+            await _userManager.ResetAccessFailedCountAsync(user);
+
+            return Ok(new ApiResponse
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = "رمز عبور کاربر با موفقیت بازنشانی شد."
+            });
+        }
+
         [HttpPost("AssignRole")]
         [Permission(Permissions.Users.Create)]
         public async Task<ApiResponse> AssignRole(AssignRoleModel model)
