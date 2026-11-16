@@ -26,5 +26,6 @@ namespace HSCrm.Entities.Entities
         public string? InvoiceFooterText { get; set; }
         public InventoryCostingMethod DefaultCostingMethod { get; set; } = InventoryCostingMethod.WeightedAverage;
         public DateTime? DocumentLockDate { get; set; }
+        public string? InvoicePrintTemplateJson { get; set; }
     }
 }

@@ -94,6 +94,7 @@ namespace HSCrm.Entities.Models
         public string? Address { get; set; }
         public string? InvoiceFooterText { get; set; }
         public string Currency { get; set; } = "IRR";
+        public string? InvoicePrintTemplateJson { get; set; }
     }
 
     public class CustomerPortalInvoiceLineDto

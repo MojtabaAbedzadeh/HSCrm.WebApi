@@ -132,10 +132,18 @@ namespace HSCrm.WebApi.Controllers
 
         [HttpGet("GetSalesInvoices")]
         [Permission(Permissions.SalesInvoices.View)]
-        public async Task<ApiResponse<IEnumerable<SalesInvoice>>> Get(CancellationToken ct = default)
+        public async Task<ApiResponse<IEnumerable<SalesInvoice>>> Get(
+            [FromQuery] string? customerOrProject = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] decimal? minTotal = null,
+            [FromQuery] decimal? maxTotal = null,
+            [FromQuery] int? status = null,
+            CancellationToken ct = default)
         {
             var query = _context.salesInvoiceUW
-                .Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant);
+                .Get(null, true, x => x.Project, x => x.Project.Customer, x => x.Tenant)
+                .AsQueryable();
             var tenantId = User?.GetTenantId();
             var userId = User?.GetUserId();
             if (_projectAccess != null && tenantId.HasValue && !string.IsNullOrWhiteSpace(userId)
@@ -143,6 +151,37 @@ namespace HSCrm.WebApi.Controllers
             {
                 var allowedIds = await _projectAccess.GetAccessibleProjectIdsAsync(tenantId.Value, userId, ct);
                 query = query.Where(x => allowedIds.Contains(x.ProjectId));
+            }
+            if (!string.IsNullOrWhiteSpace(customerOrProject))
+            {
+                var term = customerOrProject.Trim();
+                query = query.Where(x =>
+                    (x.Number != null && x.Number.Contains(term)) ||
+                    (x.Project != null && x.Project.ProjectTitle.Contains(term)) ||
+                    (x.Project != null && x.Project.Customer != null && x.Project.Customer.Name.Contains(term)));
+            }
+            if (fromDate.HasValue)
+            {
+                var startDate = fromDate.Value.Date;
+                query = query.Where(x => x.IssueDate >= startDate);
+            }
+            if (toDate.HasValue)
+            {
+                var endDateExclusive = toDate.Value.Date.AddDays(1);
+                query = query.Where(x => x.IssueDate < endDateExclusive);
+            }
+            if (minTotal.HasValue)
+            {
+                query = query.Where(x => x.Total >= minTotal.Value);
+            }
+            if (maxTotal.HasValue)
+            {
+                query = query.Where(x => x.Total <= maxTotal.Value);
+            }
+            if (status.HasValue)
+            {
+                var targetStatus = (InvoiceStatus)status.Value;
+                query = query.Where(x => x.Status == targetStatus);
             }
             var invoices = query
                 .OrderByDescending(x => x.IssueDate)

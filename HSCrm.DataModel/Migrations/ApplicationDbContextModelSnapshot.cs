@@ -2955,6 +2955,9 @@ modelBuilder.Entity("HSCrm.Entities.Entities.ProjectMember", b =>
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("InvoicePrintTemplateJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 

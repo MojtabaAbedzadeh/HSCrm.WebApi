@@ -212,6 +212,98 @@ namespace HSCrm.WebApi.Controllers
             };
         }
 
+        [HttpGet("GetBranding")]
+        public ApiResponse<TenantBrandingDto> GetBranding()
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return new ApiResponse<TenantBrandingDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            if (tenant == null)
+                return new ApiResponse<TenantBrandingDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "شرکت مورد نظر یافت نشد."
+                };
+
+            return new ApiResponse<TenantBrandingDto>
+            {
+                Status = true,
+                StatusCode = ApiResultStatusCode.Success,
+                Message = ApiResultStatusCode.Success.DisplayNameAttribute(DisplayProperty.Name),
+                Data = new TenantBrandingDto
+                {
+                    TenantId = tenant.Id,
+                    TenantTitle = tenant.TenantTitle,
+                    TenantCode = tenant.TenantCode ?? string.Empty,
+                    Currency = tenant.Currency ?? "IRR",
+                    TaxId = tenant.TaxId,
+                    CompanyPhone = tenant.CompanyPhone,
+                    CompanyEmail = tenant.CompanyEmail,
+                    Address = tenant.Address,
+                    LogoUrl = tenant.LogoUrl,
+                    InvoiceFooterText = tenant.InvoiceFooterText,
+                    InvoicePrintTemplateJson = tenant.InvoicePrintTemplateJson
+                }
+            };
+        }
+
+        [HttpPut("UpdatePrintTemplate")]
+        [Permission(Permissions.Tenants.Edit)]
+        public ApiResponse<TenantBrandingDto> UpdatePrintTemplate([FromBody] InvoicePrintTemplateUpdateModel model)
+        {
+            var tenantId = User.GetTenantId();
+            if (!tenantId.HasValue)
+                return new ApiResponse<TenantBrandingDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.Unauthorized,
+                    Message = ApiResultStatusCode.Unauthorized.DisplayNameAttribute(DisplayProperty.Name)
+                };
+
+            var tenant = _context.tenantUW.GetById(tenantId.Value);
+            if (tenant == null)
+                return new ApiResponse<TenantBrandingDto>
+                {
+                    Status = false,
+                    StatusCode = ApiResultStatusCode.NotFound,
+                    Message = "شرکت مورد نظر یافت نشد."
+                };
+
+            var rawJson = model?.InvoicePrintTemplateJson?.Trim();
+            if (!string.IsNullOrEmpty(rawJson))
+            {
+                try
+                {
+                    using var _ = System.Text.Json.JsonDocument.Parse(rawJson);
+                }
+                catch
+                {
+                    return new ApiResponse<TenantBrandingDto>
+                    {
+                        Status = false,
+                        StatusCode = ApiResultStatusCode.BadRequest,
+                        Message = "ساختار JSON قالب چاپ فاکتور نامعتبر است."
+                    };
+                }
+            }
+
+            tenant.InvoicePrintTemplateJson = string.IsNullOrEmpty(rawJson) ? null : rawJson;
+            tenant.ModifiedAt = DateTime.UtcNow;
+            tenant.ModifiedById = User.GetUserId();
+            _context.tenantUW.Update(tenant);
+            _context.Save();
+
+            return GetBranding();
+        }
+
         [HttpGet("GetCompanySettings")]
         [Permission(Permissions.Tenants.View)]
         public ApiResponse<CompanySettingsDto> GetCompanySettings()
@@ -266,7 +358,8 @@ namespace HSCrm.WebApi.Controllers
                 DocumentLockDate = tenant.DocumentLockDate,
                 DocumentLockDateShamsi = tenant.DocumentLockDate.HasValue
                     ? ConvertDate.ConvertMiladiToShamsi(tenant.DocumentLockDate.Value, "yyyy/MM/dd").Fa2En()
-                    : null
+                    : null,
+                InvoicePrintTemplateJson = tenant.InvoicePrintTemplateJson
             };
 
             return new ApiResponse<CompanySettingsDto>
@@ -402,6 +495,8 @@ namespace HSCrm.WebApi.Controllers
             tenant.InvoiceFooterText = model.InvoiceFooterText?.Trim();
             tenant.DefaultCostingMethod = model.DefaultCostingMethod;
             tenant.DocumentLockDate = parsedLockDate;
+            if (model.InvoicePrintTemplateJson != null)
+                tenant.InvoicePrintTemplateJson = string.IsNullOrWhiteSpace(model.InvoicePrintTemplateJson) ? null : model.InvoicePrintTemplateJson.Trim();
             tenant.ModifiedAt = DateTime.UtcNow;
             tenant.ModifiedById = User.GetUserId();
 

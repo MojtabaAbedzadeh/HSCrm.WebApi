@@ -61,6 +61,7 @@ namespace HSCrm.Entities.Models
         public InventoryCostingMethod DefaultCostingMethod { get; set; } = InventoryCostingMethod.WeightedAverage;
         public DateTime? DocumentLockDate { get; set; }
         public string? DocumentLockDateShamsi { get; set; }
+        public string? InvoicePrintTemplateJson { get; set; }
     }
 
     public class CompanySettingsUpdateModel
@@ -81,6 +82,27 @@ namespace HSCrm.Entities.Models
         public string? InvoiceFooterText { get; set; }
         public InventoryCostingMethod DefaultCostingMethod { get; set; } = InventoryCostingMethod.WeightedAverage;
         public string? DocumentLockDate { get; set; }
+        public string? InvoicePrintTemplateJson { get; set; }
+    }
+
+    public class TenantBrandingDto
+    {
+        public int TenantId { get; set; }
+        public string TenantTitle { get; set; } = string.Empty;
+        public string TenantCode { get; set; } = string.Empty;
+        public string? Currency { get; set; } = "IRR";
+        public string? TaxId { get; set; }
+        public string? CompanyPhone { get; set; }
+        public string? CompanyEmail { get; set; }
+        public string? Address { get; set; }
+        public string? LogoUrl { get; set; }
+        public string? InvoiceFooterText { get; set; }
+        public string? InvoicePrintTemplateJson { get; set; }
+    }
+
+    public class InvoicePrintTemplateUpdateModel
+    {
+        public string? InvoicePrintTemplateJson { get; set; }
     }
 
     public class OnboardingStepDto

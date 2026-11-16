@@ -1198,6 +1198,42 @@ namespace HSCrm.UnitTests
             Assert.Equal(11_920_000m, afterArOnly.FinalBookBalance);     // 11.92M مانده واقعی ۱۱۰۳
             Assert.Equal(21_920_000m, afterArOnly.EffectiveExposureAmount);
         }
+
+        [Fact(DisplayName = "8. برندینگ و قالب چاپ فاکتور: دسترسی کارکنان به GetBranding و ذخیره قالب در UpdatePrintTemplate")]
+        public async Task TenantController_GetBrandingAndPrintTemplate_WorksForAllTenantUsers()
+        {
+            var (context, uow, _, _) = CreateEnvironment(nameof(TenantController_GetBrandingAndPrintTemplate_WorksForAllTenantUsers));
+            var accessor = new HttpContextAccessor
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = CreatePrincipal(tenantId: 1, userId: "emp-1")
+                }
+            };
+            var ctrl = new TenantController(uow, accessor)
+            {
+                ControllerContext = new ControllerContext
+                {
+                    HttpContext = accessor.HttpContext
+                }
+            };
+
+            var brandRes = ctrl.GetBranding();
+            Assert.True(brandRes.Status);
+            Assert.NotNull(brandRes.Data);
+            Assert.Equal("شرکت مهندسی آسانسور تست", brandRes.Data!.TenantTitle);
+
+            var templateJson = "{\"theme\":\"classic\",\"accentColor\":\"#1d4ed8\",\"paperSize\":\"A4\"}";
+            var updRes = ctrl.UpdatePrintTemplate(new InvoicePrintTemplateUpdateModel
+            {
+                InvoicePrintTemplateJson = templateJson
+            });
+            Assert.True(updRes.Status);
+            Assert.Equal(templateJson, updRes.Data!.InvoicePrintTemplateJson);
+
+            var afterRes = ctrl.GetBranding();
+            Assert.Equal(templateJson, afterRes.Data!.InvoicePrintTemplateJson);
+            await Task.CompletedTask;
+        }
     }
 }
-

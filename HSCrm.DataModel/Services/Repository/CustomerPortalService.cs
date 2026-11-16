@@ -572,7 +572,8 @@ namespace HSCrm.DataModel.Services.Repository
             CompanyEmail = tenant?.CompanyEmail,
             Address = tenant?.Address,
             InvoiceFooterText = tenant?.InvoiceFooterText,
-            Currency = string.IsNullOrWhiteSpace(tenant?.Currency) ? "IRR" : tenant!.Currency
+            Currency = string.IsNullOrWhiteSpace(tenant?.Currency) ? "IRR" : tenant!.Currency,
+            InvoicePrintTemplateJson = tenant?.InvoicePrintTemplateJson
         };
 
         private static string TranslateProjectStatus(string? status) => status?.ToLowerInvariant() switch
