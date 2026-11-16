@@ -7,6 +7,7 @@ using HSCrm.Framework.Extensions;
 using HSCrm.Framework.StandardApiResult;
 using HSCrm.Services.Tools.Interface;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 
@@ -15,11 +16,8 @@ var builder = WebApplication.CreateBuilder(args);
 // ۱. دسترسی به HttpContext
 builder.Services.AddHttpContextAccessor();
 
-// ۲. لود تنظیمات AppSettings
-var configuration = builder.Configuration
-    .SetBasePath(Directory.GetCurrentDirectory())
-    .AddJsonFile(FileNamesExtensions.AppSettingName)
-    .Build();
+// ۲. لود تنظیمات AppSettings (پشتیبانی از appsettings.Production.json و متغیرهای محیطی IIS)
+var configuration = builder.Configuration;
 
 // ۳. کنترلرها و ثبت FluentValidation
 builder.Services.AddControllers()
@@ -87,15 +85,24 @@ builder.Services.AddScoped<IAuditTrailService, AuditTrailService>();
 // ۶. مپ کردن پروفایل‌های AutoMapper
 builder.Services.AddAutoMapper(typeof(Program));
 
-// ۷. تنظیمات CORS بر اساس پیکربندی موجود در پروژه شما
+// ۷. تنظیمات CORS (در صورت تعریف Cors:AllowedOrigins در appsettings فقط همان دامنه‌ها مجاز می‌شوند)
+var allowedCorsOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()?
+    .Where(o => !string.IsNullOrWhiteSpace(o))
+    .Select(o => o.Trim().TrimEnd('/'))
+    .ToArray() ?? Array.Empty<string>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("_myAllowSpecificationOrigins", policy =>
     {
         policy.AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials()
-              .SetIsOriginAllowed(host => true);
+              .AllowCredentials();
+
+        if (allowedCorsOrigins.Length > 0)
+            policy.WithOrigins(allowedCorsOrigins);
+        else
+            policy.SetIsOriginAllowed(_ => true);
     });
 });
 
@@ -112,7 +119,16 @@ using (var scope = app.Services.CreateScope())
     await DbInitializer.InitializeAsync(services);
 }
 
+// اطمینان از وجود پوشه آپلود فایل‌ها پیش از UseStaticFiles در IIS
+var webRootPath = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+Directory.CreateDirectory(Path.Combine(webRootPath, "Upload"));
+
 // ۱۰. لوله‌های پردازش میان‌افزارها (Pipeline Middleware)
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
