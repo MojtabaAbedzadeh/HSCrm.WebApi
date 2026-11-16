@@ -422,12 +422,15 @@ namespace HSCrm.UnitTests
         [Fact(DisplayName = "4. تاریخچه تغییرات (Audit Trail): بازیابی ایجادکننده و ویرایش‌کننده اسناد با ایزوله‌سازی تننت")]
         public async Task AuditTrail_ReturnsCreatedAndModifiedMetadataScopedByTenant()
         {
-            var (context, _, _) = CreateEnv(nameof(AuditTrail_ReturnsCreatedAndModifiedMetadataScopedByTenant), "mgr-1");
+            var (context, currentUser, _) = CreateEnv(nameof(AuditTrail_ReturnsCreatedAndModifiedMetadataScopedByTenant), "mgr-1");
             var proj = context.Projects.First(p => p.Id == 10);
+            currentUser.UserId = "emp-1";
             proj.ModifiedAt = DateTime.UtcNow;
             proj.ModifiedById = "emp-1";
+            context.SaveChanges();
 
             // Other tenant data must never leak
+            currentUser.UserId = "mgr-1";
             context.Customers.Add(new Customer { Id = 99, TenantId = 2, Name = "مشتری تننت دیگر", CreatedAt = DateTime.UtcNow, CreatedById = "mgr-1" });
             context.SaveChanges();
 
